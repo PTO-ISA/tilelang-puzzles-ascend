@@ -37,6 +37,18 @@ from .consts import SIM_CEILING_SECONDS, SIM_K, SIM_M, SIM_TARGET_SECONDS
 DEFAULT_MSPROF_SOC = "Ascend950PR_9599"
 DEFAULT_CANNSIM_SOC = "Ascend950"
 
+# The repo root. The simulator subprocess runs from $HOME (msprof refuses a
+# group-writable cwd), so `python -m harness.check` there cannot find the
+# package unless we put the root on PYTHONPATH explicitly.
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _child_env() -> dict:
+    env = dict(os.environ)
+    existing = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = f"{REPO_ROOT}{os.pathsep}{existing}" if existing else str(REPO_ROOT)
+    return env
+
 
 def sim_shapes() -> tuple[int, int]:
     return int(os.environ.get("TLP_SIM_M", SIM_M)), int(os.environ.get("TLP_SIM_K", SIM_K))
@@ -122,8 +134,13 @@ def _out_dir() -> Path:
 # runners
 # --------------------------------------------------------------------------
 
-def run_under_msopprof(script: Path | str, soc: str | None = None) -> int | None:
-    """Return an exit code, or None if msprof is unavailable (caller falls back)."""
+def run_under_msopprof(argv: list[str] | Path | str, soc: str | None = None) -> int | None:
+    """Return an exit code, or None if msprof is unavailable (caller falls back).
+
+    ``argv`` is the python argument list to run under the simulator -- e.g.
+    ``["-m", "harness.check", "asc/per_token/05"]``. A bare path is accepted and
+    treated as ``[path]``, which is how the older script-per-variant flow used it.
+    """
     msprof = shutil.which("msprof")
     ascend = os.environ.get("ASCEND_HOME_PATH")
     if not msprof or not ascend:
@@ -134,11 +151,11 @@ def run_under_msopprof(script: Path | str, soc: str | None = None) -> int | None
         print(f"[sim] no simulator libs for {soc} at {sim_lib}")
         return None
 
-    env = dict(os.environ)
+    env = _child_env()
     env["LD_LIBRARY_PATH"] = f"{sim_lib}{os.pathsep}{env.get('LD_LIBRARY_PATH', '')}"
     out_dir = _out_dir()
     cmd = [msprof, "op", "simulator", f"--soc-version={soc}",
-           f"--output={out_dir}", sys.executable, str(script)]
+           f"--output={out_dir}", sys.executable, *_as_argv(argv)]
 
     start = time.time()
     # msprof refuses to run from a group/other-writable directory, and the repo
@@ -153,30 +170,53 @@ def run_under_msopprof(script: Path | str, soc: str | None = None) -> int | None
     return _verdict(proc.stdout, proc.returncode)
 
 
-def run_under_cannsim(script: Path | str, soc: str | None = None) -> int:
+def run_under_cannsim(argv: list[str] | Path | str, soc: str | None = None) -> int:
     cannsim = shutil.which("cannsim") or shutil.which("npusim")
     if not cannsim:
         print("[sim] neither cannsim nor npusim on PATH")
         return 1
     soc = soc or os.environ.get("TLP_SIM_SOC", DEFAULT_CANNSIM_SOC)
-    # cannsim launches python with cwd set to the interpreter's bindir, so the
-    # script path must be absolute.
-    cmd = [cannsim, "record", sys.executable, "-s", soc, "-u", str(Path(script).resolve())]
+    # cannsim launches python with cwd set to the interpreter's bindir, so every
+    # path in the argument list must be absolute.
+    cmd = [cannsim, "record", sys.executable, "-s", soc, "-u", " ".join(_as_argv(argv))]
     start = time.time()
-    proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    proc = subprocess.run(cmd, env=_child_env(), stdout=subprocess.PIPE,
+                          stderr=subprocess.STDOUT, text=True)
     elapsed = time.time() - start
     _relay(proc.stdout)
     print(f"[sim] wall time {elapsed:.1f}s (cannsim, soc={soc}, exit={proc.returncode})")
     return _verdict(proc.stdout, proc.returncode)
 
 
-def run_under_simulator(script: Path | str) -> int:
+def _as_argv(argv: list[str] | Path | str) -> list[str]:
+    """Accept either a python argv list or a single script path."""
+    if isinstance(argv, (str, Path)):
+        return [str(Path(argv).resolve())]
+    return [str(a) for a in argv]
+
+
+def run_under_simulator(argv: list[str] | Path | str) -> int:
     if simulator_name() in ("msopprof", "msprof", "camodel"):
-        status = run_under_msopprof(script)
+        status = run_under_msopprof(argv)
         if status is not None:
             return status
         print("[sim] msprof unavailable, falling back to cannsim")
-    return run_under_cannsim(script)
+    return run_under_cannsim(argv)
+
+
+def should_reexec() -> bool:
+    """True when this process must hand off to the CPU simulator."""
+    if os.environ.get("TLP_CPU_ONLY") == "1":
+        return False
+    if os.environ.get("TLP_IN_SIMULATOR") == "1":
+        return False       # already the inner process
+    return not npu_ready()
+
+
+def reexec_argv(argv: list[str]) -> int:
+    """Re-run ``python <argv>`` under the simulator and return its verdict."""
+    os.environ["TLP_IN_SIMULATOR"] = "1"
+    return run_under_simulator(argv)
 
 
 def maybe_reexec() -> None:
@@ -186,11 +226,6 @@ def maybe_reexec() -> None:
     either returns (we are already on a device, or the caller asked for CPU) or
     exits the process with the simulated run's status.
     """
-    if os.environ.get("TLP_CPU_ONLY") == "1":
+    if not should_reexec():
         return
-    if os.environ.get("TLP_IN_SIMULATOR") == "1":
-        return  # already the inner process
-    if npu_ready():
-        return
-    os.environ["TLP_IN_SIMULATOR"] = "1"
-    raise SystemExit(run_under_simulator(Path(sys.argv[0]).resolve()))
+    raise SystemExit(reexec_argv([str(Path(sys.argv[0]).resolve())]))
