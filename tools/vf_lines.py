@@ -1,8 +1,25 @@
-"""Count the non-comment lines of each kernel's T.SimdVF body.
+"""Measure each kernel's T.SimdVF body: lines of code and vector operations.
 
-The PTO-vs-ASC argument in the docs rests on PTO needing fewer vector operations
-for the same work. This measures that instead of asserting it, so the numbers in
-the README are generated rather than remembered.
+The PTO-vs-ASC argument rests on VMI needing fewer vector *operations* for the
+same work. This measures that instead of asserting it.
+
+Two numbers, because they disagree and the disagreement is informative:
+
+**ops** counts calls to the vector intrinsics (S.* / V.*). This is the metric the
+claim is actually about -- how many machine operations the backend forces you to
+spell out.
+
+**lines** counts non-comment source lines. VMI needs an explicit `size=` on nearly
+every call and a mask on many, so its lines are *wider*; on variants where it
+saves no operations it can come out slightly longer. Reporting only lines would
+flatter ASC, and reporting only ops would hide a real ergonomic cost of VMI.
+
+Caveat on magnitude: these teaching kernels are single-config, so each one spells
+the broadcast/select/pack machinery once. Production kernels branch over
+round_sf, packing, FP4, column-major and requant, which repeats that machinery
+per branch -- which is why the production port (TileKernels 5395526) came to 83
+net lines removed across four kernels, a much larger relative saving than
+anything visible here.
 
     python tools/vf_lines.py
 """
@@ -16,8 +33,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def vf_body_lines(path: Path) -> int:
-    """Lines of code inside `with T.SimdVF():` blocks, ignoring comments/blanks."""
+OP_RE = re.compile(r"\b[SV]\.(\w+)\s*\(")
+# Names that are not vector machine operations.
+NOT_OPS = {"alloc_local", "alloc_var", "vreg", "create_mask", "pset", "pnot"}
+
+
+def vf_body(path: Path) -> tuple[int, int]:
+    """Return (lines, vector-op calls) inside `with T.SimdVF():` blocks."""
     lines = path.read_text().splitlines()
     # skip the module docstring, which also mentions T.SimdVF
     start = 0
@@ -26,7 +48,8 @@ def vf_body_lines(path: Path) -> int:
             if '"""' in lines[i]:
                 start = i + 1
                 break
-    total, i = 0, start
+    total = ops = 0
+    i = start
     while i < len(lines):
         m = re.match(r"^(\s*)with T\.SimdVF\(", lines[i])
         if not m:
@@ -40,8 +63,9 @@ def vf_body_lines(path: Path) -> int:
                 break
             if line.strip() and not line.strip().startswith("#"):
                 total += 1
+                ops += sum(1 for n in OP_RE.findall(line) if n not in NOT_OPS)
             i += 1
-    return total
+    return total, ops
 
 
 def main() -> int:
@@ -51,23 +75,30 @@ def main() -> int:
             pto = ROOT / "puzzles/pto/quant/answer" / kernel / variant.name
             if not pto.exists():
                 continue
-            a, p = vf_body_lines(variant), vf_body_lines(pto)
-            rows.append((f"{kernel}/{variant.stem}", a, p))
+            rows.append((f"{kernel}/{variant.stem}", vf_body(variant), vf_body(pto)))
     if not rows:
         print("no paired asc/pto variants yet")
         return 0
     w = max(len(r[0]) for r in rows)
-    print(f"{'variant'.ljust(w)}  {'ASC':>5} {'PTO':>5}  {'delta':>6}")
-    print("-" * (w + 22))
-    ta = tp = 0
-    for name, a, p in rows:
-        ta += a
-        tp += p
-        print(f"{name.ljust(w)}  {a:5} {p:5}  {p - a:+6}")
-    print("-" * (w + 22))
-    print(f"{'total'.ljust(w)}  {ta:5} {tp:5}  {tp - ta:+6}")
-    if ta:
-        print(f"\nPTO vector-body size relative to ASC: {tp / ta:.0%}")
+    head = (f"{'variant'.ljust(w)}  {'ops ASC':>8} {'ops PTO':>8} {'d':>5}   "
+            f"{'ln ASC':>7} {'ln PTO':>7} {'d':>5}")
+    print(head)
+    print("-" * len(head))
+    tla = tlp = toa = top = 0
+    for name, (la, oa), (lp, op) in rows:
+        tla += la; tlp += lp; toa += oa; top += op
+        print(f"{name.ljust(w)}  {oa:8} {op:8} {op - oa:+5}   "
+              f"{la:7} {lp:7} {lp - la:+5}")
+    print("-" * len(head))
+    print(f"{'total'.ljust(w)}  {toa:8} {top:8} {top - toa:+5}   "
+          f"{tla:7} {tlp:7} {tlp - tla:+5}")
+    if toa:
+        print(f"\nPTO vector operations relative to ASC: {top / toa:.0%}")
+    if tla:
+        print(f"PTO source lines relative to ASC:      {tlp / tla:.0%}")
+    print("\nOps is the metric the PTO-vs-ASC claim is about. Lines runs the other")
+    print("way on variants where VMI saves no operations, because size= and mask")
+    print("arguments make each call wider -- a real ergonomic cost, worth seeing.")
     return 0
 
 
