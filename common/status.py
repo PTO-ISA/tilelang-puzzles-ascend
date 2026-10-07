@@ -79,6 +79,16 @@ def run_variant(variant: str, body, *, xfail_reason: str | None = None) -> int:
         body()
     except NotImplementedError as exc:
         # An unsolved puzzle is not a failure -- it just has not been written yet.
+        # Only our own marker counts: torch raises NotImplementedError for
+        # genuinely unsupported ops too (e.g. fancy-indexing a float8 CPU
+        # tensor), and that is a real bug we must not hide.
+        if not str(exc).startswith(f"{variant}: implement "):
+            elapsed = time.time() - start
+            print("\n--- FAIL ---")
+            traceback.print_exc()
+            emit(variant, FAIL, elapsed, _first_diagnostic(exc))
+            print(FAIL)
+            return 1
         elapsed = time.time() - start
         print(f"\n--- not implemented yet: {exc} ---")
         print("Fill in the TODO above. The reference answer for this variant is the")
