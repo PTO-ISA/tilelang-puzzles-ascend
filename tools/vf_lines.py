@@ -34,8 +34,18 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 OP_RE = re.compile(r"\b[SV]\.(\w+)\s*\(")
-# Names that are not vector machine operations.
-NOT_OPS = {"alloc_local", "alloc_var", "vreg", "create_mask", "pset", "pnot"}
+# Not vector machine operations, so excluded from the op count:
+#   - allocation and type constructors
+#   - mask construction (predicate setup, not data movement or arithmetic)
+#   - bit reinterpretation, which emits no instruction at all. This one matters
+#     for fairness: ASC spells it T.reinterpret (outside this regex) while VMI
+#     spells it V.vinterpret_cast (inside it), so counting the VMI form would
+#     penalise PTO for a purely notational difference.
+NOT_OPS = {
+    "alloc_local", "alloc_var", "vreg",
+    "create_mask", "pset", "pnot",
+    "vinterpret_cast",
+}
 
 
 def vf_body(path: Path) -> tuple[int, int]:
