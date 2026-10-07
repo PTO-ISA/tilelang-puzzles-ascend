@@ -1,59 +1,13 @@
-"""per_channel 02 (PTO) -- UE8M0 packed along M, in VMI.
-
-Read the ASC variant: it explains why per_channel is the one kernel whose scale
-bytes pack along M rather than along the fastest-varying axis, and therefore the
-one where packing costs an instruction instead of a host-side `.view()`.
-
-### PTO vs ASC
-
-The interleave itself is a transliteration -- `V.vintlv` takes the same two
-vectors and returns the same two results, with a mask added:
-
-    ASC:  lo, _ = S.vintlv(a, b)
-    PTO:  lo, _ = V.vintlv(a, b, mask)
-
-No saving, and the same width subtlety applies: a uint8 vector is 256 lanes, so
-`lo` alone carries the 256 output bytes for 128 channels, the rows are padded so
-the oversized load cannot reach the next row, and the second result is discarded.
-
-Where VMI does help in this kernel is the surrounding code rather than the pack:
-the reduction runs at 128 channels per tile instead of 64 (variant 01), and the
-scale byte is written with one `V.vcvt(biased, "uint8")` instead of a reinterpret
-plus a `PK4_B32` store mode (per_token/03).
-
-### An aside worth carrying forward
-
-`vintlv` appears three times in this ladder doing three different jobs:
-
-    cast_back/06       vintlv(zero, x_bf16)   widen bfloat16 -> float32
-    per_token/04       vdintlv(q0, q1)        split float32 into its 16-bit halves
-    per_channel/02     vintlv(row_a, row_b)   pack two byte rows into one
-
-Interleaving with zeros builds wider elements; interleaving two real vectors packs
-narrower ones; de-interleaving splits. The instruction name describes the data
-movement and says nothing about which of those you are doing, so these are worth
-recognising as idioms rather than deriving each time.
-
-Run:  python puzzles/pto/quant/answer/per_channel/02_round_packed_m.py
-"""
-
-import pathlib
-import sys
-
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[5]))
+"""per_channel 02 (PTO). See doc/quant/per_channel/02_round_packed_m.md"""
 
 import torch
 import tilelang
 import tilelang.ascend.language as T
 from tilelang.ascend.language import vmi as V
 
-from common import oracle, sim, status
-from common.check import assert_fp8_near, assert_same_bytes
-from common.consts import BLOCK_MN, E4M3_CLAMP_MIN, E4M3_MAX, PACK_FACTOR
-from common.demo import randn_with_zero_row
-from common.math_ops import decode_packed_ue8m0_along_m
+from harness import status
+from harness.consts import BLOCK_MN, E4M3_CLAMP_MIN, E4M3_MAX, PACK_FACTOR
 
-VARIANT = "pto/per_channel/02_round_packed_m"
 LANES = 128
 BYTE_LANES = 128        # uint8 lanes per interleave step
 
@@ -161,51 +115,3 @@ def launch(x: torch.Tensor):
     compile_kernel(hidden)(x, q, sf_bytes)
     status.assert_on_device("per_channel 02", q, sf_bytes)
     return q, sf_bytes.view(torch.int16)
-
-
-def demo_numbers() -> None:
-    print("[demo] which axis the UE8M0 bytes pack along:")
-    print("[demo]   per_token   sf (M, K/32)     -> along K, adjacent, free")
-    print("[demo]   per_block   sf (M/32, K/32)  -> along K, adjacent, free")
-    print("[demo]   per_channel sf (M/32, K)     -> along M, `hidden` bytes apart")
-    print("[demo] so this is the one kernel where packing needs an instruction:")
-    print("[demo]   lo, _ = V.vintlv(row_2i, row_2i+1, mask)  # [a0,b0,a1,b1,...]")
-    print("[demo] and m-groups must be processed in PAIRS, so M must be a")
-    print(f"[demo] multiple of {BLOCK_MN * PACK_FACTOR}, not {BLOCK_MN}.")
-    print("[demo] note cast_back/06 used the same vintlv to *widen* bf16->f32 by")
-    print("[demo] interleaving zeros. One instruction, two unrelated uses.")
-
-
-def test_correctness() -> None:
-    m, k = sim.sim_shapes()
-    m = max(m, BLOCK_MN * PACK_FACTOR)
-    if m % (BLOCK_MN * PACK_FACTOR):
-        m = (m // (BLOCK_MN * PACK_FACTOR) + 1) * BLOCK_MN * PACK_FACTOR
-    torch.manual_seed(0)
-    x = randn_with_zero_row(m, k, torch.device("cpu"))
-    ref_q, ref_packed = oracle.per_channel(x, BLOCK_MN, round_sf=True, packed=True)
-    q, packed = launch(x.npu())
-    assert_same_bytes(packed.cpu(), ref_packed, f"sf_packed({m},{k})")
-    assert_fp8_near(q.cpu(), ref_q, f"q({m},{k})")
-    _, ref_f32 = oracle.per_channel(x, BLOCK_MN, round_sf=True)
-    assert torch.equal(decode_packed_ue8m0_along_m(packed.cpu()), ref_f32)
-    print(f"[check] shape=({m},{k}) packed={tuple(packed.shape)} byte-exact, "
-          f"decodes back along M to the float32 scales")
-
-
-def main() -> int:
-    k = sim.sim_shapes()[1]
-    if status.unimplemented(VARIANT, lambda: compile_kernel(k)):
-        return 0
-    sim.maybe_reexec()
-    sim.print_banner("pto", "per_channel", "02_round_packed_m")
-
-    def body():
-        demo_numbers()
-        test_correctness()
-
-    return status.run_variant(VARIANT, body)
-
-
-if __name__ == "__main__":
-    sys.exit(main())

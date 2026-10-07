@@ -18,7 +18,7 @@ or float32.
 Re-run this after a tilelang upgrade; if it starts passing, out_idx can be used
 uniformly again.
 
-    python common/probe/fp8_out_idx.py        # needs the simulator or a device
+    python harness/probe/fp8_out_idx.py        # needs the simulator or a device
 """
 
 import sys

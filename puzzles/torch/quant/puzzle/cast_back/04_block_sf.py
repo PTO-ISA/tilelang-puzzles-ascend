@@ -2,7 +2,7 @@
 
 import torch
 
-from common.consts import BLOCK_K, BLOCK_MN
+from harness.consts import BLOCK_K, BLOCK_MN
 
 
 def torch_cast_back_block(q: torch.Tensor, sf: torch.Tensor,

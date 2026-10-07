@@ -1,57 +1,13 @@
-"""per_token 06 (PTO) -- sf_only, cast_only and requant in VMI.
-
-Read the ASC variant for what the three modes are and why they are compile-time
-flags rather than separate kernels.
-
-### PTO vs ASC: the win compounds across configurations
-
-This variant is where the structural advantage from variant 02 pays off visibly.
-The kernel has four modes, and each mode needs the broadcast-and-apply step. In
-ASC that step is four `BRC_B32` loads plus a `vsel` per 64-lane register, written
-out in the dequantize stage *and* the quantize stage:
-
-    ASC, twice over:
-        s0 = S.vld(xsf_ub[g],     dist="BRC_B32")
-        s1 = S.vld(xsf_ub[g + 1], dist="BRC_B32")
-        ... S.vmul(raw, S.vsel(s0, s1, mask_low))
-
-In VMI each is one load, so the duplication costs almost nothing:
-
-    PTO, twice over:
-        scale = V.vload(xsf_ub[g], size=128, stride=1, dist_mode="brc", group=4)
-        ... V.vmul(raw, scale, mask)
-
-This is the mechanism behind the production port's 83 removed lines. A single
-teaching variant shows a small difference; a kernel that branches over round_sf,
-packing, FP4, column-major, requant and the split spells the same broadcast
-machinery once per path, and VMI shrinks every one of them.
-
-### requant exercises both directions at once
-
-The dequantize stage broadcasts the *input* scales and the quantize stage
-broadcasts the *output* inverses, so one mode uses the same VMI idiom twice with
-different data. In ASC those are two near-identical six-operation blocks; in VMI
-they are two one-line loads.
-
-Run:  python puzzles/pto/quant/answer/per_token/06_split_requant.py
-"""
-
-import pathlib
-import sys
-
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[5]))
+"""per_token 06 (PTO). See doc/quant/per_token/06_split_requant.md"""
 
 import torch
 import tilelang
 import tilelang.ascend.language as T
 from tilelang.ascend.language import vmi as V
 
-from common import oracle, sim, status
-from common.check import assert_fp8_near, assert_fp32_ulps
-from common.consts import CANONICAL_G, E4M3_CLAMP_MIN, E4M3_MAX
-from common.demo import randn_with_zero_row
+from harness import status
+from harness.consts import CANONICAL_G, E4M3_CLAMP_MIN, E4M3_MAX
 
-VARIANT = "pto/per_token/06_split_requant"
 LANES = 64
 PAIR = 128
 SF_PAD = 64
@@ -165,63 +121,3 @@ def launch(x: torch.Tensor, mode: str = "full", x_sf: torch.Tensor | None = None
     compile_kernel(hidden, mode)(x, xsf, q, sf)
     status.assert_on_device(f"per_token 06 {mode}", q, sf)
     return q, sf
-
-
-def demo_numbers() -> None:
-    print("[demo] which passes each mode emits (decided at trace time):")
-    rows = [("full", "amax", "scale", "quantize"),
-            ("sf_only", "amax", "scale", "-"),
-            ("cast_only", "-", "1/sf", "quantize"),
-            ("requant", "dequant+amax", "scale", "quantize")]
-    for name, p1, p2, p3 in rows:
-        print(f"[demo]   {name:10} pass1={p1:13} pass2={p2:6} pass3={p3}")
-    print("[demo] every mode needs the broadcast-and-apply step; requant needs it")
-    print("[demo] twice (input scales, then output inverses). In VMI each is one")
-    print("[demo] brc load; in ASC each is 4 loads + a vsel per register. That is")
-    print("[demo] how the saving compounds across a multi-config kernel.")
-    print("[demo] cast_only must compute 1/sf because it never sees amax, so it")
-    print("[demo] diverges from the fused path by the odd FP8 code -- unless the")
-    print("[demo] scale is a power of two, when both are exact. See the torch")
-    print("[demo] variant, which measures it.")
-
-
-def test_correctness() -> None:
-    m, k = sim.sim_shapes()
-    torch.manual_seed(0)
-    x = randn_with_zero_row(m, k, torch.device("cpu"))
-    ref_q, ref_sf = oracle.per_token(x, CANONICAL_G)
-
-    _, sf = launch(x.npu(), "sf_only")
-    assert_fp32_ulps(sf.cpu(), ref_sf, "sf_only", max_ulps=1)
-    print("[check] sf_only matches the oracle's scales")
-
-    q, _ = launch(x.npu(), "cast_only", x_sf=ref_sf.npu())
-    ref_co = oracle.per_token_cast_only(x, ref_sf, CANONICAL_G)
-    assert_fp8_near(q.cpu(), ref_co, "cast_only")
-    d = (q.cpu().view(torch.uint8).int() - ref_q.view(torch.uint8).int()).abs()
-    print(f"[check] cast_only matches the oracle; vs the fused path "
-          f"{int((d > 0).sum())}/{d.numel()} codes differ (the 1/sf reciprocal)")
-
-    q2, sf2 = launch(ref_q.npu(), "requant", x_sf=ref_sf.npu())
-    rq, rsf = oracle.requant_per_token(ref_q, ref_sf, CANONICAL_G)
-    assert_fp32_ulps(sf2.cpu(), rsf, "requant sf", max_ulps=1)
-    assert_fp8_near(q2.cpu(), rq, "requant q")
-    print("[check] requant matches dequantize-then-quantize in torch")
-
-
-def main() -> int:
-    m, k = sim.sim_shapes()
-    if status.unimplemented(VARIANT, lambda: compile_kernel(k, "full")):
-        return 0
-    sim.maybe_reexec()
-    sim.print_banner("pto", "per_token", "06_split_requant")
-
-    def body():
-        demo_numbers()
-        test_correctness()
-
-    return status.run_variant(VARIANT, body)
-
-
-if __name__ == "__main__":
-    sys.exit(main())

@@ -1,65 +1,13 @@
-"""per_token 06 (ASC) -- sf_only, cast_only, and requantization.
-
-Three related configs, all about *not* doing the whole job. Production compiles
-one kernel with these as compile-time flags, and this file does the same: `mode`
-selects which passes get emitted.
-
-    mode="full"       amax -> scale -> quantize          (variants 01-05)
-    mode="sf_only"    amax -> scale, no quantized output
-    mode="cast_only"  scales are given; apply them, no amax pass
-    mode="requant"    input is already quantized; dequantize, then quantize again
-
-### Why flags rather than four kernels
-
-Because the passes are the same code. `sf_only` is the full kernel with pass 3
-deleted; `cast_only` is the full kernel with pass 1 deleted and pass 2 reduced to a
-reciprocal. Expressing that as `if` statements in the kernel builder -- evaluated
-at trace time, so they cost nothing at runtime -- is how production keeps one
-source for a dozen configurations.
-
-This is also the first variant where the Python-level `if` is doing real work. Note
-it is a *trace-time* branch: `mode` is a Python string, so the condition is
-evaluated while the kernel is being built and only the taken branch is emitted.
-(Contrast `T.unroll`, where the loop variable is symbolic -- see the gotcha
-documented in cast_back/07.)
-
-### cast_only cannot reproduce the fused path exactly
-
-With `cast_only` the kernel only has the stored scale, so it must compute `1/sf`
-and multiply. The full path forms `448/amax` directly. Those differ in the last
-bit or two, which flips the occasional FP8 code -- the torch variant measures it:
-about 75 codes in 131072 for bfloat16 input, and **zero** when the scale is a power
-of two, because then both the scale and its reciprocal are exact.
-
-That is a practical argument for `round_sf` beyond memory: it makes the split
-kernels bit-compatible with the fused one.
-
-### requant needs a scratch buffer
-
-The new amax cannot be known until the whole group has been dequantized, so the
-dequantized values have to live somewhere between the two stages. That is
-`dequant_ub`, with a barrier on each side of it -- the same shape as production's
-`in_config.with_sf` path.
-
-Run:  python puzzles/asc/quant/answer/per_token/06_split_requant.py
-"""
-
-import pathlib
-import sys
-
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[5]))
+"""per_token 06 (ASC). See doc/quant/per_token/06_split_requant.md"""
 
 import torch
 import tilelang
 import tilelang.ascend.language as T
 from tilelang.ascend.language import simd as S
 
-from common import oracle, sim, status
-from common.check import assert_fp8_near, assert_fp32_ulps
-from common.consts import CANONICAL_G, E4M3_CLAMP_MIN, E4M3_MAX
-from common.demo import randn_with_zero_row
+from harness import status
+from harness.consts import CANONICAL_G, E4M3_CLAMP_MIN, E4M3_MAX
 
-VARIANT = "asc/per_token/06_split_requant"
 LANES = 64
 PAIR = 128
 SF_PAD = 64
@@ -186,59 +134,3 @@ def launch(x: torch.Tensor, mode: str = "full", x_sf: torch.Tensor | None = None
     compile_kernel(hidden, mode)(x, xsf, q, sf)
     status.assert_on_device(f"per_token 06 {mode}", q, sf)
     return q, sf
-
-
-def demo_numbers() -> None:
-    print("[demo] which passes each mode emits (decided at trace time):")
-    rows = [("full", "amax", "scale", "quantize"),
-            ("sf_only", "amax", "scale", "-"),
-            ("cast_only", "-", "1/sf", "quantize"),
-            ("requant", "dequant+amax", "scale", "quantize")]
-    for name, p1, p2, p3 in rows:
-        print(f"[demo]   {name:10} pass1={p1:13} pass2={p2:6} pass3={p3}")
-    print("[demo] cast_only must compute 1/sf because it never sees amax, so it")
-    print("[demo] diverges from the fused path by the odd FP8 code -- unless the")
-    print("[demo] scale is a power of two, when both are exact. See the torch")
-    print("[demo] variant, which measures it.")
-
-
-def test_correctness() -> None:
-    m, k = sim.sim_shapes()
-    torch.manual_seed(0)
-    x = randn_with_zero_row(m, k, torch.device("cpu"))
-    ref_q, ref_sf = oracle.per_token(x, CANONICAL_G)
-
-    _, sf = launch(x.npu(), "sf_only")
-    assert_fp32_ulps(sf.cpu(), ref_sf, "sf_only", max_ulps=1)
-    print("[check] sf_only matches the oracle's scales")
-
-    q, _ = launch(x.npu(), "cast_only", x_sf=ref_sf.npu())
-    ref_co = oracle.per_token_cast_only(x, ref_sf, CANONICAL_G)
-    assert_fp8_near(q.cpu(), ref_co, "cast_only")
-    d = (q.cpu().view(torch.uint8).int() - ref_q.view(torch.uint8).int()).abs()
-    print(f"[check] cast_only matches the oracle; vs the fused path "
-          f"{int((d > 0).sum())}/{d.numel()} codes differ (the 1/sf reciprocal)")
-
-    q2, sf2 = launch(ref_q.npu(), "requant", x_sf=ref_sf.npu())
-    rq, rsf = oracle.requant_per_token(ref_q, ref_sf, CANONICAL_G)
-    assert_fp32_ulps(sf2.cpu(), rsf, "requant sf", max_ulps=1)
-    assert_fp8_near(q2.cpu(), rq, "requant q")
-    print("[check] requant matches dequantize-then-quantize in torch")
-
-
-def main() -> int:
-    m, k = sim.sim_shapes()
-    if status.unimplemented(VARIANT, lambda: compile_kernel(k, "full")):
-        return 0
-    sim.maybe_reexec()
-    sim.print_banner("asc", "per_token", "06_split_requant")
-
-    def body():
-        demo_numbers()
-        test_correctness()
-
-    return status.run_variant(VARIANT, body)
-
-
-if __name__ == "__main__":
-    sys.exit(main())

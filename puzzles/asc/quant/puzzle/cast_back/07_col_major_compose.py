@@ -5,8 +5,8 @@ import tilelang
 import tilelang.ascend.language as T
 from tilelang.ascend.language import simd as S
 
-from common import status
-from common.consts import BLOCK_MN, CANONICAL_G, PACK_FACTOR
+from harness import status
+from harness.consts import BLOCK_MN, CANONICAL_G, PACK_FACTOR
 
 LANES = 64
 FP4_STRIP = 128

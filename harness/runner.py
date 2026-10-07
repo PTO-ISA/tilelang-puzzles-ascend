@@ -23,7 +23,7 @@ from types import ModuleType
 
 import torch
 
-from common import sim, status
+from harness import sim, status
 
 from harness import doc_examples
 from harness.spec import Ctx, Variant

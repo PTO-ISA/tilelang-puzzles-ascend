@@ -2,7 +2,7 @@
 
 import torch
 
-from common.consts import CANONICAL_G
+from harness.consts import CANONICAL_G
 
 
 def torch_cast_back_f32(q: torch.Tensor, sf: torch.Tensor, group_size: int = CANONICAL_G):

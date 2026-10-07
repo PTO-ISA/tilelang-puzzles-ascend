@@ -11,7 +11,7 @@ def print_example(title: str, **named_tensors: torch.Tensor) -> None:
     """Print small tensors readably.
 
     Every line carries the ``[demo]`` marker so it survives the simulator log
-    relay in ``common/sim.py``, which forwards only tagged lines (the camodel
+    relay in ``harness/sim.py``, which forwards only tagged lines (the camodel
     prints thousands of its own).
     """
     print(f"[demo] --- {title} ---")

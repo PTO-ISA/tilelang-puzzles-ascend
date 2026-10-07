@@ -2,8 +2,8 @@
 
 import torch
 
-from common.consts import CANONICAL_G
-from common.math_ops import decode_packed_ue8m0
+from harness.consts import CANONICAL_G
+from harness.math_ops import decode_packed_ue8m0
 
 
 def torch_cast_back_packed(q: torch.Tensor, sf_packed: torch.Tensor,

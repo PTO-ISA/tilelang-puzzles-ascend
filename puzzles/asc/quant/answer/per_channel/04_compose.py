@@ -1,63 +1,13 @@
-"""per_channel 04 (ASC) -- everything composed: bfloat16 reduction, pow2, packed-M.
-
-Final variant of the final kernel. Composed config:
-
-    bfloat16 input -> bfloat16 reduction -> power-of-two scale
-    -> UE8M0 packed along M -> FP8 e4m3 output
-
-That is production's per_channel configuration. What remains between this file and
-`per_channel_cast_asc.py` is scheduling -- multiple vector cores with a manual wave
-index, double-buffered UB, and L2 cache hints on the DMA -- plus the requant path,
-which is variant 03.
-
-### Reducing in bfloat16 without leaving the integer unit
-
-per_token/07 reduced in bfloat16 and needed an elaborate dance to get groups of 32
-out of it. per_channel needs no grouping at all -- the reduction is along M, so
-lanes stay lanes -- which makes the bfloat16 reduction almost free here:
-
-    abs_bits   = S.vand(T.reinterpret(x, "uint16x128"), 0x7FFF)
-    acc[0]     = S.vmax(acc[0], abs_bits)        # 128 channels per step
-
-Two things are going on in that `vmax`:
-
-1. Clearing the sign bit is `abs` (per_token/07).
-2. Comparing the *bit patterns* of non-negative floats as unsigned integers gives
-   the same ordering as comparing the floats. So the running maximum can be kept
-   in `uint16` and never touch the float unit.
-
-That second point is the trick worth remembering. It only works because the values
-are known non-negative after the mask -- for signed input the integer ordering and
-the float ordering disagree.
-
-### The scale math still runs in float32
-
-The maxima are written out as bfloat16 and reloaded widened, so the exponent
-arithmetic is the same 64-lane float32 sequence as every other variant. Reducing
-in bfloat16 costs nothing in the scale, because only its exponent is used and
-bfloat16 keeps the exponent exactly -- the test asserts that the chosen exponents
-match what a float32 reduction would pick.
-
-Run:  python puzzles/asc/quant/answer/per_channel/04_compose.py
-"""
-
-import pathlib
-import sys
-
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[5]))
+"""per_channel 04 (ASC). See doc/quant/per_channel/04_compose.md"""
 
 import torch
 import tilelang
 import tilelang.ascend.language as T
 from tilelang.ascend.language import simd as S
 
-from common import oracle, sim, status
-from common.check import assert_fp8_near, assert_same_bytes
-from common.consts import BLOCK_MN, E4M3_CLAMP_MIN, E4M3_MAX, PACK_FACTOR
-from common.demo import randn_with_zero_row
-from common.math_ops import decode_packed_ue8m0_along_m
+from harness import status
+from harness.consts import BLOCK_MN, E4M3_CLAMP_MIN, E4M3_MAX, PACK_FACTOR
 
-VARIANT = "asc/per_channel/04_compose"
 LANES = 64              # float32 lanes, for the scale math
 BF16_LANES = 128        # bfloat16 lanes, for the reduction
 BYTE_LANES = 128        # channels per interleave step
@@ -167,57 +117,3 @@ def launch(x: torch.Tensor):
     compile_kernel(hidden)(x, q, sf_bytes)
     status.assert_on_device("per_channel 04", q, sf_bytes)
     return q, sf_bytes.view(torch.int16)
-
-
-def demo_numbers() -> None:
-    print("[demo] reducing in bfloat16 on the integer unit:")
-    print("[demo]   1. clearing the sign bit (& 0x7FFF) is abs")
-    print("[demo]   2. for non-negative floats, comparing bit patterns as")
-    print("[demo]      unsigned integers gives the same order as comparing floats")
-    vals = torch.tensor([0.5, 1.0, 1.5, 3.0, 6.0], dtype=torch.bfloat16)
-    bits = (vals.view(torch.int16).int() & 0x7FFF).tolist()
-    print(f"[demo]   bf16 {vals.tolist()}")
-    print(f"[demo]   bits {bits}   -- increasing, same order")
-    assert bits == sorted(bits)
-    print("[demo]   so the running max never leaves uint16.")
-    print("[demo] this only holds after the mask: for signed values the integer")
-    print("[demo] order and the float order disagree.")
-    print("[demo] per_channel needs no grouping, so unlike per_token/07 the bf16")
-    print("[demo] reduction needs no deinterleave/regroup dance at all.")
-
-
-def test_correctness() -> None:
-    m, k = sim.sim_shapes()
-    step = BLOCK_MN * PACK_FACTOR
-    if m % step:
-        m = (m // step + 1) * step
-    torch.manual_seed(0)
-    x = randn_with_zero_row(m, k, torch.device("cpu"))
-    ref_q, ref_packed = oracle.per_channel(x, BLOCK_MN, round_sf=True, packed=True)
-    q, packed = launch(x.npu())
-    assert_same_bytes(packed.cpu(), ref_packed, f"sf_packed({m},{k})")
-    assert_fp8_near(q.cpu(), ref_q, f"q({m},{k})")
-    _, ref_f32 = oracle.per_channel(x, BLOCK_MN, round_sf=True)
-    assert torch.equal(decode_packed_ue8m0_along_m(packed.cpu()), ref_f32), (
-        "the bfloat16 reduction changed the chosen exponent"
-    )
-    print(f"[check] shape=({m},{k}) packed={tuple(packed.shape)} byte-exact, and")
-    print(f"[check] the bfloat16 reduction picked the same exponents as float32")
-
-
-def main() -> int:
-    k = sim.sim_shapes()[1]
-    if status.unimplemented(VARIANT, lambda: compile_kernel(k)):
-        return 0
-    sim.maybe_reexec()
-    sim.print_banner("asc", "per_channel", "04_compose")
-
-    def body():
-        demo_numbers()
-        test_correctness()
-
-    return status.run_variant(VARIANT, body)
-
-
-if __name__ == "__main__":
-    sys.exit(main())

@@ -1,57 +1,13 @@
-"""per_channel 04 (PTO) -- everything composed. The last file in the ladder.
-
-Composed config:
-
-    bfloat16 input -> bfloat16 reduction -> power-of-two scale
-    -> UE8M0 packed along M -> FP8 e4m3 output
-
-Read the ASC variant for the integer-unit reduction trick (clearing the sign bit
-is abs, and non-negative floats compare correctly as unsigned integers).
-
-### PTO vs ASC: a fair summary of the whole ladder
-
-This variant is close to a draw, and by now the reason should be predictable. Its
-three stages are:
-
-    reduce along M      lanes stay lanes, no grouping    -> no VMI advantage
-    scale math          one value per channel            -> no VMI advantage
-    pack along M        a plain interleave                -> no VMI advantage
-
-VMI pays where ASC has to *emulate* something: a segment width the hardware does
-not have (`group=` on reduces and broadcasts), a conversion ASC expresses as a
-distribution mode, or a vector wider than one register. per_channel has none of
-those, because its reduction axis already lines up with the register's lanes --
-which is the same property that makes it the easy kernel on this hardware and the
-hard one on a GPU.
-
-Measured over all 23 paired variants, `python tools/vf_lines.py` puts PTO at
-roughly two thirds of ASC's static vector-operation count, concentrated in
-per_token (where `group=` replaces mask-and-select) and in the FP4 and bfloat16
-paths (where width is the problem). cast_back/03, cast_back/05, cast_back/07,
-per_token/05 and all of per_block and per_channel are draws or near-draws. Both
-numbers are worth stating: the advantage is real, large where it applies, and
-absent where it does not.
-
-Run:  python puzzles/pto/quant/answer/per_channel/04_compose.py
-"""
-
-import pathlib
-import sys
-
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[5]))
+"""per_channel 04 (PTO). See doc/quant/per_channel/04_compose.md"""
 
 import torch
 import tilelang
 import tilelang.ascend.language as T
 from tilelang.ascend.language import vmi as V
 
-from common import oracle, sim, status
-from common.check import assert_fp8_near, assert_same_bytes
-from common.consts import BLOCK_MN, E4M3_CLAMP_MIN, E4M3_MAX, PACK_FACTOR
-from common.demo import randn_with_zero_row
-from common.math_ops import decode_packed_ue8m0_along_m
+from harness import status
+from harness.consts import BLOCK_MN, E4M3_CLAMP_MIN, E4M3_MAX, PACK_FACTOR
 
-VARIANT = "pto/per_channel/04_compose"
 LANES = 64              # float32 lanes, for the scale math
 BF16_LANES = 128        # bfloat16 lanes, for the reduction
 BYTE_LANES = 128        # channels per interleave step
@@ -112,58 +68,3 @@ def launch(x: torch.Tensor):
     compile_kernel(hidden)(x, q, sf_bytes)
     status.assert_on_device("per_channel 04", q, sf_bytes)
     return q, sf_bytes.view(torch.int16)
-
-
-def demo_numbers() -> None:
-    print("[demo] reducing in bfloat16 on the integer unit:")
-    print("[demo]   1. clearing the sign bit (& 0x7FFF) is abs")
-    print("[demo]   2. for non-negative floats, comparing bit patterns as")
-    print("[demo]      unsigned integers gives the same order as comparing floats")
-    vals = torch.tensor([0.5, 1.0, 1.5, 3.0, 6.0], dtype=torch.bfloat16)
-    bits = (vals.view(torch.int16).int() & 0x7FFF).tolist()
-    print(f"[demo]   bf16 {vals.tolist()}")
-    print(f"[demo]   bits {bits}   -- increasing, same order")
-    assert bits == sorted(bits)
-    print("[demo]   so the running max never leaves uint16.")
-    print("[demo] this only holds after the mask: for signed values the integer")
-    print("[demo] order and the float order disagree.")
-    print("[demo] per_channel needs no grouping, so unlike per_token/07 the bf16")
-    print("[demo] reduction needs no deinterleave/regroup dance at all -- which")
-    print("[demo] is also why VMI has no advantage to offer in this kernel.")
-
-
-def test_correctness() -> None:
-    m, k = sim.sim_shapes()
-    step = BLOCK_MN * PACK_FACTOR
-    if m % step:
-        m = (m // step + 1) * step
-    torch.manual_seed(0)
-    x = randn_with_zero_row(m, k, torch.device("cpu"))
-    ref_q, ref_packed = oracle.per_channel(x, BLOCK_MN, round_sf=True, packed=True)
-    q, packed = launch(x.npu())
-    assert_same_bytes(packed.cpu(), ref_packed, f"sf_packed({m},{k})")
-    assert_fp8_near(q.cpu(), ref_q, f"q({m},{k})")
-    _, ref_f32 = oracle.per_channel(x, BLOCK_MN, round_sf=True)
-    assert torch.equal(decode_packed_ue8m0_along_m(packed.cpu()), ref_f32), (
-        "the bfloat16 reduction changed the chosen exponent"
-    )
-    print(f"[check] shape=({m},{k}) packed={tuple(packed.shape)} byte-exact, and")
-    print(f"[check] the bfloat16 reduction picked the same exponents as float32")
-
-
-def main() -> int:
-    k = sim.sim_shapes()[1]
-    if status.unimplemented(VARIANT, lambda: compile_kernel(k)):
-        return 0
-    sim.maybe_reexec()
-    sim.print_banner("pto", "per_channel", "04_compose")
-
-    def body():
-        demo_numbers()
-        test_correctness()
-
-    return status.run_variant(VARIANT, body)
-
-
-if __name__ == "__main__":
-    sys.exit(main())

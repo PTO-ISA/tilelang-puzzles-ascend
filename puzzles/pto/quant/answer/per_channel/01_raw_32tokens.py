@@ -1,54 +1,13 @@
-"""per_channel 01 (PTO) -- reduce along M, 128 channels at a time.
-
-Read the ASC variant: it explains why reducing along M needs no cross-lane
-reduction and no broadcast (channels sit one per lane), and why that makes this
-the one kernel where the NPU's register model beats the GPU's thread model.
-
-### PTO vs ASC
-
-Two differences, both familiar by now:
-
-**Width.** ASC's widening load yields 64 float32 lanes, so a 128-channel row is
-two tiles. VMI reaches 128 float32 lanes with one convert, so it is one. The
-reduction loop therefore runs over half as many column tiles -- the same dynamic
-saving as per_block, and equally invisible to a static operation count.
-
-**The accumulator's type is explicit.** ASC's `S.alloc_local((1,), T.float32)`
-allocates "a register of float32" with the width implied by the backend. VMI
-spells it out:
-
-    acc = V.alloc_local((1,), V.vreg(128, T.float32))
-
-`V.vreg(lanes, dtype)` is a first-class vector-register type, which is what lets
-production's per_channel allocate accumulators whose width depends on whether the
-kernel is in its bfloat16 or float32 mode. The ASC version has to pick the count
-and the width separately and keep them in sync by hand.
-
-Both still need the register array at all, for the same reason: **SIMD values are
-immutable**, so an accumulator carried across loop iterations cannot be a plain
-value. Writing `acc = V.vmax(acc, v)` fails with
-
-    Immutable variable `acc` is used outside its defining region
-
-Run:  python puzzles/pto/quant/answer/per_channel/01_raw_32tokens.py
-"""
-
-import pathlib
-import sys
-
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[5]))
+"""per_channel 01 (PTO). See doc/quant/per_channel/01_raw_32tokens.md"""
 
 import torch
 import tilelang
 import tilelang.ascend.language as T
 from tilelang.ascend.language import vmi as V
 
-from common import oracle, sim, status
-from common.check import assert_fp8_near, assert_fp32_ulps
-from common.consts import BLOCK_MN, E4M3_CLAMP_MIN, E4M3_MAX
-from common.demo import randn_with_zero_row
+from harness import status
+from harness.consts import BLOCK_MN, E4M3_CLAMP_MIN, E4M3_MAX
 
-VARIANT = "pto/per_channel/01_raw_32tokens"
 LANES = 128
 
 
@@ -119,49 +78,3 @@ def launch(x: torch.Tensor):
     compile_kernel(hidden)(x, q, sf)
     status.assert_on_device("per_channel 01", q, sf)
     return q, sf
-
-
-def demo_numbers() -> None:
-    print("[demo] vector work to reduce one group, per 64 channels:")
-    print("[demo]   per_token  (reduce along K): vabs + 2 masked vcmax + 2 ONEPT")
-    print("[demo]                                stores, then 4 BRC loads + 2 vsel")
-    print("[demo]                                to broadcast the scale back")
-    print("[demo]   per_channel(reduce along M): 32 x vmax. Then a plain load.")
-    print("[demo] PTO reduces 128 channels per tile where ASC reduces 64, so it")
-    print("[demo] runs half as many column tiles -- a dynamic saving a static")
-    print("[demo] operation count cannot see.")
-    print("[demo] 64 channels map one-to-one onto 64 float32 lanes, so there is")
-    print("[demo] no cross-lane reduction and no broadcast at all.")
-    print("[demo] on a GPU this is the hard case: the values being combined live")
-    print("[demo] in different threads, so the CUDA kernel stages partials through")
-    print("[demo] shared memory and syncs. Lanes and threads give opposite answers.")
-
-
-def test_correctness() -> None:
-    m, k = sim.sim_shapes()
-    assert m % BLOCK_MN == 0 and k % LANES == 0
-    torch.manual_seed(0)
-    x = randn_with_zero_row(m, k, torch.device("cpu"))
-    ref_q, ref_sf = oracle.per_channel(x, BLOCK_MN)
-    q, sf = launch(x.npu())
-    assert_fp32_ulps(sf.cpu(), ref_sf, f"sf({m},{k})", max_ulps=1)
-    assert_fp8_near(q.cpu(), ref_q, f"q({m},{k})")
-    print(f"[check] shape=({m},{k}) sf={tuple(sf.shape)} matches the torch oracle")
-
-
-def main() -> int:
-    m, k = sim.sim_shapes()
-    if status.unimplemented(VARIANT, lambda: compile_kernel(k)):
-        return 0
-    sim.maybe_reexec()
-    sim.print_banner("pto", "per_channel", "01_raw_32tokens")
-
-    def body():
-        demo_numbers()
-        test_correctness()
-
-    return status.run_variant(VARIANT, body)
-
-
-if __name__ == "__main__":
-    sys.exit(main())

@@ -5,8 +5,8 @@ import tilelang
 import tilelang.ascend.language as T
 from tilelang.ascend.language import vmi as V
 
-from common import status
-from common.consts import CANONICAL_G, PACK_FACTOR
+from harness import status
+from harness.consts import CANONICAL_G, PACK_FACTOR
 
 LANES = 64
 EXP_MASK = 0x7F800000

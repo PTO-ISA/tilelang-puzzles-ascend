@@ -2,7 +2,7 @@
 
 One body per variant, shared by all three tiers. The body builds the inputs,
 calls the tier's entry point through ``ctx``, and asserts against
-``common.oracle`` -- which the torch tier's answers define.
+``harness.oracle`` -- which the torch tier's answers define.
 
 cast_back is the only kernel with no reduction: its scale factors are an input.
 So every body here is "build q and sf, dequantize, compare".
@@ -12,10 +12,10 @@ from __future__ import annotations
 
 import torch
 
-from common import oracle
-from common.check import assert_bf16_near, assert_fp32_ulps
-from common.consts import BLOCK_K, BLOCK_MN, CANONICAL_G
-from common.math_ops import pack_ue8m0_row_major
+from harness import oracle
+from harness.asserts import assert_bf16_near, assert_fp32_ulps
+from harness.consts import BLOCK_K, BLOCK_MN, CANONICAL_G
+from harness.math_ops import pack_ue8m0_row_major
 
 from harness.spec import Ctx, Shape, Variant, register
 

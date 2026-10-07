@@ -5,8 +5,8 @@ import tilelang
 import tilelang.ascend.language as T
 from tilelang.ascend.language import simd as S
 
-from common import status
-from common.consts import CANONICAL_G
+from harness import status
+from harness.consts import CANONICAL_G
 
 LANES = 64          # float32 lanes in one 256-byte vector register
 SF_PAD = 64         # pad the scale buffer out to a whole register

@@ -97,6 +97,23 @@ class Ctx:
             )
         return fn(*args, **kwargs)
 
+    def call_named(self, torch_name: str, *args, **kwargs):
+        """Invoke a specific torch-tier function, or ``launch`` on the NPU tiers.
+
+        Needed by the split/requant variants, where the torch tier exposes one
+        function per mode (``torch_sf_only``, ``torch_cast_only``,
+        ``torch_requant``) while the NPU tiers take a ``mode`` argument on a
+        single ``launch``. The body decides which shape it wants; this just
+        resolves the name.
+        """
+        if not self.is_torch:
+            return self.call(*args, **kwargs)
+        fn = getattr(self.module, torch_name, None)
+        if fn is None:
+            raise AttributeError(
+                f"{self.variant.id(self.tier)}: module has no '{torch_name}'")
+        return fn(*args, **kwargs)
+
     def note(self, msg: str) -> None:
         """Print a progress line.
 

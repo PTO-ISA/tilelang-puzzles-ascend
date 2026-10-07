@@ -3,13 +3,13 @@
 Measured on **tilelang 0.1.15** + **ptoas vmi 0.1.9** + **CANN 9.2.0-beta.2**,
 2026-10-07, in the container built by `docker/Dockerfile`.
 
-Everything here is reproducible by a script in `common/probe/`. Re-run those after
+Everything here is reproducible by a script in `harness/probe/`. Re-run those after
 any toolchain upgrade; if one starts passing, the corresponding workaround can be
 removed.
 
 ```bash
-python common/probe/vf_lane_limits.py          # compile-only, ~10 s
-python common/probe/fp8_out_idx.py             # needs the simulator
+python harness/probe/vf_lane_limits.py          # compile-only, ~10 s
+python harness/probe/fp8_out_idx.py             # needs the simulator
 ```
 
 ## Hard limits (worked around in this repo)
@@ -23,7 +23,7 @@ VMI-LAYOUT-CONTRACT: pto.vmi.extf has no registered layout support:
   result#0=!pto.vmi.vreg<8xf32, #pto.vmi.layout<num_groups = 8, slots = 8>>
 ```
 
-Reproduce: `common/probe/vf_lane_limits.py`, case `per_block_8lane`.
+Reproduce: `harness/probe/vf_lane_limits.py`, case `per_block_8lane`.
 
 This matters because a 32×32 tile is 32 values wide and 32 is **not** a legal
 vector length (the allowlist is `{1, 2, 4, 8, 64, 128, 256}` — see
@@ -41,7 +41,7 @@ geometry.
 MemoryError: Unsupported code 10
 ```
 
-Reproduce: `common/probe/fp8_out_idx.py`.
+Reproduce: `harness/probe/fp8_out_idx.py`.
 
 torch allocates `float8_e4m3fn` on the device fine, and passing an explicitly
 allocated float8 tensor to the kernel works. Only the `out_idx` auto-allocation
@@ -150,11 +150,11 @@ constants for its single-scale arithmetic.
 
 No variant in this repo falls back to computing its result on the host. Every one
 of the 69 kernels runs on the device and is checked against the torch tier;
-`common/status.py` asserts that outputs come back from `npu`, so a host fallback
+`harness/status.py` asserts that outputs come back from `npu`, so a host fallback
 cannot hide behind a `PASS`.
 
 In particular, two bodies that are easy to assume are unsupported do work on this
-pin, and `common/probe/vf_lane_limits.py` re-checks both on every run:
+pin, and `harness/probe/vf_lane_limits.py` re-checks both on every run:
 
 - a **fused 128-lane** per_token body — one vector carried through convert,
   segmented reduce, divide and segmented broadcast, with no bounce through

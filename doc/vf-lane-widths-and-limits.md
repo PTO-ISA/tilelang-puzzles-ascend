@@ -5,7 +5,7 @@ one list.
 
 > Everything here was measured on **tilelang 0.1.15 + ptoas vmi 0.1.9**,
 > 2026-10-07, the versions this repo pins. Which VF bodies lower is
-> **version-sensitive**, so `python common/probe/vf_lane_limits.py` re-checks the
+> **version-sensitive**, so `python harness/probe/vf_lane_limits.py` re-checks the
 > compile results on demand — re-run it after a toolchain bump rather than
 > trusting this text.
 
@@ -83,14 +83,14 @@ VMI-LAYOUT-CONTRACT: pto.vmi.extf has no registered layout support
   result#0=!pto.vmi.vreg<8xf32,  layout<num_groups = 8, slots = 8>>
 ```
 
-Reproduce with `common/probe/vf_lane_limits.py` (case `per_block_8lane`). So
+Reproduce with `harness/probe/vf_lane_limits.py` (case `per_block_8lane`). So
 `per_block` flattens its tile and reduces at 64 or 128 lanes, which is also what
 production does.
 
 ## Measured compile results
 
 On tilelang 0.1.15 + ptoas vmi 0.1.9, reproduced by
-`common/probe/vf_lane_limits.py`:
+`harness/probe/vf_lane_limits.py`:
 
 | VF body | result |
 |---|---|

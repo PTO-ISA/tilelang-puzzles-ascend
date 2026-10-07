@@ -36,8 +36,11 @@ DROP_FUNCS = {"demo_numbers", "test_correctness", "main"}
 # tools/make_puzzles.py, so a module-level copy of it is dead weight that can
 # drift from the filename.
 DROP_ASSIGNS = {"VARIANT"}
-# Names the harness provides, so a variant file must not import them any more.
-HARNESS_ONLY_MODULES = {"oracle", "sim", "demo"}
+# Modules only the removed code used. `oracle` is deliberately NOT here: some
+# torch reference implementations legitimately build on it (to_col_major,
+# cast_back), so whether it survives is decided by usage analysis like everything
+# else.
+HARNESS_ONLY_MODULES = {"sim", "demo"}
 
 
 def _spans_to_drop(tree: ast.Module, src_lines: list[str]) -> list[tuple[int, int]]:
@@ -107,13 +110,13 @@ def _apply(src: str, doc_pointer: str) -> str:
             rest = "\n".join(ln for i, ln in enumerate(lines2, 1) if i not in span)
             mod = getattr(node, "module", "") or ""
             forced_mod = (isinstance(node, ast.ImportFrom)
-                          and mod.startswith("common.")
+                          and mod.startswith("harness.")
                           and mod.split(".")[-1] in HARNESS_ONLY_MODULES)
             live = [
                 a for a in node.names
                 if not (
                     (a.asname or a.name.split(".")[0]) in HARNESS_ONLY_MODULES
-                    and isinstance(node, ast.ImportFrom) and mod == "common"
+                    and isinstance(node, ast.ImportFrom) and mod == "harness"
                 )
                 and re.search(rf"\b{re.escape(a.asname or a.name.split('.')[0])}\b", rest)
             ]

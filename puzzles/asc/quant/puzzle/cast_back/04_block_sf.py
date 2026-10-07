@@ -5,8 +5,8 @@ import tilelang
 import tilelang.ascend.language as T
 from tilelang.ascend.language import simd as S
 
-from common import status
-from common.consts import BLOCK_K, BLOCK_MN
+from harness import status
+from harness.consts import BLOCK_K, BLOCK_MN
 
 LANES = 64
 

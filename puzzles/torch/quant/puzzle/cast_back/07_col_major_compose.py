@@ -2,8 +2,8 @@
 
 import torch
 
-from common.consts import CANONICAL_G
-from common.math_ops import decode_packed_ue8m0, unpack_e2m1_bytes
+from harness.consts import CANONICAL_G
+from harness.math_ops import decode_packed_ue8m0, unpack_e2m1_bytes
 
 
 def torch_cast_back_compose(q_packed: torch.Tensor, sf_cm: torch.Tensor,

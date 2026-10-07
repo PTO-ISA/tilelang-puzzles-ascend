@@ -17,8 +17,11 @@ import math
 
 import torch
 
-from common.consts import E2M1_MAX, E4M3_MAX
-from common.math_ops import ceil_log2_exp, decode_ue8m0, unpack_e2m1_bytes
+from harness import oracle
+from harness.consts import (BLOCK_K, BLOCK_MN, CANONICAL_G, E2M1_MAX, E4M3_MAX)
+from harness.math_ops import ceil_log2_exp, decode_ue8m0, unpack_e2m1_bytes
+
+G = CANONICAL_G
 
 EXP_MASK = 0x7F800000
 
@@ -112,6 +115,57 @@ def _fp8_max_is_448() -> str:
 
 
 # (kernel, variant number) -> checks published in that variant's markdown
+def _granularity_error_table() -> str:
+    """Re-measure the round-trip error table published in the kernel READMEs.
+
+    Single-seed measurements of these numbers scatter by several tenths of a
+    point, which is how the first version of that table ended up claiming an
+    ordering that was not there. So this averages 8 seeds, the way the docs say
+    it does, and asserts the two claims the prose actually makes rather than the
+    printed digits.
+    """
+    import statistics
+
+    def sweep(fn, blk, fp4=False, **kw):
+        errs = []
+        for seed in range(8):
+            torch.manual_seed(seed)
+            x = torch.randn(64, 256)
+            q, sf = fn(x, **kw)
+            bm, bk = blk
+            if fp4:
+                vals = unpack_e2m1_bytes(q).float().view(64, 256)
+                back = vals * sf.repeat_interleave(bm, 0).repeat_interleave(bk, 1)
+            else:
+                back = oracle.cast_back(q, sf, blk, out_dtype=torch.float32)
+            errs.append((back - x).abs().max().item() / x.abs().max().item())
+        return statistics.mean(errs)
+
+    tok = sweep(oracle.per_token, (1, G), group_size=G)
+    chan = sweep(oracle.per_channel, (BLOCK_MN, 1), group_tokens=BLOCK_MN)
+    blk = sweep(oracle.per_block, (BLOCK_MN, BLOCK_K), block=(BLOCK_MN, BLOCK_K))
+    tok4 = sweep(oracle.per_token, (1, G), fp4=True, group_size=G, fmt="e2m1")
+    blk4 = sweep(oracle.per_block, (BLOCK_MN, BLOCK_K), fp4=True,
+                 block=(BLOCK_MN, BLOCK_K), fmt="e2m1")
+
+    # Claim 1: the axis does not matter -- same values per scale, same error.
+    assert abs(tok - chan) < 0.003, (
+        f"per_token {tok:.2%} and per_channel {chan:.2%} share 32 values per "
+        f"scale and should be indistinguishable"
+    )
+    # Claim 2: values per scale does matter, and more so for FP4.
+    assert blk > tok, f"per_block {blk:.2%} should exceed per_token {tok:.2%}"
+    gap_e4m3, gap_e2m1 = blk - tok, blk4 - tok4
+    assert gap_e2m1 > 3 * gap_e4m3, (
+        f"FP4 should widen the granularity gap several-fold, got "
+        f"{gap_e2m1 / gap_e4m3:.1f}x"
+    )
+    return (f"round-trip error over 8 seeds -- e4m3: per_token {tok:.1%}, "
+            f"per_channel {chan:.1%}, per_block {blk:.1%}; "
+            f"e2m1: per_token {tok4:.1%}, per_block {blk4:.1%}; "
+            f"granularity gap {gap_e2m1 / gap_e4m3:.1f}x wider at e2m1")
+
+
 _CHECKS = {
     ("cast_back", "03"): (_ue8m0_decode_table, _ue8m0_shift_mask_equivalence),
     ("cast_back", "06"): (_e2m1_code_table,),
@@ -121,9 +175,11 @@ _CHECKS = {
     ("per_token", "03"): (_ceil_log2_matches_math, _ue8m0_decode_table),
     ("per_token", "04"): (_e2m1_code_table, _e2m1_midpoint_rounds_away),
     ("per_token", "07"): (_pow2_multiply_exact_in_bf16,),
+    ("per_block", "01"): (_granularity_error_table,),
     ("per_block", "02"): (_ceil_log2_matches_math,),
     ("per_block", "03"): (_e2m1_code_table,),
     ("per_block", "05"): (_reciprocal_is_exponent_negation,),
+    ("per_channel", "01"): (_granularity_error_table,),
     ("per_channel", "02"): (_ue8m0_decode_table,),
     ("per_channel", "04"): (_bf16_keeps_the_exponent, _bf16_abs_is_a_mask),
 }

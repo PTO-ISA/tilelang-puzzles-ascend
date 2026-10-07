@@ -5,8 +5,8 @@ import tilelang
 import tilelang.ascend.language as T
 from tilelang.ascend.language import simd as S
 
-from common import status
-from common.consts import CANONICAL_G
+from harness import status
+from harness.consts import CANONICAL_G
 
 LANES = 64          # float32 lanes per register
 FP4_STRIP = 128     # FP4 values produced by one unpacking load

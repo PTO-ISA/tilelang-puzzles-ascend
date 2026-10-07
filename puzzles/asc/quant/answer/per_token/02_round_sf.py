@@ -1,65 +1,13 @@
-"""per_token 02 (ASC) -- the ceil-log2 bit trick, in vector registers.
-
-New config: `round_sf`. The scale becomes the smallest power of two that is at
-least `amax / 448`. See puzzles/torch/quant/answer/per_token/02_round_sf.py for
-why (exactness, and it makes the one-byte UE8M0 scale of variant 03 possible) and
-for the hand-checked arithmetic.
-
-### The whole thing is integer arithmetic on the exponent field
-
-A float32 is `sign | exponent(8) | mantissa(23)`. So:
-
-    biased = ((bits - 1) >> 23) + 1          == ceil(log2(v)) + 127
-
-The `- 1` before the shift is what turns floor into ceil. Floor would make the
-scale too small and let values saturate past 448.
-
-Then both the scale and its reciprocal are built by *placing an exponent*, with no
-division anywhere:
-
-    sf      = biased        << 23            ->  2^ceil_exp
-    sf_inv  = (254 - biased) << 23           ->  2^-ceil_exp
-
-`254 - biased` works out as `127 - ceil_exp`, i.e. the negated exponent, still
-biased. Negating an exponent field is exact; dividing would not be.
-
-Every one of these steps is a vector operation on 64 lanes at once, so 64 groups'
-scales are computed in about six instructions:
-
-    bits     = T.reinterpret(S.vmuls(clamped, 1/448), "uint32x64")
-    biased   = S.vadds(S.vshrs(S.vsub(bits, one), 23), 1)
-    sf       = T.reinterpret(S.vshls(biased, 23), "float32x64")
-    sf_inv   = T.reinterpret(S.vshls(S.vsub(S.vdup(254, T.uint32), biased), 23),
-                             "float32x64")
-
-Note `T.reinterpret` is free -- it renames the bits, it does not move them. The
-vector unit does integer and float operations on the same registers.
-
-### A simulator note
-
-These shifts are the reason this repo defaults to `msprof op simulator` rather
-than `cannsim`. `cannsim` **hangs** on `vshr`/`vshl`, so every variant from here
-on is unrunnable under that backend. See doc/known-issues.md.
-
-Run:  python puzzles/asc/quant/answer/per_token/02_round_sf.py
-"""
-
-import pathlib
-import sys
-
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[5]))
+"""per_token 02 (ASC). See doc/quant/per_token/02_round_sf.md"""
 
 import torch
 import tilelang
 import tilelang.ascend.language as T
 from tilelang.ascend.language import simd as S
 
-from common import oracle, sim, status
-from common.check import assert_fp8_near, assert_fp32_ulps
-from common.consts import CANONICAL_G, E4M3_CLAMP_MIN, E4M3_MAX
-from common.demo import randn_with_zero_row
+from harness import status
+from harness.consts import CANONICAL_G, E4M3_CLAMP_MIN, E4M3_MAX
 
-VARIANT = "asc/per_token/02_round_sf"
 LANES = 64
 PAIR = 128
 SF_PAD = 64
@@ -155,54 +103,3 @@ def launch(x: torch.Tensor):
     compile_kernel(hidden)(x, q, sf)
     status.assert_on_device("per_token 02", q, sf)
     return q, sf
-
-
-def demo_numbers() -> None:
-    import math
-
-    print("[demo] ceil(log2(v)) from the exponent field, no log2 instruction:")
-    for v in (1.0, 1.5, 2.0, 0.3):
-        bits = torch.tensor([v], dtype=torch.float32).view(torch.int32).item() & 0xFFFFFFFF
-        biased = ((bits - 1) >> 23) + 1
-        exp = biased - 127
-        assert exp == math.ceil(math.log2(v)), (v, exp)
-        print(f"[demo]   v={v:<5g} bits=0x{bits:08X} -> biased={biased} "
-              f"-> exp={exp:+d} -> 2^exp={2.0 ** exp:g}")
-    print("[demo] and the reciprocal is the negated exponent, not a divide:")
-    for exp in (0, 1, -1, 9):
-        biased = exp + 127
-        inv_bits = (254 - biased) << 23
-        inv = torch.tensor([inv_bits], dtype=torch.int32).view(torch.float32).item()
-        assert abs(inv - 2.0 ** -exp) < 1e-30, (exp, inv)
-        print(f"[demo]   (254 - {biased}) << 23 -> {inv:g} == 2^{-exp}")
-
-
-def test_correctness() -> None:
-    m, k = sim.sim_shapes()
-    torch.manual_seed(0)
-    x = randn_with_zero_row(m, k, torch.device("cpu"))
-    ref_q, ref_sf = oracle.per_token(x, CANONICAL_G, round_sf=True)
-    q, sf = launch(x.npu())
-    assert_fp32_ulps(sf.cpu(), ref_sf, f"sf({m},{k})", max_ulps=0)
-    assert_fp8_near(q.cpu(), ref_q, f"q({m},{k})")
-    mant = sf.cpu().view(torch.int32) & 0x7FFFFF
-    assert int(mant.abs().max()) == 0, "every scale must be an exact power of two"
-    print(f"[check] shape=({m},{k}) bit-exact scales, all powers of two")
-
-
-def main() -> int:
-    m, k = sim.sim_shapes()
-    if status.unimplemented(VARIANT, lambda: compile_kernel(k)):
-        return 0
-    sim.maybe_reexec()
-    sim.print_banner("asc", "per_token", "02_round_sf")
-
-    def body():
-        demo_numbers()
-        test_correctness()
-
-    return status.run_variant(VARIANT, body)
-
-
-if __name__ == "__main__":
-    sys.exit(main())

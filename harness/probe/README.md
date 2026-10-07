@@ -7,8 +7,8 @@ silently; a script does not.
 Run them after any tilelang / ptoas version bump:
 
 ```bash
-python common/probe/vf_lane_limits.py          # compile-only, ~10s
-python common/probe/vf_lane_limits.py --run    # + numerical check under the simulator
+python harness/probe/vf_lane_limits.py          # compile-only, ~10s
+python harness/probe/vf_lane_limits.py --run    # + numerical check under the simulator
 ```
 
 ## Measured 2026-10-07 on tilelang 0.1.15 + ptoas vmi 0.1.9

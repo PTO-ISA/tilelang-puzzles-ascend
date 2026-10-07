@@ -1,51 +1,13 @@
-"""per_block 02 (ASC) -- power-of-two scale, stored as a UE8M0 byte.
-
-Both configs from per_token 02 and 03, on the block layout. The arithmetic is
-identical -- see those files for the ceil-log2 exponent trick and the byte
-encoding -- so what is worth attention here is a detail of the *layout*.
-
-### The packing is still free, but for a different reason
-
-per_token had K/32 scales per row, packed two-per-int16 along K, and the packing
-was a host-side `.view()` because the pack axis was the fastest-varying one.
-
-per_block has only K/32 scales per *tile row*, and the kernel produces them one at
-a time -- one scale per tile. So the kernel writes single bytes at `Sf[mb, kb]`,
-and the int16 pairing is again just a reinterpretation of adjacent bytes. Still no
-vector work.
-
-The case where this stops being free is per_channel, whose scales pack along M --
-a direction that is not adjacent in memory, and which therefore needs a real
-interleave instruction. That is per_channel/02.
-
-### Only one lane matters
-
-The scale computation here runs on a vector whose lane 0 holds the tile maximum
-and whose other 63 lanes hold whatever was left in the register. That is fine --
-the arithmetic is lane-wise and only lane 0 is ever stored -- but it is worth
-noticing, because it means the same six-operation sequence serves a 64-group
-per_token row and a single-scale per_block tile without modification.
-
-Run:  python puzzles/asc/quant/answer/per_block/02_round_packed.py
-"""
-
-import pathlib
-import sys
-
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[5]))
+"""per_block 02 (ASC). See doc/quant/per_block/02_round_packed.md"""
 
 import torch
 import tilelang
 import tilelang.ascend.language as T
 from tilelang.ascend.language import simd as S
 
-from common import oracle, sim, status
-from common.check import assert_fp8_near, assert_same_bytes
-from common.math_ops import decode_packed_ue8m0
-from common.consts import BLOCK_K, BLOCK_MN, E4M3_CLAMP_MIN, E4M3_MAX
-from common.demo import randn_with_zero_row
+from harness import status
+from harness.consts import BLOCK_K, BLOCK_MN, E4M3_CLAMP_MIN, E4M3_MAX
 
-VARIANT = "asc/per_block/02_round_packed"
 LANES = 64
 
 
@@ -106,59 +68,3 @@ def launch(x: torch.Tensor):
     compile_kernel(hidden)(x, q, sf_bytes)
     status.assert_on_device("per_block 02", q, sf_bytes)
     return q, sf_bytes.view(torch.int16)
-
-
-def demo_numbers() -> None:
-    print("[demo] one scale per 32x32 tile, stored as one UE8M0 byte:")
-    for amax in (448.0, 3.5, 1.75):
-        v = amax / E4M3_MAX
-        bits = torch.tensor([v], dtype=torch.float32).view(torch.int32).item() & 0xFFFFFFFF
-        biased = ((bits - 1) >> 23) + 1
-        print(f"[demo]   tile amax={amax:<7g} -> byte {biased} -> 2^{biased - 127}")
-    print("[demo] the int16 pairing is a .view() on adjacent bytes -- the pack")
-    print("[demo] axis is the fastest-varying one. per_channel/02 is the case")
-    print("[demo] where it is not, and a real interleave is needed.")
-    print("[demo] a 32x32 bfloat16 tile is 1024 values.")
-    print("[demo] the tile is 32 wide, but there is no 32-lane vector type:")
-    print("[demo]   legal lane counts are {1, 2, 4, 8, 64, 128, 256}")
-    print("[demo]   32 float32 = 128 bytes = half a register: not a legal width")
-    print("[demo] and 8 lanes (one 32-byte slice) does not compile for bf16->f32:")
-    print("[demo]   VMI-LAYOUT-CONTRACT: pto.vmi.extf has no registered layout")
-    print("[demo]   support   (see common/probe/vf_lane_limits.py)")
-    print("[demo] so: flatten the tile and reduce 64 at a time, 16 steps,")
-    print("[demo] then reduce the 16 partials. Pick the width from the hardware")
-    print("[demo] and reshape the problem, not the other way round.")
-
-
-def test_correctness() -> None:
-    m, k = sim.sim_shapes()
-    assert m % BLOCK_MN == 0 and k % BLOCK_K == 0
-    torch.manual_seed(0)
-    x = randn_with_zero_row(m, k, torch.device("cpu"))
-    ref_q, ref_packed = oracle.per_block(x, (BLOCK_MN, BLOCK_K),
-                                        round_sf=True, packed=True)
-    q, packed = launch(x.npu())
-    assert_same_bytes(packed.cpu(), ref_packed, f"sf_packed({m},{k})")
-    assert_fp8_near(q.cpu(), ref_q, f"q({m},{k})")
-    _, ref_f32 = oracle.per_block(x, (BLOCK_MN, BLOCK_K), round_sf=True)
-    assert torch.equal(decode_packed_ue8m0(packed.cpu()), ref_f32)
-    print(f"[check] shape=({m},{k}) packed={tuple(packed.shape)} byte-exact, "
-          f"decodes to the float32 scales")
-
-
-def main() -> int:
-    m, k = sim.sim_shapes()
-    if status.unimplemented(VARIANT, lambda: compile_kernel(k)):
-        return 0
-    sim.maybe_reexec()
-    sim.print_banner("asc", "per_block", "02_round_packed")
-
-    def body():
-        demo_numbers()
-        test_correctness()
-
-    return status.run_variant(VARIANT, body)
-
-
-if __name__ == "__main__":
-    sys.exit(main())

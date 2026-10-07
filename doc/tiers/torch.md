@@ -4,7 +4,7 @@ Twenty-three exercises implementing the four quantization kernels in plain
 PyTorch, on the CPU. They run in under a second each and need no simulator.
 
 **Do these first.** Not because the maths is hard, but because the NPU tiers are
-checked against them: `common/oracle.py` is the single definition of numerical
+checked against them: `harness/oracle.py` is the single definition of numerical
 truth in this repo, and these files are its reference implementations. If you are
 unsure what a kernel is *supposed* to compute, the answer is here, not in the
 kernel.
@@ -85,4 +85,4 @@ the demos measure rather than assert them:
 
 ## Next
 
-`puzzles/asc/quant/doc/0.overview.md`, then the PTO tier.
+`doc/tiers/asc.md`, then the PTO tier.

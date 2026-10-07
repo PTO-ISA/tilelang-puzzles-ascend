@@ -1,46 +1,13 @@
-"""per_channel 03 (PTO) -- requantize per-token input to per-channel scales.
-
-Read the ASC variant, including its section on why the FP8 output is not bit-exact
-against torch (requantization creates exact ties) -- the same applies here.
-
-### PTO vs ASC: both broadcast patterns, and VMI improves one of them
-
-The kernel applies an input scale that varies along **K** and an output scale that
-varies along **M**, a few instructions apart. VMI helps with the first and not the
-second, which is exactly what the earlier variants predict:
-
-    dequantize (scale varies along K, so a broadcast is needed)
-        ASC  2 x S.vld(dist="BRC_B32") + S.vsel(lo, hi, mask_low)   3 ops
-        PTO  V.vload(..., dist_mode="brc", group=2)                 1 op
-
-    quantize (scale varies along M, one value per lane already)
-        ASC  S.vld(inv_ub[col])                                     1 op
-        PTO  V.vload(inv_ub[col], size=LANES)                       1 op
-
-So the saving lands entirely on the axis that needed emulating. This is the
-cleanest side-by-side in the ladder of *when* `group=` pays: it is not about
-reductions or broadcasts as such, it is about whether the scale's axis lines up
-with the register's lanes.
-
-Run:  python puzzles/pto/quant/answer/per_channel/03_requant_bf16.py
-"""
-
-import pathlib
-import sys
-
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[5]))
+"""per_channel 03 (PTO). See doc/quant/per_channel/03_requant_bf16.md"""
 
 import torch
 import tilelang
 import tilelang.ascend.language as T
 from tilelang.ascend.language import vmi as V
 
-from common import oracle, sim, status
-from common.check import assert_fp8_near, assert_fp32_ulps
-from common.consts import BLOCK_MN, CANONICAL_G, E4M3_CLAMP_MIN, E4M3_MAX
-from common.demo import randn_with_zero_row
+from harness import status
+from harness.consts import BLOCK_MN, CANONICAL_G, E4M3_CLAMP_MIN, E4M3_MAX
 
-VARIANT = "pto/per_channel/03_requant_bf16"
 LANES = 128
 
 
@@ -132,82 +99,3 @@ def launch(q_in: torch.Tensor, sf_in: torch.Tensor):
     compile_kernel(hidden)(q_in, sf_in, q, sf)
     status.assert_on_device("per_channel 03", q, sf)
     return q, sf
-
-
-def demo_numbers() -> None:
-    print("[demo] one kernel, both broadcast patterns:")
-    print("[demo]   dequantize: input scale varies along K (one per 32 channels)")
-    print("[demo]               ASC: 2 x BRC_B32 + vsel    PTO: one brc load")
-    print("[demo]   quantize  : output scale varies along M (one per channel)")
-    print("[demo]               both: one plain load, no broadcast")
-    print("[demo] so group= pays on the axis that needed emulating, and nowhere")
-    print("[demo] else. That is the whole rule.")
-    print("[demo] the cost of a scale is entirely about which axis it varies")
-    print("[demo] along relative to the register's lanes.")
-    print("[demo] the dequantized values need a scratch buffer, because the new")
-    print("[demo] per-channel amax is not known until all 32 tokens are done.")
-
-
-def test_correctness() -> None:
-    m, k = sim.sim_shapes()
-    torch.manual_seed(0)
-    x = randn_with_zero_row(m, k, torch.device("cpu")) * 3
-    q_in, sf_in = oracle.per_token(x, CANONICAL_G, round_sf=True)
-
-    # reference: dequantize, then an ordinary per_channel pass
-    dq = oracle.cast_back(q_in, sf_in, (1, CANONICAL_G), out_dtype=torch.float32)
-    ref_q, ref_sf = oracle.per_channel(dq, BLOCK_MN)
-
-    q, sf = launch(q_in.npu(), sf_in.npu())
-    assert_fp32_ulps(sf.cpu(), ref_sf, f"sf({m},{k})", max_ulps=0)
-    print(f"[check] shape=({m},{k}) scales are bit-exact vs torch")
-
-    # The FP8 values are NOT bit-exact here, and the reason is worth reporting
-    # rather than tolerating silently: requantizing input that already sits on
-    # the FP8 grid produces exact ties. See the docstring section.
-    d = (q.cpu().view(torch.uint8).int() - ref_q.view(torch.uint8).int()).abs()
-    n_diff, worst = int((d > 0).sum()), int(d.max())
-    print(f"[check] FP8 codes differing from torch: {n_diff}/{d.numel()} "
-          f"({n_diff / d.numel():.1%}), worst difference {worst} code")
-    assert worst <= 1, (
-        f"differences of more than one FP8 code ({worst}) are not tie-breaking "
-        f"and indicate a real bug"
-    )
-    # and every difference must be a genuine tie: the exact product lands
-    # exactly halfway between two representable codes.
-    lo = torch.minimum(q.cpu().float(), ref_q.float())
-    hi = torch.maximum(q.cpu().float(), ref_q.float())
-    exact = dq / sf.cpu().repeat_interleave(BLOCK_MN, dim=0)
-    mid = (lo + hi) / 2
-    ties = ((d > 0) & torch.isclose(exact, mid, rtol=1e-6)).sum()
-    print(f"[check] of those, {int(ties)} are exact ties "
-          f"(the product is the midpoint of two FP8 codes)")
-    assert int(ties) == n_diff, (
-        "some differences are not ties, so this is not just tie-breaking"
-    )
-
-    b1 = oracle.cast_back(q_in, sf_in, (1, CANONICAL_G), out_dtype=torch.float32)
-    b2 = oracle.cast_back(q.cpu(), sf.cpu(), (BLOCK_MN, 1), out_dtype=torch.float32)
-    e1 = (b1 - x).abs().max().item() / x.abs().max().item()
-    e2 = (b2 - x).abs().max().item() / x.abs().max().item()
-    print(f"[check] error vs the original: after 1 quantization {e1:.1%}, "
-          f"after requantization {e2:.1%}")
-    assert e2 >= e1, "requantizing cannot recover precision"
-
-
-def main() -> int:
-    k = sim.sim_shapes()[1]
-    if status.unimplemented(VARIANT, lambda: compile_kernel(k)):
-        return 0
-    sim.maybe_reexec()
-    sim.print_banner("pto", "per_channel", "03_requant_bf16")
-
-    def body():
-        demo_numbers()
-        test_correctness()
-
-    return status.run_variant(VARIANT, body)
-
-
-if __name__ == "__main__":
-    sys.exit(main())

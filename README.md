@@ -33,11 +33,18 @@ Then work the puzzle versions, which are the answer files with the implementatio
 removed and the hint left in its place:
 
 ```bash
-python puzzles/asc/quant/puzzle/cast_back/01_e4m3_fp32sf.py     # prints TODO
+python -m harness.check asc/cast_back/01 --role puzzle          # prints TODO
 ```
 
-Reading order: `puzzles/torch/quant/doc/0.overview.md` →
-`puzzles/asc/quant/doc/0.overview.md` → `puzzles/pto/quant/doc/0.overview.md`.
+Variant files are not executable on their own -- they hold the kernel and nothing
+else. The harness supplies the shapes, the oracle and the assertions, which is why
+a variant file is ~60 lines rather than ~230.
+
+Reading order: `doc/tiers/torch.md` -> `doc/tiers/asc.md` -> `doc/tiers/pto.md`,
+then each kernel's `doc/quant/<kernel>/README.md` and its variant pages. Every
+variant page carries the algorithm, a worked example, the ASC and PTO code with a
+`PTO vs ASC` section, and what the harness checks -- so the prose sits next to the
+comparison it is making rather than inside a docstring.
 
 ## The ladder
 
@@ -74,15 +81,18 @@ re-launches itself under `msprof op simulator` (SoC `Ascend950PR_9599`), a
 cycle-accurate CPU model.
 
 ```bash
-python run_all.py --tier torch          # CPU, ~2 min
-python run_all.py --tier asc            # ~11 min
-python run_all.py --tier pto            # ~11 min
-python run_all.py --kernel per_token    # one kernel, all three tiers
-python run_all.py --role puzzle         # check the unsolved puzzles
+python -m harness.check                  # all 69 variants
+python -m harness.check torch            # one tier, ~1 min
+python -m harness.check asc              # ~11 min
+python -m harness.check per_token        # one kernel, all three tiers
+python -m harness.check asc/per_token/05 # one variant, streaming
+python -m harness.check pto_05           # shorthand: tier + variant number
+python -m harness.check --role puzzle    # check the unsolved puzzles
+python -m harness.check --list           # list ids without running them
 ```
 
 Knobs: `TLP_SIM_M`, `TLP_SIM_K`, `TLP_SIM_SOC`, `TLP_SIMULATOR`,
-`TLP_CPU_ONLY=1`. See `common/sim.py`.
+`TLP_CPU_ONLY=1`. See `harness/sim.py`.
 
 `cannsim` / `npusim` is selectable with `TLP_SIMULATOR=cannsim` but **hangs on
 `vshr`/`vshl`**, which every variant from `per_token/02` onward needs, so it
@@ -118,36 +128,42 @@ token groups).
 
 Simulator wall time, measured end to end including compilation:
 
-| variant | ASC | PTO |
-|---|---:|---:|
-| `cast_back/01_e4m3_fp32sf` | 28.2 s | 28.3 s |
-| `cast_back/02_fp32_out` | 28.3 s | 28.3 s |
-| `cast_back/03_packed_ue8m0` | 27.3 s | 28.3 s |
-| `cast_back/04_block_sf` | 28.4 s | 28.2 s |
-| `cast_back/05_per_channel_sf` | 27.1 s | 28.3 s |
-| `cast_back/06_fp4_e2m1` | 27.3 s | 29.2 s |
-| `cast_back/07_col_major_compose` | 29.3 s | 27.1 s |
-| `per_token/01_raw_fp32sf` | 31.4 s | 29.3 s |
-| `per_token/02_round_sf` | 29.4 s | 31.5 s |
-| `per_token/03_packed_ue8m0` | 29.3 s | 30.4 s |
-| `per_token/04_fp32_in_fp4_out` | 32.5 s | 29.4 s |
-| `per_token/05_col_major_sf` | 30.5 s | 30.4 s |
-| `per_token/06_split_requant` | **63.1 s** | **62.1 s** |
-| `per_token/07_bf16_fast_compose` | 31.5 s | 30.3 s |
-| `per_block/01_raw_32x32` | 20.0 s | 20.1 s |
-| `per_block/02_round_packed` | 20.1 s | 20.1 s |
-| `per_block/03_fp4_e2m1` | 19.0 s | 19.0 s |
-| `per_block/04_col_major_tma` | 20.1 s | 20.0 s |
-| `per_block/05_split_compose` | 30.4 s | 31.4 s |
-| `per_channel/01_raw_32tokens` | 19.0 s | 17.9 s |
-| `per_channel/02_round_packed_m` | 20.2 s | 19.0 s |
-| `per_channel/03_requant_bf16` | 19.0 s | 19.0 s |
-| `per_channel/04_compose` | 19.0 s | 19.0 s |
-| **whole tier** | **10.5 min** | **10.4 min** |
+| variant | torch | ASC | PTO |
+|---|---|---|---|
+| `cast_back/01_e4m3_fp32sf` | 4.8 s | 28.3 s | 28.3 s |
+| `cast_back/02_fp32_out` | 4.9 s | 28.5 s | 28.5 s |
+| `cast_back/03_packed_ue8m0` | 4.9 s | 28.4 s | 27.5 s |
+| `cast_back/04_block_sf` | 5.0 s | 27.5 s | 28.5 s |
+| `cast_back/05_per_channel_sf` | 4.9 s | 28.5 s | 27.6 s |
+| `cast_back/06_fp4_e2m1` | 4.8 s | 29.4 s | 28.5 s |
+| `cast_back/07_col_major_compose` | 4.9 s | 29.5 s | 28.5 s |
+| `per_token/01_raw_fp32sf` | 4.9 s | 32.7 s | 30.5 s |
+| `per_token/02_round_sf` | 4.9 s | 29.6 s | 30.8 s |
+| `per_token/03_packed_ue8m0` | 6.3 s | 30.9 s | 29.8 s |
+| `per_token/04_fp32_in_fp4_out` | 4.9 s | 31.6 s | 30.1 s |
+| `per_token/05_col_major_sf` | 4.9 s | 29.5 s | 30.6 s |
+| `per_token/06_split_requant` | 4.9 s | **64.3 s** | **61.2 s** |
+| `per_token/07_bf16_fast_compose` | 4.9 s | 30.5 s | 30.6 s |
+| `per_block/01_raw_32x32` | 4.9 s | 20.1 s | 20.2 s |
+| `per_block/02_round_packed` | 4.9 s | 20.2 s | 20.2 s |
+| `per_block/03_fp4_e2m1` | 4.9 s | 21.3 s | 19.3 s |
+| `per_block/04_col_major_tma` | 4.9 s | 20.1 s | 20.3 s |
+| `per_block/05_split_compose` | 5.0 s | 30.5 s | 30.5 s |
+| `per_channel/01_raw_32tokens` | 4.9 s | 18.1 s | 17.2 s |
+| `per_channel/02_round_packed_m` | 4.9 s | 19.2 s | 19.3 s |
+| `per_channel/03_requant_bf16` | 5.0 s | 19.3 s | 18.2 s |
+| `per_channel/04_compose` | 4.9 s | 19.2 s | 19.2 s |
+| **whole tier** | **1.9 min** | **10.6 min** | **10.4 min** |
 
 Everything is inside the 60 s per-variant target except `per_token/06`, which
 compiles and runs four kernel modes (`full`, `sf_only`, `cast_only`, `requant`) in
 one file; it is well inside the 180 s ceiling.
+
+`python -m harness.check --role puzzle` sweeps all 69 unsolved templates in
+**6.3 min** (69 TODO). An unimplemented variant costs ~5.7 s rather than ~30 s,
+because the harness traces the kernel on the host and short-circuits before
+launching the simulator — so working the puzzles does not mean waiting on a
+simulator for an answer you have not written yet.
 
 ### Numerical fidelity
 
@@ -191,21 +207,32 @@ explicitness.
 
 ```
 README.md
-doc/
+doc/                            all prose lives here, as rendered markdown
+  tiers/{torch,asc,pto}.md      what each tier is for, and how to read it
+  quant/<kernel>/README.md      the kernel: maths, variant index, GPU vs NPU
+  quant/<kernel>/NN_name.md     one page per variant, shared by all three tiers
   gpu-vs-npu.md                 the GPU comparison, consolidated
   pto-vs-asc.md                 the ASC/VMI comparison, with measurements
   vf-lane-widths-and-limits.md  register geometry; why 32 is not a legal width
   known-issues.md               toolchain limits, each with a repro script
-puzzles/<tier>/quant/
-  answer/<kernel>/NN_name.py    complete, documented, runnable
+puzzles/<tier>/quant/           code only -- no prose, no tests, no main
+  answer/<kernel>/NN_name.py    the kernel body and its host-side launch
   puzzle/<kernel>/NN_name.py    generated from the answer; implementation removed
-  doc/                          tier overview + per-kernel concept
-common/                         harness: oracle, checks, simulator launcher
+harness/                        everything that is not a kernel
+  check.py                      sweep a tier, kernel or variant; print a status table
+  spec.py                       one Variant record per variant, all three tiers
+  variants/<kernel>.py          the per-variant checks
+  doc_examples.py               re-verifies the numbers published in doc/quant/
+  oracle.py                     the torch reference every tier is compared against
+  asserts.py                    FP8 / ULP / byte-equality assertions
+  sim.py                        simulator launcher and the re-exec into $HOME
+  status.py                     the one contractual [status] line per variant
+  consts.py math_ops.py device.py demo.py
   probe/                        reproducible toolchain-limit probes
 tools/
   make_puzzles.py               regenerate puzzle/ from answer/ (--check in CI)
   vf_lines.py                   measure VF body size and operation counts
-run_all.py                      sweep a tier or kernel, print a status table
+  check_math.py                 lint every .md for GitHub LaTeX pitfalls
 docker/                         the container this was validated in
 third_party/tilelang            submodule, pinned to the validated commit
 ```
@@ -217,15 +244,15 @@ quietly computed its answer in PyTorch on the host, and ship a status table
 describing a toolchain that has since moved. Three mechanisms exist so neither can
 happen here:
 
-1. **`common/status.py` asserts results come back from the device.** A kernel
+1. **`harness/status.py` asserts results come back from the device.** A kernel
    variant either runs on the NPU or reports `XFAIL`; `launch()` is never allowed
-   to return a host-computed answer. `run_all.py` tallies `PASS`/`XFAIL`/`TODO`/
+   to return a host-computed answer. `harness/check.py` tallies `PASS`/`XFAIL`/`TODO`/
    `FAIL` separately and exits nonzero only on `FAIL`, so neither a documented
    toolchain limitation nor an unsolved exercise can masquerade as success.
-2. **`common/sim.py` requires an explicit verdict.** The simulator SIGSEGVs during
+2. **`harness/sim.py` requires an explicit verdict.** The simulator SIGSEGVs during
    teardown after the program exits; that specific case is tolerated, but a run
    that produced no `PASS`/`XFAIL` at all is a failure, not a pass.
-3. **Every documented toolchain limit has a script.** `common/probe/` reproduces
+3. **Every documented toolchain limit has a script.** `harness/probe/` reproduces
    each one, tagged with the version measured. Prose goes stale silently; a script
    does not.
 
@@ -243,8 +270,8 @@ after an upgrade, and one that works today is not guaranteed to keep working.
 So the limits are not written down as facts. Each one is a script:
 
 ```bash
-python common/probe/vf_lane_limits.py          # which VF bodies lower
-python common/probe/fp8_out_idx.py             # whether out_idx can allocate FP8
+python harness/probe/vf_lane_limits.py          # which VF bodies lower
+python harness/probe/fp8_out_idx.py             # whether out_idx can allocate FP8
 ```
 
 `vf_lane_limits.py` checks four bodies and prints what each one does. On the pinned
@@ -259,7 +286,7 @@ quantize kernels allocate their own outputs. It will print `YES` when that is
 fixed.
 
 After upgrading tilelang, ptoas or CANN: run both probes, then
-`python run_all.py` for each tier. `doc/known-issues.md` lists every limit with its
+`python -m harness.check` for each tier. `doc/known-issues.md` lists every limit with its
 verbatim diagnostic and the probe that reproduces it.
 
 ## References

@@ -15,7 +15,7 @@ Machine-readable summary lines look like::
     [status] variant=pto/per_token/01_raw_fp32sf result=PASS seconds=18.4
     [status] variant=pto/per_block/09_x result=XFAIL seconds=3.1 note=VMI-LAYOUT-CONTRACT
 
-``run_all.py`` parses those lines; nothing else in the output is contractual.
+``harness/check.py`` parses those lines; nothing else in the output is contractual.
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ TODO = "TODO"
 
 
 def emit(variant: str, result: str, seconds: float, note: str = "") -> None:
-    """Print the one line run_all.py parses."""
+    """Print the one line harness/check.py parses."""
     tail = f" note={note}" if note else ""
     print(f"[status] variant={variant} result={result} seconds={seconds:.1f}{tail}")
 

@@ -1,75 +1,13 @@
-"""per_block 01 (PTO) -- one scale per 32x32 tile, eight steps instead of sixteen.
-
-Read the ASC variant for the two-level reduction and, importantly, for why
-neither 32 nor 8 lanes is usable here (32 is not a legal vector width; an 8-lane
-bfloat16-to-float32 convert fails with `VMI-LAYOUT-CONTRACT`).
-
-### PTO vs ASC: the reduction loop is half as long
-
-ASC's widening load produces 64 float32 lanes, so a 1024-value tile is 16
-reduction steps. VMI has a 128-lane logical float32, and one convert reaches it:
-
-    ASC: S.vcvt(S.vld(flat_x[c], dist="UNPK_B16"), T.float32)   ->  64 lanes
-    PTO: V.vcvt(V.vload(flat_x[c], size=128), "float32")        -> 128 lanes
-
-So the same work is 8 steps rather than 16, and the partial-maxima buffer is half
-the size. Nothing clever is going on -- it is the same "width is an argument"
-property as everywhere else, applied to a reduction. ASC *could* process 128
-channels per iteration, but only by issuing two loads and two reduces and
-tracking two registers by hand, which is exactly what per_token's ASC files do.
-
-### A note on the accumulator
-
-Both files reduce into a UB scratch buffer and then reduce the partials. The
-alternative is to keep a running maximum in a register across the loop, which VMI
-supports through a register array:
-
-    acc = V.alloc_local((1,), V.vreg(128, T.float32))
-    acc[0] = V.vmax(acc[0], V.vabs(v, mask), mask)
-
-That needs `alloc_local` because **SIMD values are immutable** -- a plain value
-cannot be reassigned across loop iterations. Trying it gives
-
-    Immutable variable `acc` is used outside its defining region
-
-which is a confusing error for what is really "use a register array". The UB
-scratch version used here avoids the issue and makes the two-level structure
-visible, which is why it is the teaching form; production uses `alloc_local`.
-
-### What `tools/vf_lines.py` says, and why it understates this kernel
-
-per_block is the one kernel where PTO's *static* operation count comes out
-slightly **higher** than ASC's. That is a real property of the source -- VMI needs
-explicit `size=` and mask operands, and per_block's reduction is a whole-vector
-`group=1` reduce, so the segmented-operation advantage that drives the savings in
-per_token does not apply.
-
-It is also misleading as a measure of work. The count is of operations *written*,
-not operations *executed*: PTO reduces 128 lanes per iteration against ASC's 64,
-so it runs half as many iterations of the reduction loop and issues fewer
-instructions at runtime. A static count cannot see that.
-
-The honest summary for this kernel: VMI is not shorter here, it is wider.
-
-Run:  python puzzles/pto/quant/answer/per_block/01_raw_32x32.py
-"""
-
-import pathlib
-import sys
-
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[5]))
+"""per_block 01 (PTO). See doc/quant/per_block/01_raw_32x32.md"""
 
 import torch
 import tilelang
 import tilelang.ascend.language as T
 from tilelang.ascend.language import vmi as V
 
-from common import oracle, sim, status
-from common.check import assert_fp8_near, assert_fp32_ulps
-from common.consts import BLOCK_K, BLOCK_MN, E4M3_CLAMP_MIN, E4M3_MAX
-from common.demo import randn_with_zero_row
+from harness import status
+from harness.consts import BLOCK_K, BLOCK_MN, E4M3_CLAMP_MIN, E4M3_MAX
 
-VARIANT = "pto/per_block/01_raw_32x32"
 LANES = 128   # VMI reaches 128 float32 lanes in one logical vector
 
 
@@ -130,48 +68,3 @@ def launch(x: torch.Tensor):
     compile_kernel(hidden)(x, q, sf)
     status.assert_on_device("per_block 01", q, sf)
     return q, sf
-
-
-def demo_numbers() -> None:
-    print("[demo] a 32x32 bfloat16 tile is 1024 values.")
-    print("[demo] the tile is 32 wide, but there is no 32-lane vector type:")
-    print("[demo]   legal lane counts are {1, 2, 4, 8, 64, 128, 256}")
-    print("[demo]   32 float32 = 128 bytes = half a register: not a legal width")
-    print("[demo] and 8 lanes (one 32-byte slice) does not compile for bf16->f32:")
-    print("[demo]   VMI-LAYOUT-CONTRACT: pto.vmi.extf has no registered layout")
-    print("[demo]   support   (see common/probe/vf_lane_limits.py)")
-    print("[demo] so: flatten the tile and reduce at the widest legal width.")
-    print("[demo]   ASC: its widening load gives 64 float32 lanes -> 16 steps")
-    print("[demo]   PTO: one convert reaches 128 float32 lanes   ->  8 steps")
-    print("[demo] pick the width from the hardware and reshape the problem,")
-    print("[demo] not the other way round.")
-
-
-def test_correctness() -> None:
-    m, k = sim.sim_shapes()
-    assert m % BLOCK_MN == 0 and k % BLOCK_K == 0
-    torch.manual_seed(0)
-    x = randn_with_zero_row(m, k, torch.device("cpu"))
-    ref_q, ref_sf = oracle.per_block(x, (BLOCK_MN, BLOCK_K))
-    q, sf = launch(x.npu())
-    assert_fp32_ulps(sf.cpu(), ref_sf, f"sf({m},{k})", max_ulps=1)
-    assert_fp8_near(q.cpu(), ref_q, f"q({m},{k})")
-    print(f"[check] shape=({m},{k}) sf={tuple(sf.shape)} matches the torch oracle")
-
-
-def main() -> int:
-    m, k = sim.sim_shapes()
-    if status.unimplemented(VARIANT, lambda: compile_kernel(k)):
-        return 0
-    sim.maybe_reexec()
-    sim.print_banner("pto", "per_block", "01_raw_32x32")
-
-    def body():
-        demo_numbers()
-        test_correctness()
-
-    return status.run_variant(VARIANT, body)
-
-
-if __name__ == "__main__":
-    sys.exit(main())

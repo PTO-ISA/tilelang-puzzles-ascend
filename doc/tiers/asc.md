@@ -18,7 +18,7 @@ measured table. An unsolved puzzle reports `TODO` in about 6 s, without paying f
 a simulator launch.
 
 Knobs: `TLP_SIM_M`, `TLP_SIM_K`, `TLP_SIMULATOR`, `TLP_CPU_ONLY=1`. See
-`common/sim.py`.
+`harness/sim.py`.
 
 ## Read `01` of each kernel properly
 
@@ -72,7 +72,7 @@ batching tokens so the transpose has something to transpose — the file says so
 ## Honest status
 
 Every variant in this tier runs on the device and is checked against the torch
-oracle. Nothing computes its answer on the host: `common/status.py` asserts that
+oracle. Nothing computes its answer on the host: `harness/status.py` asserts that
 results come back from `npu`, so a torch fallback cannot hide behind a `PASS`.
 
 Where a result is *not* bit-exact, the test says so and bounds it rather than
@@ -80,7 +80,7 @@ loosening a tolerance — `per_channel/03` is the one such case, and its docstri
 derives why (requantization produces exact ties).
 
 Toolchain limits hit while writing these are in `doc/known-issues.md`, each with a
-reproducing script in `common/probe/`.
+reproducing script in `harness/probe/`.
 
 ## A note on citations
 
@@ -94,5 +94,5 @@ README's References table. Nothing in this repo needs a sibling checkout.
 
 ## Next
 
-`puzzles/pto/quant/doc/0.overview.md` — the same 23 variants in logical VMI, and
+`doc/tiers/pto.md` — the same 23 variants in logical VMI, and
 `doc/pto-vs-asc.md` for what that changes.

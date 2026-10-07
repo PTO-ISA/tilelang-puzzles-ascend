@@ -2,8 +2,8 @@
 
 import torch
 
-from common.consts import CANONICAL_G
-from common.math_ops import unpack_e2m1_bytes
+from harness.consts import CANONICAL_G
+from harness.math_ops import unpack_e2m1_bytes
 
 
 def torch_cast_back_fp4(q_packed: torch.Tensor, sf: torch.Tensor,

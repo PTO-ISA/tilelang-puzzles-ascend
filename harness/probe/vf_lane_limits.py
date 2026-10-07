@@ -3,8 +3,8 @@
 Compile-only by default (fast, no simulator). With --run it also launches the
 bodies that compiled and checks them numerically against torch.
 
-    python common/probe/vf_lane_limits.py
-    python common/probe/vf_lane_limits.py --run
+    python harness/probe/vf_lane_limits.py
+    python harness/probe/vf_lane_limits.py --run
 
 See README.md in this directory for the last recorded results.
 """

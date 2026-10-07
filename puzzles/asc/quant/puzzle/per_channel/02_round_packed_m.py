@@ -1,73 +1,13 @@
-"""per_channel 02 (ASC) -- UE8M0 packed along M, where packing finally costs work.
-
-New configs: `round_sf` and `use_packed_ue8m0` -- but packed along **M**, which
-production calls `sf_col_pack`. This is the variant that makes the packing
-interesting.
-
-### Why the pack axis is M here
-
-    per_token    sf is (M, K/32)     K/32 scales per row  -> pack along K
-    per_block    sf is (M/32, K/32)  one per tile         -> pack along K
-    per_channel  sf is (M/32, K)     only M/32 rows       -> pack along M
-
-In the first two, the pack axis was the fastest-varying one, so the "two bytes per
-int16" layout was a host-side `.view()` on adjacent bytes and the kernel did
-nothing. Here the two bytes that must share a word come from **different scale
-rows** -- m-group 2i and 2i+1 -- which are `hidden` bytes apart. Adjacent in the
-output, far apart in the input.
-
-### Interleaving two rows
-
-That is exactly what an interleave instruction does:
-
-    lo, hi = S.vintlv(row_2i, row_2i_plus_1)
-
-`S.vintlv` takes two vectors and returns two, with the elements alternating:
-`lo = [a0, b0, a1, b1, ...]`. On uint8 vectors that *is* the packed layout, so one
-instruction per 128 channels replaces what would otherwise be a byte-by-byte
-scatter.
-
-A width detail that costs a debugging session if missed: a uint8 vector load is
-**256 lanes**, so `lo` alone already carries the interleave of 128 channels from
-each row -- all 256 output bytes -- and `hi` interleaves whatever followed. The
-scale-byte rows are padded by 128 bytes so that oversized load cannot run into the
-next row. Reading the second result instead of discarding it, or forgetting the
-padding, produces output that is mostly right and wrong in about a third of its
-bytes, which is exactly the kind of bug a byte-exact test catches and an
-approximate one does not.
-
-The consequence for the loop structure: m-groups have to be processed **in pairs**,
-because a pair is what produces one packed row. That is why this variant requires
-M to be a multiple of 64 rather than 32, and why the test checks that an odd
-number of groups is rejected rather than silently mispacked.
-
-### The same interleave, used for something else earlier
-
-cast_back/06 used `S.vintlv(zero, x_bf16)` to *widen* bfloat16 to float32. Same
-instruction, completely different purpose -- interleaving with zeros builds wider
-elements; interleaving two real vectors packs narrower ones. Worth recognising,
-because the name says neither.
-
-Run:  python puzzles/asc/quant/answer/per_channel/02_round_packed_m.py
-"""
-
-import pathlib
-import sys
-
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[5]))
+"""per_channel 02 (ASC). See doc/quant/per_channel/02_round_packed_m.md"""
 
 import torch
 import tilelang
 import tilelang.ascend.language as T
 from tilelang.ascend.language import simd as S
 
-from common import oracle, sim, status
-from common.check import assert_fp8_near, assert_same_bytes
-from common.consts import BLOCK_MN, E4M3_CLAMP_MIN, E4M3_MAX, PACK_FACTOR
-from common.demo import randn_with_zero_row
-from common.math_ops import decode_packed_ue8m0_along_m
+from harness import status
+from harness.consts import BLOCK_MN, E4M3_CLAMP_MIN, E4M3_MAX, PACK_FACTOR
 
-VARIANT = "asc/per_channel/02_round_packed_m"
 LANES = 64
 BYTE_LANES = 128        # uint8 lanes per interleave step
 
@@ -162,51 +102,3 @@ def launch(x: torch.Tensor):
     compile_kernel(hidden)(x, q, sf_bytes)
     status.assert_on_device("per_channel 02", q, sf_bytes)
     return q, sf_bytes.view(torch.int16)
-
-
-def demo_numbers() -> None:
-    print("[demo] which axis the UE8M0 bytes pack along:")
-    print("[demo]   per_token   sf (M, K/32)     -> along K, adjacent, free")
-    print("[demo]   per_block   sf (M/32, K/32)  -> along K, adjacent, free")
-    print("[demo]   per_channel sf (M/32, K)     -> along M, `hidden` bytes apart")
-    print("[demo] so this is the one kernel where packing needs an instruction:")
-    print("[demo]   lo, hi = S.vintlv(row_2i, row_2i+1)   # [a0,b0,a1,b1,...]")
-    print("[demo] and m-groups must be processed in PAIRS, so M must be a")
-    print(f"[demo] multiple of {BLOCK_MN * PACK_FACTOR}, not {BLOCK_MN}.")
-    print("[demo] note cast_back/06 used the same vintlv to *widen* bf16->f32 by")
-    print("[demo] interleaving zeros. One instruction, two unrelated uses.")
-
-
-def test_correctness() -> None:
-    m, k = sim.sim_shapes()
-    m = max(m, BLOCK_MN * PACK_FACTOR)
-    if m % (BLOCK_MN * PACK_FACTOR):
-        m = (m // (BLOCK_MN * PACK_FACTOR) + 1) * BLOCK_MN * PACK_FACTOR
-    torch.manual_seed(0)
-    x = randn_with_zero_row(m, k, torch.device("cpu"))
-    ref_q, ref_packed = oracle.per_channel(x, BLOCK_MN, round_sf=True, packed=True)
-    q, packed = launch(x.npu())
-    assert_same_bytes(packed.cpu(), ref_packed, f"sf_packed({m},{k})")
-    assert_fp8_near(q.cpu(), ref_q, f"q({m},{k})")
-    _, ref_f32 = oracle.per_channel(x, BLOCK_MN, round_sf=True)
-    assert torch.equal(decode_packed_ue8m0_along_m(packed.cpu()), ref_f32)
-    print(f"[check] shape=({m},{k}) packed={tuple(packed.shape)} byte-exact, "
-          f"decodes back along M to the float32 scales")
-
-
-def main() -> int:
-    k = sim.sim_shapes()[1]
-    if status.unimplemented(VARIANT, lambda: compile_kernel(k)):
-        return 0
-    sim.maybe_reexec()
-    sim.print_banner("asc", "per_channel", "02_round_packed_m")
-
-    def body():
-        demo_numbers()
-        test_correctness()
-
-    return status.run_variant(VARIANT, body)
-
-
-if __name__ == "__main__":
-    sys.exit(main())
