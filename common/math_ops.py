@@ -100,3 +100,38 @@ def pack_e2m1_from_fp32(quant: torch.Tensor) -> torch.Tensor:
     h, w = quant.shape
     pair = nibbles.view(h, w // 2, 2)
     return (pair[..., 0] | (pair[..., 1] << 4)).view(torch.int8)
+
+
+def pack_ue8m0_along_m(e8m0: torch.Tensor) -> torch.Tensor:
+    """``(num_m, K) uint8`` -> ``(num_m/2, K) int16``, packing along **M**.
+
+    per_channel is the one kernel whose scales pack along the token axis rather
+    than the channel axis, because its scale array has one entry per *channel*
+    (K of them) and only M/32 rows -- so K is the long axis and there is nothing
+    to gain by packing along it.
+
+    Word ``[i, c]`` holds m-group ``2i``'s exponent in the low byte and m-group
+    ``2i + 1``'s in the high byte. On the NPU this is one ``vintlv`` (interleave)
+    of two loaded rows; see ``pack_sf_rows`` in ``per_channel_cast_asc.py``.
+    """
+    assert e8m0.shape[0] % PACK_FACTOR == 0, (
+        f"need an even number of m-groups to pack, got {e8m0.shape[0]}"
+    )
+    lo = e8m0[0::2].to(torch.int16)
+    hi = e8m0[1::2].to(torch.int16)
+    return lo | (hi << 8)
+
+
+def unpack_ue8m0_along_m(packed: torch.Tensor) -> torch.Tensor:
+    """``(num_m/2, K) int16`` -> ``(num_m, K) uint8``. Inverse of the above."""
+    wide = packed.to(torch.int32)
+    lo = (wide & 0xFF).to(torch.uint8)
+    hi = ((wide >> 8) & 0xFF).to(torch.uint8)
+    out = torch.empty((packed.shape[0] * 2, packed.shape[1]), dtype=torch.uint8)
+    out[0::2] = lo
+    out[1::2] = hi
+    return out
+
+
+def decode_packed_ue8m0_along_m(packed: torch.Tensor) -> torch.Tensor:
+    return decode_ue8m0(unpack_ue8m0_along_m(packed))

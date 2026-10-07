@@ -18,6 +18,7 @@ from .math_ops import (
     decode_ue8m0,
     inv_pow2_from_exp,
     pack_e2m1_from_fp32,
+    pack_ue8m0_along_m,
     pack_ue8m0_row_major,
     pow2_from_exp,
     unpack_e2m1_bytes,
@@ -96,7 +97,18 @@ def per_block(
     return out, sf
 
 
-def per_channel(x: torch.Tensor, group_tokens: int = 32, *, round_sf: bool = False):
+def per_channel(
+    x: torch.Tensor,
+    group_tokens: int = 32,
+    *,
+    round_sf: bool = False,
+    packed: bool = False,
+):
+    """One scale per channel, shared across ``group_tokens`` tokens.
+
+    With ``packed``, the UE8M0 bytes are fused along **M** rather than along the
+    channel axis -- see ``pack_ue8m0_along_m`` for why.
+    """
     m, k = x.shape
     assert m % group_tokens == 0
     grouped = x.view(m // group_tokens, group_tokens, k)
@@ -104,6 +116,10 @@ def per_channel(x: torch.Tensor, group_tokens: int = 32, *, round_sf: bool = Fal
     sf, sf_inv = _scale_from_amax(amax, "e4m3", round_sf=round_sf)
     quant = grouped.float() * sf_inv.unsqueeze(1)
     out = quant.view(m, k).to(torch.float8_e4m3fn)
+    if packed:
+        clamped = torch.clamp(amax, min=E4M3_CLAMP_MIN)
+        e8m0 = (ceil_log2_exp(clamped / E4M3_MAX) + 127).to(torch.uint8)
+        return out, pack_ue8m0_along_m(e8m0)
     return out, sf
 
 
