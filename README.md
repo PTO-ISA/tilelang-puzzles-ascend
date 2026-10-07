@@ -88,6 +88,22 @@ Knobs: `TLP_SIM_M`, `TLP_SIM_K`, `TLP_SIM_SOC`, `TLP_SIMULATOR`,
 `vshr`/`vshl`**, which every variant from `per_token/02` onward needs, so it
 cannot run most of the ladder. That is why msprof is the default.
 
+### Building the container
+
+The image is what everything above was validated in. The build copies the
+vendored tilelang into `/opt/tilelang` and installs it from source, so the
+submodule has to be checked out first:
+
+```bash
+git submodule update --init --recursive        # pins tilelang at 3d70ede
+docker build -f docker/Dockerfile -t tilelang-ascend-puzzles .
+```
+
+Base image `quay.io/ascend/cann:9.2.0-beta.2-950-ubuntu22.04-py3.12`. Inside the
+container, `tilelang-smoke` runs upstream tilelang's own Ascend test selection as
+an independent check that the toolchain itself is working, separately from this
+repo's ladder.
+
 Versions this repo was validated against, 2026-10-07:
 tilelang **0.1.15** (submodule `third_party/tilelang` @ `3d70ede`, branch
 `pto-dev`), ptoas vmi **0.1.9**, CANN **9.2.0-beta.2**, torch 2.9.0+cpu,
