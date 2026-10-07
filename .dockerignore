@@ -1,0 +1,14 @@
+**/.git
+**/.github
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/build
+**/.venv
+**/.cache
+**/.ccache
+**/npusim_*
+**/cannsim_*
+**/OPPROF_*

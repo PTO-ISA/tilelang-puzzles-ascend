@@ -1,0 +1,8 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+# CPU-simulator run artifacts (these land wherever the runner is invoked)
+npusim_*/
+cannsim_*/
+OPPROF_*/
+*.log
