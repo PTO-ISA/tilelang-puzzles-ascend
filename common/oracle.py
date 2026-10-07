@@ -1,4 +1,11 @@
-"""Compact torch oracles used by puzzle checkers (Ascend G=32 defaults)."""
+"""Torch oracles: the single definition of numerical truth for this repo.
+
+Every ASC and PTO kernel variant is checked against the function here that
+carries the same config. The torch tier of the ladder is where a student
+implements these by hand first; these versions are the reference answers.
+
+Ascend defaults throughout: quant group / block size 32, UE8M0 pack factor 2.
+"""
 
 import torch
 import torch.nn.functional as F
@@ -121,6 +128,93 @@ def cast_back(
         scale = sf
     scale = scale[: ceil_div(m, bm), : ceil_div(k, bk)]
     assert m % bm == 0 and k % bk == 0
+    # (M/bm, bm, K/bk, bk) already has its axes in memory order, so the scale
+    # broadcasts straight in and the result flattens back with no permute.
+    # (A trailing permute(0, 2, 1, 3) here is a layout bug: it is invisible when
+    # bm == 1, because permuting a size-1 axis cannot change the linear order,
+    # but it transposes the tile interior for every coarser block.)
     q_blocks = qf.view(ceil_div(m, bm), bm, ceil_div(k, bk), bk)
     out = q_blocks * scale.unsqueeze(1).unsqueeze(-1)
-    return out.permute(0, 2, 1, 3).contiguous().view(m, k).to(out_dtype)
+    return out.reshape(m, k).to(out_dtype)
+
+# ---------------------------------------------------------------------------
+# scale-factor layout
+# ---------------------------------------------------------------------------
+
+def to_col_major(sf: torch.Tensor) -> torch.Tensor:
+    """Row-major ``(num_m, num_k)`` scales -> the kernel-native transposed layout.
+
+    The GEMM that consumes these scales wants them TMA-aligned, which means the
+    kernel writes ``sf[k_block, m]`` and the host restores the public
+    ``(m, k_block)`` view with a ``.T``. Kernels that set
+    ``use_tma_aligned_col_major_sf`` produce this layout directly, which is why
+    they need an in-register transpose (see the per_token col-major variant).
+    """
+    return sf.T.contiguous()
+
+
+# ---------------------------------------------------------------------------
+# the sf_only / cast_only split
+# ---------------------------------------------------------------------------
+
+def per_token_sf_only(x, group_size=32, *, fmt="e4m3", round_sf=False, packed=False):
+    """Compute the scale factors and nothing else.
+
+    Production splits the kernel this way so a caller that only needs scales
+    (to size a later pass, say) does not pay for the quantized output.
+    """
+    _, sf = per_token(x, group_size, fmt=fmt, round_sf=round_sf, packed=packed)
+    return sf
+
+
+def per_token_cast_only(x, sf, group_size=32, *, fmt="e4m3", packed=False):
+    """Quantize using scales that are *given*, not computed.
+
+    There is no amax pass at all: the kernel loads the scale, takes a reciprocal,
+    and multiplies. That reciprocal is why ``cast_only`` is not always bit-identical
+    to the fused kernel on the same input. The fused path forms the inverse
+    directly from amax as ``max_value / amax``; ``cast_only`` only has the rounded
+    stored scale ``sf``, so it computes ``1 / sf``. Those two differ in the last
+    bit or two, which can flip an occasional FP8 code.
+
+    With ``round_sf`` the difference vanishes: a power-of-two scale is exact, and
+    its reciprocal is exact too (the kernel just negates the exponent field).
+    That is one practical reason production prefers power-of-two scales.
+    """
+    m, k = x.shape
+    g = group_size
+    assert k % g == 0
+    scale = decode_packed_ue8m0(sf) if packed else sf
+    sf_inv = 1.0 / scale
+    quant = (x.view(m, k // g, g).float() * sf_inv.unsqueeze(-1)).view(m, k)
+    return _cast_quant(quant, fmt)
+
+
+# ---------------------------------------------------------------------------
+# requant: dequantize by an input scale, then quantize again
+# ---------------------------------------------------------------------------
+
+def requant_per_token(
+    q_in,
+    sf_in,
+    group_size=32,
+    *,
+    in_fmt="e4m3",
+    in_packed=False,
+    fmt="e4m3",
+    round_sf=False,
+    packed=False,
+):
+    """Already-quantized input + its scales -> freshly quantized output.
+
+    This is production's ``in_config.with_sf`` path. The kernel does it in two
+    stages inside the VF: dequantize into a scratch UB buffer, then run the
+    ordinary amax/scale/quantize over that buffer. Doing it in one pass is not
+    possible because the amax of the dequantized values is not known until the
+    whole group has been dequantized.
+    """
+    x = cast_back(
+        q_in, sf_in, (1, group_size),
+        packed=in_packed, fp4=(in_fmt == "e2m1"), out_dtype=torch.float32,
+    )
+    return per_token(x, group_size, fmt=fmt, round_sf=round_sf, packed=packed)

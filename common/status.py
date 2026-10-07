@@ -26,6 +26,7 @@ import traceback
 PASS = "PASS"
 XFAIL = "XFAIL"
 FAIL = "FAIL"
+TODO = "TODO"
 
 
 def emit(variant: str, result: str, seconds: float, note: str = "") -> None:
@@ -76,6 +77,15 @@ def run_variant(variant: str, body, *, xfail_reason: str | None = None) -> int:
     start = time.time()
     try:
         body()
+    except NotImplementedError as exc:
+        # An unsolved puzzle is not a failure -- it just has not been written yet.
+        elapsed = time.time() - start
+        print(f"\n--- not implemented yet: {exc} ---")
+        print("Fill in the TODO above. The reference answer for this variant is the")
+        print("same file under answer/ instead of puzzle/, if you want to compare.")
+        emit(variant, TODO, elapsed)
+        print(TODO)
+        return 0
     except Exception as exc:  # noqa: BLE001 - we classify everything
         elapsed = time.time() - start
         note = _first_diagnostic(exc)
