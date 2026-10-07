@@ -122,3 +122,30 @@ def run_variant(variant: str, body, *, xfail_reason: str | None = None) -> int:
     emit(variant, PASS, elapsed)
     print(PASS)
     return 0
+
+
+def unimplemented(variant: str, probe) -> bool:
+    """Report TODO immediately if this variant's kernel is still a stub.
+
+    NPU variants relaunch themselves under the CPU simulator, which costs ~25s.
+    A student who has not written the kernel yet should not wait for that just to
+    be told the body is missing, so every NPU ``main()`` calls this first: it
+    traces the kernel on the host (no device needed) and, if that hits the
+    puzzle's own NotImplementedError marker, prints the TODO and returns True.
+
+    Any other exception returns False, so a genuine compile error is reported by
+    the normal path with its full diagnostic rather than being swallowed here.
+    """
+    try:
+        probe()
+    except NotImplementedError as exc:
+        if str(exc).startswith(f"{variant}: implement "):
+            print(f"--- not implemented yet: {exc} ---")
+            print("Fill in the TODO in the kernel body. The reference answer is the")
+            print("same path with answer/ instead of puzzle/.")
+            emit(variant, TODO, 0.0)
+            print(TODO)
+            return True
+    except Exception:  # noqa: BLE001 - let the real run surface and classify it
+        return False
+    return False

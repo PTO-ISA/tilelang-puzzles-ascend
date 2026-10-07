@@ -146,24 +146,13 @@ def compile_kernel(hidden: int, group_size: int = CANONICAL_G):
                 T.copy(Q[token, 0], q_ub)
                 T.copy(Sf[token, 0], sf_ub[0:num_groups])
 
-                with T.SimdVF():
-                    mask = V.create_mask(LANES, size=LANES)
-                    for strip in T.serial(hidden // LANES):
-                        col = strip * LANES
-                        group = strip * groups_per_strip
-
-                        # Load 64 FP8 values and widen. No distribution-mode
-                        # catalogue to consult: the convert says what it does.
-                        values = V.vcvt(V.vload(q_ub[col], size=LANES), "float32")
-
-                        # One load builds the whole scale vector: 64 lanes, two
-                        # segments, each broadcast from a consecutive scalar.
-                        # The ASC file needs two loads and a select for this.
-                        scale = V.vload(sf_ub[group], size=LANES, stride=1,
-                                        dist_mode="brc", group=groups_per_strip)
-
-                        scaled = V.vmul(values, scale, mask)
-                        V.vstore(V.vcvt(scaled, "bfloat16"), out_ub[col])
+                # TODO: open `with T.SimdVF():`; mask = V.create_mask(64,
+                #       size=64); loop strip over hidden//64; values =
+                #       V.vcvt(V.vload(q_ub[col], size=64), 'float32'); scale =
+                #       V.vload(sf_ub[group], size=64, stride=1, dist_mode='brc',
+                #       group=2) -- one load, no select; then V.vmul and
+                #       V.vstore(V.vcvt(scaled, 'bfloat16'), out_ub[col])
+                raise NotImplementedError("pto/cast_back/01_e4m3_fp32sf: implement cast_back")
 
                 T.copy(out_ub, Out[token, 0])
 
@@ -203,6 +192,11 @@ def test_correctness() -> None:
 
 
 def main() -> int:
+    # Fail fast on an unwritten kernel: tracing happens on the host, so there is
+    # no need to pay for a simulator launch to discover the body is missing.
+    m, k = sim.sim_shapes()
+    if status.unimplemented(VARIANT, lambda: compile_kernel(k)):
+        return 0
     sim.maybe_reexec()
     sim.print_banner("pto", "cast_back", "01_e4m3_fp32sf")
 

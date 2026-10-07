@@ -145,27 +145,14 @@ def compile_kernel(hidden: int, group_size: int = CANONICAL_G):
                 T.copy(Q[token, 0], q_ub)
                 T.copy(Sf[token, 0], sf_ub[0:num_groups])
 
-                with T.SimdVF():
-                    # Lanes 0-31 on, 32-63 off. Used to pick between the two
-                    # scales that a 64-lane strip straddles.
-                    mask_low = S.pset(32, "PAT_VL32")
-                    for strip in T.serial(hidden // LANES):
-                        col = strip * LANES
-                        group = strip * (LANES // group_size)   # 2 groups per strip
-
-                        # 64 FP8 bytes -> 64 float32 lanes, then convert.
-                        raw = S.vld(q_ub[col], dist="UNPK4_B8")
-                        values = S.vcvt(raw, T.float32)
-
-                        # Build the scale vector: lanes 0-31 get group's scale,
-                        # lanes 32-63 get the next group's.
-                        lo = S.vld(sf_ub[group], dist="BRC_B32")
-                        hi = S.vld(sf_ub[group + 1], dist="BRC_B32")
-                        scale = S.vsel(lo, hi, mask_low)
-
-                        scaled = S.vmul(values, scale)
-                        # Narrow to bfloat16 and pack on the way out.
-                        S.vsts(out_ub[col], S.vcvt(scaled, T.bfloat16), dist="PK_B32")
+                # TODO: open `with T.SimdVF():`; make a mask with S.pset(32,
+                #       'PAT_VL32'); loop strip over hidden//64; load 64 FP8
+                #       values with S.vld(q_ub[col], dist='UNPK4_B8') and S.vcvt
+                #       to float32; build the scale with two S.vld(...,
+                #       dist='BRC_B32') and S.vsel(lo, hi, mask_low); S.vmul;
+                #       store with S.vsts(..., S.vcvt(x, T.bfloat16),
+                #       dist='PK_B32')
+                raise NotImplementedError("asc/cast_back/01_e4m3_fp32sf: implement cast_back")
 
                 # UB -> GM.
                 T.copy(out_ub, Out[token, 0])
@@ -208,6 +195,11 @@ def test_correctness() -> None:
 
 
 def main() -> int:
+    # Fail fast on an unwritten kernel: tracing happens on the host, so there is
+    # no need to pay for a simulator launch to discover the body is missing.
+    m, k = sim.sim_shapes()
+    if status.unimplemented(VARIANT, lambda: compile_kernel(k)):
+        return 0
     sim.maybe_reexec()
     sim.print_banner("asc", "cast_back", "01_e4m3_fp32sf")
 
