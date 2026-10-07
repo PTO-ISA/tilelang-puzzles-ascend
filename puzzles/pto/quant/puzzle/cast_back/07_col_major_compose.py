@@ -45,15 +45,35 @@ argument*:
    all 128 lanes at once. ASC's `S.pset(32, "PAT_VL32")` is a 64-lane pattern from
    a fixed catalogue; there is no 128-lane form of it.
 
-### What the measurement says
+### What the measurement says -- including where it says "no difference"
 
 `python tools/vf_lines.py` counts vector operations per variant. Across cast_back
-PTO runs at about 79% of ASC's operation count, with the saving concentrated in
-exactly the variants where ASC had to emulate something -- FP4 (06) and this one.
-Source *lines* come out roughly equal, because VMI's mandatory `size=` and mask
-arguments make each call wider. Both numbers are worth knowing: the operation
-count is what the brevity claim is about, and the line count is the ergonomic
-price of VMI's explicitness.
+PTO runs at 80% of ASC's operation count (57 vs 71), but the saving is not spread
+evenly, and **this variant is a draw**: 14 operations each.
+
+That is worth understanding rather than glossing. The grouped scale load does
+replace ASC's two broadcasts -- but ASC hoists its shift-pattern setup out of the
+strip loop and then reuses it for *both* halves, so the per-half cost it pays is
+small. PTO's single-pass form avoids the duplication and pays for an extra
+128-lane setup instead. The two roughly cancel.
+
+Where the width advantage really shows is variant 06, which saves 8 of 16
+operations. The difference between the two cases: in 06 it is the *value* path
+that ASC has to split (128 FP4 values into two float32 registers, with the whole
+multiply-convert-store sequence duplicated), whereas here the thing being
+duplicated is just a two-instruction scale decode. VMI's "width is an argument"
+property pays in proportion to how much work sits inside the duplicated region.
+
+Source *lines* come out essentially equal across the kernel (85 vs 86), because
+VMI's mandatory `size=` and mask arguments make each call wider. Both numbers are
+worth knowing: the operation count is what the brevity claim is about, and the
+line count is the ergonomic price of VMI's explicitness.
+
+(A measurement note, since it would otherwise bias the comparison: the op count
+excludes bit reinterpretation, which emits no instruction. ASC spells it
+`T.reinterpret` and VMI spells it `V.vinterpret_cast`, so counting the VMI form
+alone would have penalised PTO for a purely notational difference -- it put this
+variant at +2 before the tool was corrected.)
 
 Run:  python puzzles/pto/quant/answer/cast_back/07_col_major_compose.py
 """
