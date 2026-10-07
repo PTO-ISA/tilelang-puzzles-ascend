@@ -1,11 +1,11 @@
 """Explicit per-variant run status.
 
-The problem this solves: in the predecessor repo a variant whose kernel failed to
-compile fell back to ``torch_*_cast(x.cpu())`` inside ``launch()`` and still
-printed ``PASS``. A host-emulated variant and a real NPU variant were
-indistinguishable by exit code, so ``PASS`` carried no information.
+The failure mode this exists to prevent: a variant whose kernel fails to compile
+quietly falls back to ``torch_*_cast(x.cpu())`` inside ``launch()`` and still
+prints ``PASS``. A host-emulated variant and a real NPU variant would then be
+indistinguishable by exit code, and ``PASS`` would carry no information at all.
 
-Here the rule is absolute: **a kernel variant either runs on the device or it
+So the rule here is absolute: **a kernel variant either runs on the device or it
 reports XFAIL.** No ``launch()`` may compute the answer on the host. A variant
 that cannot compile raises; the runner catches it, prints the verbatim compiler
 diagnostic, and records XFAIL.

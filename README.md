@@ -212,9 +212,10 @@ third_party/tilelang            submodule, pinned to the validated commit
 
 ## How this repo keeps itself honest
 
-The predecessor to this repo printed `PASS` for variants that had quietly fallen
-back to computing the answer in PyTorch on the host, and shipped a pass/fail table
-describing a toolchain two releases old. Three mechanisms exist to prevent that:
+A quantization ladder has two easy ways to lie: report `PASS` for a variant that
+quietly computed its answer in PyTorch on the host, and ship a status table
+describing a toolchain that has since moved. Three mechanisms exist so neither can
+happen here:
 
 1. **`common/status.py` asserts results come back from the device.** A kernel
    variant either runs on the NPU or reports `XFAIL`; `launch()` is never allowed
@@ -232,19 +233,34 @@ Puzzle files are generated from the answers by `tools/make_puzzles.py`, so the
 docstring, worked example and tests are literally the same text in both and
 `--check` fails if they drift.
 
-## Reading the predecessor's conclusions with care
+## These results are toolchain-specific
 
-[`tilelang-puzzles-ascend`](https://github.com/learning-chip/tilelang-puzzles-ascend) documented that a fused 128-lane per_token body could not
-compile (`VMI-UNSUPPORTED` on `pto.vmi.group_broadcast`) and fell back to host
-torch for every `per_block` variant and for `per_token` float32-input
-(`VMI-RESIDUAL-OP`), against ptoas 0.1.8.
+Every number and status in this README was measured on the versions pinned above.
+Which VF bodies lower is a property of the **toolchain**, not of the hardware, and
+it changes between releases in both directions — a body that fails today may lower
+after an upgrade, and one that works today is not guaranteed to keep working.
 
-**All of those work on 0.1.9.** The blocker was a formulation problem, not a
-toolchain wall. One real limit survives — an 8-lane bfloat16→float32 convert fails
-with `VMI-LAYOUT-CONTRACT` — and it is why `per_block` reduces over a flattened
-tile at 64 or 128 lanes instead of following the tile's 32-wide geometry.
+So the limits are not written down as facts. Each one is a script:
 
-`common/probe/vf_lane_limits.py` re-checks all four bodies on every run.
+```bash
+python common/probe/vf_lane_limits.py          # which VF bodies lower
+python common/probe/fp8_out_idx.py             # whether out_idx can allocate FP8
+```
+
+`vf_lane_limits.py` checks four bodies and prints what each one does. On the pinned
+versions three lower and one does not — an 8-lane bfloat16→float32 convert fails
+with `VMI-LAYOUT-CONTRACT`, which is why `per_block` reduces over a flattened tile
+at 64 or 128 lanes rather than following the tile's 32-wide geometry. If that probe
+ever reports it lowering, `per_block` can be simplified and
+`doc/vf-lane-widths-and-limits.md` needs updating.
+
+`fp8_out_idx.py` prints `out_idx float8 support: NO` today, which is why the
+quantize kernels allocate their own outputs. It will print `YES` when that is
+fixed.
+
+After upgrading tilelang, ptoas or CANN: run both probes, then
+`python run_all.py` for each tier. `doc/known-issues.md` lists every limit with its
+verbatim diagnostic and the probe that reproduces it.
 
 ## References
 
@@ -257,7 +273,6 @@ here depends on a sibling checkout.
 | their PTO/VMI port — the diff this repo's PTO-vs-ASC argument rests on | [PTO-ISA/TileKernels-PTO](https://github.com/PTO-ISA/TileKernels-PTO), commit `5395526` on branch `pto-demo` | `5395526` |
 | the tilelang fork with the Ascend / PTO backends | [PTO-ISA/tilelang](https://github.com/PTO-ISA/tilelang), branch `pto-dev` | `3d70ede` (this repo's `third_party/tilelang`) |
 | the PTO instruction specifications (`docs/PTO-micro-Instruction-SPEC.md`, `docs/PTO-vmi-Instruction-SPEC.md`) | [PTO-ISA/PTO-Gym](https://github.com/PTO-ISA/PTO-Gym) | — |
-| this repo's predecessor, whose conclusions are revisited above | [learning-chip/tilelang-puzzles-ascend](https://github.com/learning-chip/tilelang-puzzles-ascend) | — |
 
 When a kernel docstring names a file like `per_token_cast_asc.py` without further
 qualification, it means `tile_kernels/quant/per_token_cast_asc.py` in TileKernels

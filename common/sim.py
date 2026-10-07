@@ -86,8 +86,9 @@ def _verdict(out: str, returncode: int) -> int:
     Deliberately strict: a PASS must be present. The simulator is known to
     SIGSEGV during teardown *after* the program exits, and that specific case is
     tolerated -- but a run that produced no verdict at all is a failure, not a
-    pass. (The predecessor repo returned 0 whenever returncode was 0, which let
-    silent breakage through.)
+    pass. Trusting the subprocess return code alone would let silent breakage
+    through, because the teardown crash makes that code unreliable in both
+    directions.
     """
     if "\nFAIL" in out or out.strip().endswith("FAIL"):
         return 1

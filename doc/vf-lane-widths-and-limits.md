@@ -3,16 +3,11 @@
 Almost every structural decision in these kernels traces back to one number and
 one list.
 
-> **Supersedes** `doc/vmi_code_style_caveat.md` from the predecessor repo. That
-> document argued that VF bodies *must* stay verbose because the fused form would
-> not compile. On the toolchain this repo pins, the fused form compiles and is
-> numerically exact, so the argument no longer holds. The parts of it that are
-> still true — the register geometry, the lane allowlist, the AVX-512 analogy —
-> are kept below, re-measured.
->
 > Everything here was measured on **tilelang 0.1.15 + ptoas vmi 0.1.9**,
-> 2026-10-07. `python common/probe/vf_lane_limits.py` re-checks the compile
-> results; re-run it after a toolchain bump rather than trusting this text.
+> 2026-10-07, the versions this repo pins. Which VF bodies lower is
+> **version-sensitive**, so `python common/probe/vf_lane_limits.py` re-checks the
+> compile results on demand — re-run it after a toolchain bump rather than
+> trusting this text.
 
 ## The number: 256 bytes
 
@@ -94,16 +89,21 @@ production does.
 
 ## Measured compile results
 
-| VF body | ptoas 0.1.8 (predecessor) | **ptoas 0.1.9 (this repo)** |
-|---|---|---|
-| fused 128-lane `vdiv` → grouped `vbrc`, bf16 in | fail, `VMI-UNSUPPORTED` group_broadcast | **ok, numerically exact** |
-| per_token float32 input, fused | fail, `VMI-RESIDUAL-OP` | **ok, bit-exact** |
-| per_block 32×32 as 8-lane bf16 chunks | fail, `VMI-RESIDUAL-OP` | **fail**, `VMI-LAYOUT-CONTRACT` on `extf` |
-| per_block 32×32 as 64-lane loads + `group=` | — | **ok** |
+On tilelang 0.1.15 + ptoas vmi 0.1.9, reproduced by
+`common/probe/vf_lane_limits.py`:
 
-Two of the three old failures are gone. The surviving one has a different
-diagnosis than it used to, which is the reason this document re-measures rather
-than quoting.
+| VF body | result |
+|---|---|
+| fused 128-lane `vdiv` → grouped `vbrc`, bf16 in | **ok**, numerically exact |
+| per_token float32 input, fused | **ok**, bit-exact |
+| per_block 32×32 as 8-lane bf16 chunks | **fail**, `VMI-LAYOUT-CONTRACT` on `extf` |
+| per_block 32×32 as 64-lane loads + `group=` | **ok** |
+
+Only the third row fails, and `per_block` is written around it. The probe exists
+because this table is a property of the toolchain rather than of the hardware: a
+body that does not lower today may lower after an upgrade, and one that lowers
+today is not guaranteed to keep doing so. Re-run it rather than trusting the
+table.
 
 ## Conversion keeps the lane count
 
@@ -144,8 +144,7 @@ you are already past that compiler.
 
 ## Does this mean VF code has to be verbose?
 
-No — which is the correction to the predecessor document. The shortest correct
-per_token body on this toolchain is:
+No. The shortest correct per_token body on this toolchain is:
 
 ```python
 with T.SimdVF():

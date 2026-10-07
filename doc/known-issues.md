@@ -146,13 +146,20 @@ wrong — again, mostly right.
 at the width they will be used at, which is why `per_block/05` creates `size=1`
 constants for its single-scale arithmetic.
 
-## Resolved since the predecessor repo
+## What this list does *not* contain
 
-The predecessor ([tilelang-puzzles-ascend](https://github.com/learning-chip/tilelang-puzzles-ascend), ptoas 0.1.8) fell back to host torch
-for every `per_block` variant and for `per_token` float32-input, reporting
-`VMI-RESIDUAL-OP`, and documented that a fused 128-lane body could not compile
-(`VMI-UNSUPPORTED` on `pto.vmi.group_broadcast`).
+No variant in this repo falls back to computing its result on the host. Every one
+of the 69 kernels runs on the device and is checked against the torch tier;
+`common/status.py` asserts that outputs come back from `npu`, so a host fallback
+cannot hide behind a `PASS`.
 
-**All of those work on 0.1.9.** `common/probe/vf_lane_limits.py` re-checks the two
-bodies in question on every run. Nothing in this repo computes a kernel result on
-the host.
+In particular, two bodies that are easy to assume are unsupported do work on this
+pin, and `common/probe/vf_lane_limits.py` re-checks both on every run:
+
+- a **fused 128-lane** per_token body — one vector carried through convert,
+  segmented reduce, divide and segmented broadcast, with no bounce through
+  Unified Buffer between the divide and the broadcast;
+- the same body with a **float32 input**.
+
+Which bodies lower is a property of the toolchain version, not of the hardware, so
+treat that probe's output as the answer rather than this document.
