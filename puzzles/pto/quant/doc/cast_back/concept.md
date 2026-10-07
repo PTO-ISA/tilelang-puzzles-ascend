@@ -31,7 +31,7 @@ Start with `01`.
 
 ## GPU vs NPU
 
-`cast_back_cuda.py` in TileKernels is 87 lines and its body is three statements:
+`cast_back_cuda.py` in [TileKernels](https://github.com/deepseek-ai/TileKernels) is 87 lines and its body is three statements:
 
 ```python
 for id in T.Parallel(sf_size_aligned):

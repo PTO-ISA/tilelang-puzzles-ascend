@@ -63,7 +63,8 @@ load.
 
 ### GPU vs NPU
 
-The CUDA version of this kernel (`cast_back_cuda.py` in TileKernels) is 87 lines
+The CUDA version of this kernel (`tile_kernels/quant/cast_back_cuda.py` in
+TileKernels, github.com/deepseek-ai/TileKernels) is 87 lines
 and its entire body is:
 
     for i, j in T.Parallel(TILE_M, TILE_K):

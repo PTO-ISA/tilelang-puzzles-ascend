@@ -80,7 +80,8 @@ is mandatory on nearly every call -- so the token count per line sometimes goes
 vector operations inside an NPU schedule".
 
 **Evidence at production scale.** Porting all four quant kernels from ASC to
-VMI (TileKernels commit 5395526, "Port four quant kernels to PTO/VMI") changed
+VMI (TileKernels-PTO commit 5395526, "Port four quant kernels to PTO/VMI";
+github.com/PTO-ISA/TileKernels-PTO) changed
 only the `T.SimdVF` bodies -- every `@T.prim_func` schedule and host contract
 stayed byte-identical -- and came to 312 insertions against 395 deletions:
 **83 fewer lines**, concentrated exactly in the mask/select/part= machinery

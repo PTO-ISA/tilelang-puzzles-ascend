@@ -10,7 +10,8 @@ E2M1_MAX = 6.0
 E4M3_CLAMP_MIN = 1e-4
 E2M1_CLAMP_MIN = 6.0 * (2**-126)
 
-# Ascend TileKernels fix the quant group / block size to 32.
+# The production Ascend kernels (github.com/deepseek-ai/TileKernels) fix the
+# quant group / block size to 32.
 CANONICAL_G = 32
 BLOCK_MN = 32
 BLOCK_K = 32

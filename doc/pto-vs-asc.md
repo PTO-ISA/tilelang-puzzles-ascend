@@ -24,7 +24,7 @@ size=128)`.
 
 ## The evidence at production scale
 
-`TileKernels-PTO` commit `5395526` ("Port four quant kernels to PTO/VMI") is the
+[TileKernels-PTO](https://github.com/PTO-ISA/TileKernels-PTO) commit `5395526` ("Port four quant kernels to PTO/VMI") is the
 whole argument in one diff. It touches exactly the four `*_asc.py` quant kernels,
 rewriting only their `T.SimdVF` bodies — every `@T.prim_func` schedule and host
 contract comes through byte-identical — and comes to:

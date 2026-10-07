@@ -32,7 +32,8 @@ in the two backends. The vector body is variant 01's, unchanged.
 
 That is worth seeing explicitly: the ASC/VMI choice is a choice of *vector
 instruction set*, not of programming model. Everything about tiling, buffering,
-DMA and core assignment is shared. Production's PTO port (TileKernels 5395526)
+DMA and core assignment is shared. Production's PTO port (TileKernels-PTO 5395526,
+github.com/PTO-ISA/TileKernels-PTO)
 touched only the `T.SimdVF` bodies for exactly this reason -- every schedule and
 host contract came through byte-identical.
 

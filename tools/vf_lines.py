@@ -17,7 +17,7 @@ flatter ASC, and reporting only ops would hide a real ergonomic cost of VMI.
 Caveat on magnitude: these teaching kernels are single-config, so each one spells
 the broadcast/select/pack machinery once. Production kernels branch over
 round_sf, packing, FP4, column-major and requant, which repeats that machinery
-per branch -- which is why the production port (TileKernels 5395526) came to 83
+per branch -- which is why the production port (TileKernels-PTO 5395526) came to 83
 net lines removed across four kernels, a much larger relative saving than
 anything visible here.
 

@@ -148,7 +148,7 @@ constants for its single-scale arithmetic.
 
 ## Resolved since the predecessor repo
 
-The predecessor (`tilelang-puzzles-ascend`, ptoas 0.1.8) fell back to host torch
+The predecessor ([tilelang-puzzles-ascend](https://github.com/learning-chip/tilelang-puzzles-ascend), ptoas 0.1.8) fell back to host torch
 for every `per_block` variant and for `per_token` float32-input, reporting
 `VMI-RESIDUAL-OP`, and documented that a fused 128-lane body could not compile
 (`VMI-UNSUPPORTED` on `pto.vmi.group_broadcast`).

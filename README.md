@@ -218,7 +218,7 @@ docstring, worked example and tests are literally the same text in both and
 
 ## Reading the predecessor's conclusions with care
 
-`tilelang-puzzles-ascend` documented that a fused 128-lane per_token body could not
+[`tilelang-puzzles-ascend`](https://github.com/learning-chip/tilelang-puzzles-ascend) documented that a fused 128-lane per_token body could not
 compile (`VMI-UNSUPPORTED` on `pto.vmi.group_broadcast`) and fell back to host
 torch for every `per_block` variant and for `per_token` float32-input
 (`VMI-RESIDUAL-OP`), against ptoas 0.1.8.
@@ -229,3 +229,20 @@ with `VMI-LAYOUT-CONTRACT` — and it is why `per_block` reduces over a flattene
 tile at 64 or 128 lanes instead of following the tile's 32-wide geometry.
 
 `common/probe/vf_lane_limits.py` re-checks all four bodies on every run.
+
+## References
+
+All external material is cited by public URL so this repo stands alone. Nothing
+here depends on a sibling checkout.
+
+| what | where | pinned at |
+|---|---|---|
+| the production quant kernels (`tile_kernels/quant/*_asc.py`, `*_cuda.py`) that this ladder's endpoint is drawn from | [deepseek-ai/TileKernels](https://github.com/deepseek-ai/TileKernels) | — |
+| their PTO/VMI port — the diff this repo's PTO-vs-ASC argument rests on | [PTO-ISA/TileKernels-PTO](https://github.com/PTO-ISA/TileKernels-PTO), commit `5395526` on branch `pto-demo` | `5395526` |
+| the tilelang fork with the Ascend / PTO backends | [PTO-ISA/tilelang](https://github.com/PTO-ISA/tilelang), branch `pto-dev` | `3d70ede` (this repo's `third_party/tilelang`) |
+| the PTO instruction specifications (`docs/PTO-micro-Instruction-SPEC.md`, `docs/PTO-vmi-Instruction-SPEC.md`) | [PTO-ISA/PTO-Gym](https://github.com/PTO-ISA/PTO-Gym) | — |
+| this repo's predecessor, whose conclusions are revisited above | [learning-chip/tilelang-puzzles-ascend](https://github.com/learning-chip/tilelang-puzzles-ascend) | — |
+
+When a kernel docstring names a file like `per_token_cast_asc.py` without further
+qualification, it means `tile_kernels/quant/per_token_cast_asc.py` in TileKernels
+(or its PTO port, where the context is VMI).
