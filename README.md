@@ -41,7 +41,8 @@ else. The harness supplies the shapes, the oracle and the assertions, which is w
 a variant file is ~60 lines rather than ~230.
 
 Reading order: `doc/tiers/torch.md` -> `doc/tiers/asc.md` -> `doc/tiers/pto.md`,
-then each kernel's `doc/quant/<kernel>/README.md` and its variant pages. Every
+then `doc/quant/README.md` for the maths all four kernels share, then each
+kernel's `doc/quant/<kernel>/README.md` and its variant pages. Every
 variant page carries the algorithm, a worked example, the ASC and PTO code with a
 `PTO vs ASC` section, and what the harness checks -- so the prose sits next to the
 comparison it is making rather than inside a docstring.
