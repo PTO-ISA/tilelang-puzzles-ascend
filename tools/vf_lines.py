@@ -109,6 +109,13 @@ def main() -> int:
     print("\nOps is the metric the PTO-vs-ASC claim is about. Lines runs the other")
     print("way on variants where VMI saves no operations, because size= and mask")
     print("arguments make each call wider -- a real ergonomic cost, worth seeing.")
+    print()
+    print("Caveat: both counts are STATIC -- operations written in the source, not")
+    print("operations executed. Where PTO uses a wider vector it also runs fewer")
+    print("loop iterations, and that does not show up here. per_block is the clear")
+    print("case: PTO's static count is slightly higher, but its reduction loop is")
+    print("8 iterations of 128 lanes against ASC's 16 of 64, so it issues fewer")
+    print("instructions at runtime. Read the per-variant docs, not just this table.")
     return 0
 
 

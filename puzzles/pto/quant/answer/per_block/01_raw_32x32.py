@@ -36,6 +36,21 @@ which is a confusing error for what is really "use a register array". The UB
 scratch version used here avoids the issue and makes the two-level structure
 visible, which is why it is the teaching form; production uses `alloc_local`.
 
+### What `tools/vf_lines.py` says, and why it understates this kernel
+
+per_block is the one kernel where PTO's *static* operation count comes out
+slightly **higher** than ASC's. That is a real property of the source -- VMI needs
+explicit `size=` and mask operands, and per_block's reduction is a whole-vector
+`group=1` reduce, so the segmented-operation advantage that drives the savings in
+per_token does not apply.
+
+It is also misleading as a measure of work. The count is of operations *written*,
+not operations *executed*: PTO reduces 128 lanes per iteration against ASC's 64,
+so it runs half as many iterations of the reduction loop and issues fewer
+instructions at runtime. A static count cannot see that.
+
+The honest summary for this kernel: VMI is not shorter here, it is wider.
+
 Run:  python puzzles/pto/quant/answer/per_block/01_raw_32x32.py
 """
 
