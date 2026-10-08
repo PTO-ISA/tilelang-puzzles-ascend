@@ -35,7 +35,7 @@ def compile_kernel(hidden: int, group_size: int = CANONICAL_G):
 
             for token in T.serial(num_tokens):
                 T.copy(X[token, 0], x_ub)
-                # --- BEGIN SOLUTION hint="float32 input needs no unpacking load: just S.vld(x_ub[col]). Use E2M1_MAX/E2M1_CLAMP_MIN instead of the e4m3 constants. For the store, there is no float32->e2m1 convert: deinterleave the two quantized halves with low, high = S.vdintlv(T.reinterpret(q0, 'uint16x128'), T.reinterpret(q1, 'uint16x128')), round to odd with S.vor(high, S.vmins(low, 1)), reinterpret to 'bfloat16x128', then S.vcvt to T.float4_e2m1fn and store with dist='PK4_B32'"
+                # --- BEGIN SOLUTION hint="float32 input needs no unpacking load: just S.vld(x_ub[col]). Use E2M1_MAX / E2M1_CLAMP_MIN instead of the e4m3 constants. For the store there is no float32 to e2m1 convert, so go via bfloat16 with round-to-odd: deinterleave the two quantized halves with low, high = S.vdintlv(T.reinterpret(q0, 'uint16x128'), T.reinterpret(q1, 'uint16x128')), then odd = S.vor(high, S.vmin(low, one_u16)) with one_u16 = S.vdup(1, T.uint16). Note the VECTOR S.vmin against a splatted 1, not the scalar S.vmins -- asc_min_scalar has no uint16 overload on this toolchain, so the scalar form does not compile (see doc/known-issues.md). Then reinterpret to 'bfloat16x128', S.vcvt to T.float4_e2m1fn and store with dist='PK4_B32'."
                 with T.SimdVF():
                     mask_low = S.pset(32, "PAT_VL32")
                     mask_all = S.pset(32, "PAT_ALL")

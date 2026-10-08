@@ -52,7 +52,7 @@ answer, reproduced here:
    group, which for 16-bit elements is 16 lanes, producing 8 results. Each result
    therefore covers `16 x 2 = 32` original values — exactly one quant group.
 4. `S.vintlv(zero, maxima)` widens those 8 bfloat16 results to float32 (the
-   zero-interleave trick from [cast_back/06](../cast_back/06_fp4_e2m1.md)), and a
+   zero-interleave trick from [cast_back/05](../cast_back/05_fp4_e2m1.md)), and a
    masked 8-element store puts them in `amax_ub`.
 
 So one 256-value strip produces 8 group maxima in about five vector operations. The

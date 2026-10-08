@@ -42,7 +42,7 @@ def compile_kernel(hidden: int, block: tuple = (BLOCK_MN, BLOCK_K)):
             for mb in T.serial(num_m_blocks):
                 for kb in T.serial(num_k_blocks):
                     T.copy(X[mb * bm, kb * bk], x_ub)
-                    # --- BEGIN SOLUTION hint="two-level reduction at 128 lanes, so 8 chunks not 16. (1) per chunk: v = V.vabs(V.vcvt(V.vload(flat_x[chunk*128], size=128), 'float32'), mask) then V.vstore(V.vcmax(v, mask, group=1), run_ub[chunk]). (2) barrier; reduce the 8 partials with V.vcmax(partials, V.create_mask(8, size=128), group=1), clamp at 1 lane, divide both ways, store scale and inverse. (3) barrier; inv = V.vbrc(V.vload(sf_ub[1], size=1), size=128), then reload each chunk, multiply and V.vstore the FP8 convert."
+                    # --- BEGIN SOLUTION hint="identical to variant 01's VF body -- the 8-chunk reduction at 128 lanes, the clamp, the divide both ways and the FP8 store are all unchanged, and you can paste it. That is the point: a tile scale is a single scalar, so writing it transposed costs nothing in the vector unit. The whole change is outside this region, in the prim_func signature (SfCm is (num_k_blocks, num_m_blocks)) and in the final T.copy(sf_ub[0:1], SfCm[kb, mb:mb + 1]) -- a swapped pair of indices. Compare per_token/05, where the scales live in vector lanes and the same config needs an index vector and a gather."
                     with T.SimdVF():
                         mask = V.create_mask(LANES, size=LANES)
                         mask_chunks = V.create_mask(num_chunks, size=LANES)

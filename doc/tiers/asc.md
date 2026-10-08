@@ -1,6 +1,6 @@
 # ASC tier — Ascend SIMD
 
-The same 23 variants as the torch tier, written against the Ascend SIMD vector IR
+The same 22 variants as the torch tier, written against the Ascend SIMD vector IR
 (`T.simd`, imported as `S`). These run on the chip — or, here, on a cycle-accurate
 CPU model of it.
 
@@ -70,7 +70,7 @@ Every kernel is `with T.Kernel(1)`. Production uses `T.Persistent` across 64 vec
 cores with double-buffered UB, and that is pure scheduling: it changes no number
 any of these kernels computes, and it would make the cycle-accurate simulation
 far slower without teaching anything about the vector unit. Where a variant's
-schedule *does* matter — `cast_back/04` hoisting the scale DMA, `per_token/05`
+schedule *does* matter — `cast_back/03` hoisting the scale DMA, `per_token/05`
 batching tokens so the transpose has something to transpose — the file says so.
 
 ## Honest status
@@ -98,5 +98,5 @@ README's References table. Nothing in this repo needs a sibling checkout.
 
 ## Next
 
-`doc/tiers/pto.md` — the same 23 variants in logical VMI, and
+`doc/tiers/pto.md` — the same 22 variants in logical VMI, and
 `doc/pto-vs-asc.md` for what that changes.

@@ -43,17 +43,20 @@ def compile_kernel(hidden: int, block: tuple = (BLOCK_MN, BLOCK_K)):
             for mb in T.serial(num_m_blocks):
                 for kb in T.serial(num_k_blocks):
                     T.copy(X[mb * bm, kb * bk], x_ub)
-                    # TODO: two-level reduction at 128 lanes, so 8 chunks not 16.
-                    #       (1) per chunk: v =
-                    #       V.vabs(V.vcvt(V.vload(flat_x[chunk*128], size=128),
-                    #       'float32'), mask) then V.vstore(V.vcmax(v, mask,
-                    #       group=1), run_ub[chunk]). (2) barrier; reduce the 8
-                    #       partials with V.vcmax(partials, V.create_mask(8,
-                    #       size=128), group=1), clamp at 1 lane, divide both
-                    #       ways, store scale and inverse. (3) barrier; inv =
-                    #       V.vbrc(V.vload(sf_ub[1], size=1), size=128), then
-                    #       reload each chunk, multiply and V.vstore the FP8
-                    #       convert.
+                    # TODO: stages (1) and (3) are variant 01's unchanged -- reuse
+                    #       them. Stage (2) is the new part: after V.vcmax reduces
+                    #       the partials and you clamp at 1 lane, do NOT divide.
+                    #       Take the exponent: bits =
+                    #       V.vinterpret_cast(V.vmul(clamped,
+                    #       V.vbrc(T.float32(1.0/E4M3_MAX), size=1), one1),
+                    #       'uint32'); biased = V.vadd(V.vshr(V.vsub(bits, one_u),
+                    #       shift), one_u) with one_u = V.vbrc(T.uint32(1),
+                    #       size=1) and shift = V.vbrc(T.uint32(23), size=1).
+                    #       Store the byte with one convert --
+                    #       V.vstore(V.vcvt(biased, 'uint8'), sf_ub[0]) -- and the
+                    #       inverse as
+                    #       V.vinterpret_cast(V.vshl(V.vsub(V.vbrc(T.uint32(254),
+                    #       size=1), biased), shift), 'float32').
                     raise NotImplementedError("pto/per_block/02_round_packed: implement per_block_cast")
                     T.copy(q_ub, Q[mb * bm, kb * bk])
                     T.copy(sf_ub[0:1], Sf[mb, kb:kb + 1])

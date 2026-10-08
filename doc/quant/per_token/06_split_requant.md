@@ -23,7 +23,7 @@ This is the first variant where a Python-level `if` does real work, and it is wo
 contrasting with a trap: `mode` is a Python string, so the condition is evaluated
 while the kernel is being built and only the taken branch is emitted. A condition
 on a `T.unroll` loop variable is **not** like that — see
-[cast_back/07](../cast_back/07_col_major_compose.md) and
+[cast_back/06](../cast_back/06_col_major_compose.md) and
 [known issues](../../known-issues.md).
 
 ## cast_only cannot reproduce the fused path exactly

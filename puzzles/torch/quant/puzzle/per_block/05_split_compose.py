@@ -19,7 +19,7 @@ def torch_per_block_cast_only(x: torch.Tensor, sf_cm: torch.Tensor,
                               block: tuple = (BLOCK_MN, BLOCK_K)):
     """Quantize with given packed column-major scales, with no amax pass."""
     # TODO: transpose sf_cm back with .T.contiguous(), unpack it as in
-    #       cast_back/03 (two bytes per int16, low byte first, then e << 23 viewed
+    #       cast_back/02 (two bytes per int16, low byte first, then e << 23 viewed
     #       as float32), then multiply each tile by 1/scale and cast. No reduction
     #       anywhere -- that is the whole point of cast_only.
     raise NotImplementedError("torch/per_block/05_split_compose: implement torch_per_block_cast_only")

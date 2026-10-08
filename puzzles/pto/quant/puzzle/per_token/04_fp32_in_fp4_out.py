@@ -47,13 +47,18 @@ def compile_kernel(hidden: int, group_size: int = CANONICAL_G):
 
             for token in T.serial(num_tokens):
                 T.copy(X[token, 0], x_ub)
-                # TODO: float32 input needs no convert on load. Use
-                #       E2M1_MAX/E2M1_CLAMP_MIN. For the store, write a
-                #       to_bf16_round_odd(x, lanes) macro using low, high =
-                #       V.vunzip(x, 'uint16') then V.vor(high, V.vmin(low,
-                #       V.vbrc(T.uint16(1), size=lanes))) reinterpreted to
-                #       'bfloat16'; then V.vcvt(..., 'float4_e2m1fn',
-                #       rounding='R') and store
+                # TODO: float32 input needs no convert on load. Use E2M1_MAX /
+                #       E2M1_CLAMP_MIN. The to_bf16_round_odd(x, lanes) macro is
+                #       ALREADY WRITTEN above this region -- read it: low, high =
+                #       V.vunzip(x, 'uint16') splits ONE value rather than pairing
+                #       two registers the way ASC's vdintlv must, then V.vor(high,
+                #       V.vmin(low, V.vbrc(T.uint16(1), size=lanes))) sets the
+                #       sticky bit so the second rounding cannot double-round.
+                #       Your job is the body: reduce amax with V.vcmax(...,
+                #       group=groups_per_pair), divide both ways, then per pair
+                #       multiply by the broadcast inverse, pass the result through
+                #       to_bf16_round_odd and V.vstore(V.vcvt(odd,
+                #       'float4_e2m1fn', rounding='R'), q_ub[col]).
                 raise NotImplementedError("pto/per_token/04_fp32_in_fp4_out: implement per_token_cast")
                 T.copy(q_ub, Q[token, 0])
                 T.copy(sf_ub[0:num_groups], Sf[token, 0])

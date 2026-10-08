@@ -45,7 +45,7 @@ def _reciprocal_is_exponent_negation() -> str:
 
 
 def _ue8m0_decode_table() -> str:
-    """doc/quant/cast_back/03: the stored byte e decodes to 2**(e-127)."""
+    """doc/quant/cast_back/02: the stored byte e decodes to 2**(e-127)."""
     for e in (105, 120, 127, 134):
         got = decode_ue8m0(torch.tensor([e], dtype=torch.uint8)).item()
         assert got == 2.0 ** (e - 127), f"byte {e}: {got} != {2.0 ** (e - 127)}"
@@ -53,7 +53,7 @@ def _ue8m0_decode_table() -> str:
 
 
 def _ue8m0_shift_mask_equivalence() -> str:
-    """doc/quant/cast_back/03: (word << shift) & 0x7F800000 extracts each byte."""
+    """doc/quant/cast_back/02: (word << shift) & 0x7F800000 extracts each byte."""
     word = 127 | (120 << 8)
     for shift, expect in ((23, 1.0), (15, 2.0 ** -7)):
         bits = ((word | (word << 16)) << shift) & EXP_MASK
@@ -63,7 +63,7 @@ def _ue8m0_shift_mask_equivalence() -> str:
 
 
 def _e2m1_code_table() -> str:
-    """doc/quant/cast_back/06: e2m1 has 8 magnitudes, the largest 6.0."""
+    """doc/quant/cast_back/04: e2m1 has 8 magnitudes, the largest 6.0."""
     codes = torch.arange(16, dtype=torch.int16)
     packed = (codes[0::2] | (codes[1::2] << 4)).to(torch.int8).view(1, -1)
     values = unpack_e2m1_bytes(packed)[0].tolist()
@@ -167,9 +167,9 @@ def _granularity_error_table() -> str:
 
 
 _CHECKS = {
-    ("cast_back", "03"): (_ue8m0_decode_table, _ue8m0_shift_mask_equivalence),
+    ("cast_back", "02"): (_ue8m0_decode_table, _ue8m0_shift_mask_equivalence),
+    ("cast_back", "05"): (_e2m1_code_table,),
     ("cast_back", "06"): (_e2m1_code_table,),
-    ("cast_back", "07"): (_e2m1_code_table,),
     ("per_token", "01"): (_fp8_max_is_448,),
     ("per_token", "02"): (_ceil_log2_matches_math, _reciprocal_is_exponent_negation),
     ("per_token", "03"): (_ceil_log2_matches_math, _ue8m0_decode_table),

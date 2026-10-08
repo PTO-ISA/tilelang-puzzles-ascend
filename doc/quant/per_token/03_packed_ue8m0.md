@@ -11,7 +11,7 @@ variant 03:  sf is uint8 exponent    1 byte per scale    (4x smaller)
 ```
 
 The stored byte is `exp + 127`, float32's exponent bias. See
-[cast_back/03](../cast_back/03_packed_ue8m0.md) for the decode direction and the
+[cast_back/02](../cast_back/02_packed_ue8m0.md) for the decode direction and the
 format's inability to represent zero.
 
 ## The convenient part
@@ -61,7 +61,7 @@ V.vstore(V.vcvt(biased, "uint8"), sf_ub[0])
 ```
 
 One operation, no lane bookkeeping, and the intent is legible. Same pattern as
-[cast_back/02](../cast_back/02_fp32_out.md)'s store: ASC selects an instruction by
+[cast_back/01](../cast_back/01_e4m3_fp32sf.md)'s store: ASC selects an instruction by
 width, VMI infers it from the buffer.
 
 Because `biased` *is* the encoding, the packed path wants the integer exponent

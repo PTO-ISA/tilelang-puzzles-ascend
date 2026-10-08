@@ -129,7 +129,7 @@ Unroll in Python when the body needs a trace-time decision:
 for half, values in enumerate((x_lo, x_hi)):  # correct
 ```
 
-This cost a wrong-answer debugging pass in `cast_back/07` — the output was close
+This cost a wrong-answer debugging pass in `cast_back/06` — the output was close
 to correct, which is the hard kind of wrong.
 
 ### A uint8 vector load is 256 lanes
@@ -149,7 +149,7 @@ constants for its single-scale arithmetic.
 ## What this list does *not* contain
 
 No variant in this repo falls back to computing its result on the host. Every one
-of the 69 kernels runs on the device and is checked against the torch tier;
+of the 66 kernels runs on the device and is checked against the torch tier;
 `harness/status.py` asserts that outputs come back from `npu`, so a host fallback
 cannot hide behind a `PASS`.
 

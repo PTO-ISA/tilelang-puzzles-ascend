@@ -82,7 +82,7 @@ scalar per tile — is free on *both*, because a single value has no layout.
 ## What does not differ
 
 The *maths* is identical, which is the point of having a torch tier at all:
-`puzzles/torch/quant/answer/` implements all 23 variants in plain PyTorch, and
+`puzzles/torch/quant/answer/` implements all 22 variants in plain PyTorch, and
 every NPU kernel is checked against it. If a torch variant is three lines and the
 NPU variant is eighty, the eighty are all hardware, not algorithm — and reading the
 pair makes that distinction concrete rather than rhetorical.

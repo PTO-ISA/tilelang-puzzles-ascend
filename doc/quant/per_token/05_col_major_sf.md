@@ -9,7 +9,7 @@ element that lane should receive, and then gather.
 
 The scales are written as `sf_cm[group, token]` instead of `sf[token, group]`, so
 that the GEMM consuming them can fetch one tile's scales contiguously with a bulk
-async copy. [cast_back/07](../cast_back/07_col_major_compose.md) showed that
+async copy. [cast_back/06](../cast_back/06_col_major_compose.md) showed that
 *consuming* this layout is free — a broadcast load does not care about stride.
 Producing it is where the work is.
 

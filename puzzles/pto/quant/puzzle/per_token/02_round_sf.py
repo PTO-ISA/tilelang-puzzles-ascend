@@ -70,15 +70,21 @@ def compile_kernel(hidden: int, group_size: int = CANONICAL_G):
                                  amax_ub[group])
                     T.simd.mem_bar("VST_VLD")
 
-                    # TODO: write a compute_scale(amax, lanes) macro: clamp with
-                    #       V.vmax against E4M3_CLAMP_MIN, bits =
+                    # TODO: the compute_scale(amax, lanes) macro is ALREADY
+                    #       WRITTEN above this region -- read it first, because
+                    #       the exponent trick it contains is the whole point of
+                    #       this variant: clamp with V.vmax, bits =
                     #       V.vinterpret_cast(V.vmul(clamped, 1/448), 'uint32'),
                     #       biased = V.vadd(V.vshr(V.vsub(bits, one), shift), one)
-                    #       with shift=23, then sf =
-                    #       vinterpret_cast(V.vshl(biased, shift), 'float32') and
-                    #       inv = vinterpret_cast(V.vshl(V.vsub(254, biased),
-                    #       shift), 'float32'); call it on V.vload(amax_ub[0],
-                    #       size=64) and store both
+                    #       with shift = 23, then sf =
+                    #       V.vinterpret_cast(V.vshl(biased, shift), 'float32')
+                    #       and inv the same with V.vsub(254, biased). Because VMI
+                    #       takes the lane count as an argument, that one macro
+                    #       serves every width, which is why it can be factored
+                    #       out at all -- the ASC file spells the arithmetic
+                    #       inline instead. Your job here is the three lines that
+                    #       use it: call it on V.vload(amax_ub[0], size=LANES) and
+                    #       V.vstore both results.
                     raise NotImplementedError("pto/per_token/02_round_sf: implement per_token_cast")
                     T.simd.mem_bar("VST_VLD")
 

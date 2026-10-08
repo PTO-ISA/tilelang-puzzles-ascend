@@ -42,15 +42,20 @@ def compile_kernel(hidden: int, block: tuple = (BLOCK_MN, BLOCK_K)):
             for mb in T.serial(num_m_blocks):
                 for kb in T.serial(num_k_blocks):
                     T.copy(X[mb * bm, kb * bk], x_ub)
-                    # TODO: two-level reduction. (1) for each of the 16 chunks of
-                    #       64, load from flat_x with dist='UNPK_B16', vcvt to
-                    #       float32, vabs, and store S.vcmax(..., mask_all) to
-                    #       run_ub[chunk] with dist='ONEPT_B32'. (2) barrier, then
-                    #       reduce the 16 partials with S.vcmax(S.vld(run_ub[0]),
-                    #       mask_vl16), clamp, divide both ways, store the scale
-                    #       and keep the inverse. (3) barrier, then reload each
-                    #       chunk, multiply by the broadcast inverse and store FP8
-                    #       with dist='PK4_B32'.
+                    # TODO: stages (1) and (2) are variant 01's with E2M1_MAX /
+                    #       E2M1_CLAMP_MIN in place of the e4m3 constants -- still
+                    #       S.vdiv both ways into sf_ub[0] and sf_ub[1]. Stage (3)
+                    #       is the new part: there is no float32 to e2m1 convert,
+                    #       so go via bfloat16 with round-to-odd, two chunks at a
+                    #       time (loop num_chunks//2). Multiply both chunks by the
+                    #       broadcast inverse, then low, high =
+                    #       S.vdintlv(T.reinterpret(q0, 'uint16x128'),
+                    #       T.reinterpret(q1, 'uint16x128')); odd = S.vor(high,
+                    #       S.vmin(low, one_u16)) forces the last mantissa bit
+                    #       when anything was dropped, so the second rounding
+                    #       cannot double-round; finally S.vsts(...,
+                    #       S.vcvt(T.reinterpret(odd, 'bfloat16x128'),
+                    #       T.float4_e2m1fn), dist='PK4_B32').
                     raise NotImplementedError("asc/per_block/03_fp4_e2m1: implement per_block_cast")
                     T.copy(q_ub, Q[mb * bm, kb * bk])
                     T.copy(sf_ub[0:1], Sf[mb, kb:kb + 1])

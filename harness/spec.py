@@ -9,8 +9,8 @@ and those are expressed as fields rather than as a separate code path.
 
 Each variant supplies exactly one ``body(ctx)`` function. It builds the inputs,
 invokes the tier's entry point through ``ctx``, and asserts. Writing it once per
-variant rather than once per (variant, tier) is what collapses 69
-``test_correctness`` functions into 23.
+variant rather than once per (variant, tier) is what collapses 66
+``test_correctness`` functions into 22.
 """
 
 from __future__ import annotations

@@ -79,7 +79,7 @@ Each appears first in one variant and then composes into later ones:
 |---|---|---|
 | `round_sf` | [per_token/02](per_token/02_round_sf.md) | round the scale up to a power of two, so applying it is exact |
 | packed UE8M0 | [per_token/03](per_token/03_packed_ue8m0.md) | store the scale as one exponent byte — 4x less scale memory |
-| FP4 e2m1 | [cast_back/06](cast_back/06_fp4_e2m1.md) | 4-bit values, two per byte, 8 magnitudes |
+| FP4 e2m1 | [cast_back/05](cast_back/05_fp4_e2m1.md) | 4-bit values, two per byte, 8 magnitudes |
 | column-major scales | [per_token/05](per_token/05_col_major_sf.md) | transpose the scale array for the consuming GEMM |
 | split modes | [per_token/06](per_token/06_split_requant.md) | `sf_only` / `cast_only` / `requant` as compile-time flags |
 | bfloat16 compute | [per_token/07](per_token/07_bf16_fast_compose.md) | 128 lanes per register instead of 64 |
@@ -95,7 +95,7 @@ bf16   1 sign | 8 exponent | 7 mantissa    float32's exponent range
 
 `ue8m0` cannot represent zero — every byte decodes to a power of two — which is why
 `clamp` matters and why a zero group stores the smallest exponent rather than 0.
-See [cast_back/03](cast_back/03_packed_ue8m0.md) for the decode.
+See [cast_back/02](cast_back/02_packed_ue8m0.md) for the decode.
 
 ## Further reading
 

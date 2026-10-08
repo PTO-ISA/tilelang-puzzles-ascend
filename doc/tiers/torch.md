@@ -59,7 +59,7 @@ The separation of concerns across tiers follows from this:
 That is why an ASC kernel can be read as a translation rather than a derivation:
 `S.vshrs(S.vsub(bits, one), 23)` is the line above, in hardware. The two FP4
 codecs are the only helpers that recur as named functions, and even then the body
-is explicit torch in the file — derived in `cast_back/06` (decode) and
+is explicit torch in the file — derived in `cast_back/05` (decode) and
 `per_token/04` (encode), and copied verbatim into the later FP4 variants so those
 solutions stay about their own config.
 
@@ -113,7 +113,7 @@ Because it makes the GPU-vs-NPU comparison concrete instead of rhetorical.
 
 Several of these files are three lines long and their NPU counterparts are eighty.
 `per_token/05` is one `.T`; the ASC version needs a lane-index vector and a gather.
-`cast_back/02` is one `.to()` argument; the NPU version changes the store
+`cast_back/01`'s output dtype is one `.to()` argument; the NPU version changes the store
 instruction. Reading the pair tells you exactly which part of the kernel's
 complexity is the algorithm (none of it) and which is the hardware (all of it).
 

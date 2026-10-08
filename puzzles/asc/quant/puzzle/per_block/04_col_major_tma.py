@@ -42,15 +42,18 @@ def compile_kernel(hidden: int, block: tuple = (BLOCK_MN, BLOCK_K)):
             for mb in T.serial(num_m_blocks):
                 for kb in T.serial(num_k_blocks):
                     T.copy(X[mb * bm, kb * bk], x_ub)
-                    # TODO: two-level reduction. (1) for each of the 16 chunks of
-                    #       64, load from flat_x with dist='UNPK_B16', vcvt to
-                    #       float32, vabs, and store S.vcmax(..., mask_all) to
-                    #       run_ub[chunk] with dist='ONEPT_B32'. (2) barrier, then
-                    #       reduce the 16 partials with S.vcmax(S.vld(run_ub[0]),
-                    #       mask_vl16), clamp, divide both ways, store the scale
-                    #       and keep the inverse. (3) barrier, then reload each
-                    #       chunk, multiply by the broadcast inverse and store FP8
-                    #       with dist='PK4_B32'.
+                    # TODO: identical to variant 01's VF body -- the two-level
+                    #       reduction, the clamp, the divide both ways and the FP8
+                    #       store are all unchanged, and you can paste it. That is
+                    #       the point of this variant: a tile scale is a single
+                    #       scalar, so writing it transposed costs nothing in the
+                    #       vector unit. The whole change is outside this region,
+                    #       in the prim_func signature (SfCm is (num_k_blocks,
+                    #       num_m_blocks)) and in the final T.copy(sf_ub[0:1],
+                    #       SfCm[kb, mb:mb + 1]) -- a swapped pair of indices.
+                    #       Compare per_token/05, where the scales live in vector
+                    #       lanes and the same config needs an index vector and a
+                    #       gather.
                     raise NotImplementedError("asc/per_block/04_col_major_tma: implement per_block_cast")
                     T.copy(q_ub, Q[mb * bm, kb * bk])
                     # the transposed index is the entire change

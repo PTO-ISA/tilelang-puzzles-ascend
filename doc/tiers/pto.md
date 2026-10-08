@@ -1,6 +1,6 @@
 # PTO tier — logical VMI
 
-The same 23 variants again, written against the PTO VMI vector IR (`T.vmi`,
+The same 22 variants again, written against the PTO VMI vector IR (`T.vmi`,
 imported as `V`). Same chip, same schedules, same results — a different vector
 instruction set.
 
@@ -40,7 +40,7 @@ this ladder show it clearly:
 | `per_token/01` | 4 masked reduces + 4 single-element stores → one `vcmax(..., group=4)`; 4 broadcast loads + 2 selects → one `vload(..., dist_mode="brc", group=4)` |
 | `per_token/02` | the scale computation becomes a **reusable macro** parameterised by lane count, which ASC structurally cannot write |
 | `per_token/07` | production's seven-operation deinterleave-pair-regroup dance for bfloat16 group maxima → `vcmax(..., group=8)` |
-| `cast_back/06` | FP4's 128 values stop being split into two 64-lane registers |
+| `cast_back/05` | FP4's 128 values stop being split into two 64-lane registers |
 
 `per_token/01` measures at 39 ASC vector operations against 19 for PTO.
 
@@ -52,7 +52,7 @@ Stated plainly, because it makes the rest trustworthy. Run:
 python tools/vf_lines.py
 ```
 
-`cast_back/03`, `cast_back/05`, `cast_back/07`, `per_token/05` and essentially all
+`cast_back/02`, `cast_back/04`, `cast_back/06`, `per_token/05` and essentially all
 of `per_block` and `per_channel` are draws, and several `per_block` variants come
 out *longer* in PTO because VMI requires explicit `size=` and mask operands.
 

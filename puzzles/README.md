@@ -13,9 +13,9 @@ puzzles/pto/quant/     PTO VMI       (T.vmi,  "V")     ) independent
 ## What depends on what
 
 ```
-            ┌─> asc/   (23 variants)
+            ┌─> asc/   (22 variants)
 torch/ ─────┤
-            └─> pto/   (23 variants)
+            └─> pto/   (22 variants)
 
 torch -> NPU : recommended, not required
 asc <-> pto  : no dependency in either direction
@@ -72,8 +72,8 @@ machinery. Then:
 
 | order | kernel | what it is for | variants |
 |---|---|---|---|
-| 1 | [`cast_back`](../doc/quant/cast_back/README.md) | the data path, no reduction | 7 |
-| 2 | [`per_token`](../doc/quant/per_token/README.md) | segmented reduction along the fast axis | 7 |
+| 1 | [`cast_back`](../doc/quant/cast_back/README.md) | the data path, no reduction | 6 |
+| 2 | [`per_token`](../doc/quant/per_token/README.md) | segmented reduction along the fast axis | 6 |
 | 3 | [`per_block`](../doc/quant/per_block/README.md) | 2-D reduction, and the lane-width rule | 5 |
 | 4 | [`per_channel`](../doc/quant/per_channel/README.md) | reduction along the slow axis | 4 |
 
@@ -94,6 +94,10 @@ Six variants carry most of the transferable ideas:
 | [`per_token/05`](../doc/quant/per_token/05_col_major_sf.md) | you cannot restride a register — index arithmetic and `vgather` |
 | [`per_block/01`](../doc/quant/per_block/01_raw_32x32.md) | pick the lane width from the hardware, reshape the problem to fit |
 | [`per_channel/02`](../doc/quant/per_channel/02_round_packed_m.md) | a vector load's width is a property of the register, not the request |
+
+Whether each variant makes a meaningful, incremental change is measured in
+[`doc/ladder-audit.md`](../doc/ladder-audit.md) -- solution size, delta against the
+previous variant, and which vector instructions each one actually introduces.
 
 ## The loop
 

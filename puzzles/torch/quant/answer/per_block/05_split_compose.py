@@ -25,10 +25,10 @@ def torch_per_block_sf_only(x: torch.Tensor, block: tuple = (BLOCK_MN, BLOCK_K))
 def torch_per_block_cast_only(x: torch.Tensor, sf_cm: torch.Tensor,
                               block: tuple = (BLOCK_MN, BLOCK_K)):
     """Quantize with given packed column-major scales, with no amax pass."""
-    # --- BEGIN SOLUTION hint="transpose sf_cm back with .T.contiguous(), unpack it as in cast_back/03 (two bytes per int16, low byte first, then e << 23 viewed as float32), then multiply each tile by 1/scale and cast. No reduction anywhere -- that is the whole point of cast_only."
+    # --- BEGIN SOLUTION hint="transpose sf_cm back with .T.contiguous(), unpack it as in cast_back/02 (two bytes per int16, low byte first, then e << 23 viewed as float32), then multiply each tile by 1/scale and cast. No reduction anywhere -- that is the whole point of cast_only."
     m, k = x.shape
     bm, bk = block
-    # Unpack as in cast_back/03, after undoing the column-major transpose.
+    # Unpack as in cast_back/02, after undoing the column-major transpose.
     wide = sf_cm.T.contiguous().to(torch.int32)
     lo = (wide & 0xFF).to(torch.uint8)
     hi = ((wide >> 8) & 0xFF).to(torch.uint8)

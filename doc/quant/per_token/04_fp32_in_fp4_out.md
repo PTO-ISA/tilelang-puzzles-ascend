@@ -49,7 +49,7 @@ v = 1.25 + 2^-20
 
 `quant_max` changes too: e2m1's largest magnitude is **6.0**, not 448, and the
 clamp floor becomes `6.0 * 2^-126`. See
-[cast_back/06](../cast_back/06_fp4_e2m1.md) for the full 16-code table.
+[cast_back/05](../cast_back/05_fp4_e2m1.md) for the full 16-code table.
 
 ## ASC — bit manipulation, fusing two halves
 

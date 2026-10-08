@@ -42,17 +42,18 @@ def compile_kernel(hidden: int, block: tuple = (BLOCK_MN, BLOCK_K)):
             for mb in T.serial(num_m_blocks):
                 for kb in T.serial(num_k_blocks):
                     T.copy(X[mb * bm, kb * bk], x_ub)
-                    # TODO: two-level reduction at 128 lanes, so 8 chunks not 16.
-                    #       (1) per chunk: v =
-                    #       V.vabs(V.vcvt(V.vload(flat_x[chunk*128], size=128),
-                    #       'float32'), mask) then V.vstore(V.vcmax(v, mask,
-                    #       group=1), run_ub[chunk]). (2) barrier; reduce the 8
-                    #       partials with V.vcmax(partials, V.create_mask(8,
-                    #       size=128), group=1), clamp at 1 lane, divide both
-                    #       ways, store scale and inverse. (3) barrier; inv =
-                    #       V.vbrc(V.vload(sf_ub[1], size=1), size=128), then
-                    #       reload each chunk, multiply and V.vstore the FP8
-                    #       convert.
+                    # TODO: stages (1) and (2) are variant 01's with E2M1_MAX /
+                    #       E2M1_CLAMP_MIN in place of the e4m3 constants -- still
+                    #       V.vdiv both ways into sf_ub[0] and sf_ub[1]. Stage (3)
+                    #       is the new part: there is no float32 to e2m1 convert,
+                    #       so go via bfloat16 with round-to-odd. Per chunk, after
+                    #       q = V.vmul(v, inv, mask): low, high = V.vunzip(q,
+                    #       'uint16') splits one value rather than pairing two
+                    #       registers, then odd = V.vinterpret_cast(V.vor(high,
+                    #       V.vmin(low, one_u16)), 'bfloat16') sets the sticky bit
+                    #       so the second rounding cannot double-round, and
+                    #       V.vstore(V.vcvt(odd, 'float4_e2m1fn', rounding='R'),
+                    #       flat_q[chunk*LANES]).
                     raise NotImplementedError("pto/per_block/03_fp4_e2m1: implement per_block_cast")
                     T.copy(q_ub, Q[mb * bm, kb * bk])
                     T.copy(sf_ub[0:1], Sf[mb, kb:kb + 1])

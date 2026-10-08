@@ -9,7 +9,7 @@ puzzles/asc/quant/     Ascend SIMD  (T.simd, "S")     <- the hardware
 puzzles/pto/quant/     PTO VMI      (T.vmi,  "V")     <- the comparison
 ```
 
-**23 variants per tier, same numbering throughout**, so `per_token/03` is the same
+**22 variants per tier, same numbering throughout**, so `per_token/03` is the same
 feature in all three and the files are directly diffable. Each variant adds exactly
 one production config.
 
@@ -48,7 +48,7 @@ telling you the command to use instead.
 An id is `tier/kernel/NN`, and any prefix of it selects a group:
 
 ```bash
-python -m harness.check                      # all 69
+python -m harness.check                      # all 66
 python -m harness.check asc                  # one tier (23)
 python -m harness.check asc/per_token        # one kernel on one tier (7)
 python -m harness.check asc/per_token/05     # exactly one variant
@@ -86,13 +86,13 @@ machinery.
 
 | | cast_back | per_token | per_block | per_channel |
 |---|---|---|---|---|
-| 01 | FP8 + FP32 scale | raw FP32 scale | raw, 32×32 tile | raw, reduce along M |
-| 02 | float32 output | `round_sf` (pow2) | `round_sf` + packed | packed along **M** |
-| 03 | packed UE8M0 | packed UE8M0 | FP4 output | requant + bf16 |
-| 04 | `sf_block=(32,32)` | fp32 in / FP4 out | column-major scales | composed |
-| 05 | `sf_block=(32,1)` | column-major scales | split + composed | |
-| 06 | FP4 input | `sf_only`/`cast_only`, requant | | |
-| 07 | col-major, composed | bf16 compute, composed | | |
+| 01 | FP8 + FP32 scale, either out dtype | raw FP32 scale | raw, 32×32 tile | raw, reduce along M |
+| 02 | packed UE8M0 | `round_sf` (pow2) | `round_sf` + packed | packed along **M** |
+| 03 | `sf_block=(32,32)` | packed UE8M0 | FP4 output | requant + bf16 |
+| 04 | `sf_block=(32,1)` | fp32 in / FP4 out | column-major scales | composed |
+| 05 | FP4 input | column-major scales | split + composed | |
+| 06 | col-major, composed | `sf_only`/`cast_only`, requant | | |
+| 07 | | bf16 compute, composed | | |
 
 Every production config is covered: `round_sf`, `use_packed_ue8m0` (both pack
 axes), `use_tma_aligned_col_major_sf`, FP4 e2m1, float32 input, `with_sf` requant,
@@ -113,7 +113,7 @@ re-launches itself under `msprof op simulator` (SoC `Ascend950PR_9599`), a
 cycle-accurate CPU model.
 
 ```bash
-python -m harness.check                  # all 69 variants
+python -m harness.check                  # all 66 variants
 python -m harness.check torch            # one tier, ~1 min
 python -m harness.check asc              # ~11 min
 python -m harness.check per_token        # one kernel, all three tiers
@@ -166,7 +166,7 @@ torch_npu 2.9.0.post6, Python 3.12.
 
 ## Measured status
 
-All 23 variants pass on all three tiers. Shapes are `M=32, K=128` by default;
+All 22 variants pass on all three tiers. Shapes are `M=32, K=128` by default;
 `per_token/07` uses `K=256` (the bfloat16 path steps 256 values) and the
 packed-along-M `per_channel` variants use `M=64` (packing needs an even number of
 token groups).
@@ -175,13 +175,12 @@ Simulator wall time, measured end to end including compilation:
 
 | variant | torch | ASC | PTO |
 |---|---|---|---|
-| `cast_back/01_e4m3_fp32sf` | 4.8 s | 28.3 s | 28.3 s |
-| `cast_back/02_fp32_out` | 4.9 s | 28.5 s | 28.5 s |
-| `cast_back/03_packed_ue8m0` | 4.9 s | 28.4 s | 27.5 s |
-| `cast_back/04_block_sf` | 5.0 s | 27.5 s | 28.5 s |
-| `cast_back/05_per_channel_sf` | 4.9 s | 28.5 s | 27.6 s |
-| `cast_back/06_fp4_e2m1` | 4.8 s | 29.4 s | 28.5 s |
-| `cast_back/07_col_major_compose` | 4.9 s | 29.5 s | 28.5 s |
+| `cast_back/01_e4m3_fp32sf` | 4.9 s | 32.0 s | 26.0 s |
+| `cast_back/02_packed_ue8m0` | 4.9 s | 28.4 s | 27.5 s |
+| `cast_back/03_block_sf` | 5.0 s | 27.5 s | 28.5 s |
+| `cast_back/04_per_channel_sf` | 4.9 s | 28.5 s | 27.6 s |
+| `cast_back/05_fp4_e2m1` | 4.8 s | 29.4 s | 28.5 s |
+| `cast_back/06_col_major_compose` | 4.9 s | 29.5 s | 28.5 s |
 | `per_token/01_raw_fp32sf` | 4.9 s | 32.7 s | 30.5 s |
 | `per_token/02_round_sf` | 4.9 s | 29.6 s | 30.8 s |
 | `per_token/03_packed_ue8m0` | 6.3 s | 30.9 s | 29.8 s |
@@ -198,14 +197,14 @@ Simulator wall time, measured end to end including compilation:
 | `per_channel/02_round_packed_m` | 4.9 s | 19.2 s | 19.3 s |
 | `per_channel/03_requant_bf16` | 5.0 s | 19.3 s | 18.2 s |
 | `per_channel/04_compose` | 4.9 s | 19.2 s | 19.2 s |
-| **whole tier** | **1.9 min** | **10.6 min** | **10.4 min** |
+| **whole tier** | **1.8 min** | **10.2 min** | **9.9 min** |
 
 Everything is inside the 60 s per-variant target except `per_token/06`, which
 compiles and runs four kernel modes (`full`, `sf_only`, `cast_only`, `requant`) in
 one file; it is well inside the 180 s ceiling.
 
-`python -m harness.check --role puzzle` sweeps all 69 unsolved templates in
-**6.3 min** (69 TODO). An unimplemented variant costs ~5.7 s rather than ~30 s,
+`python -m harness.check --role puzzle` sweeps all 66 unsolved templates in
+**6.3 min** (66 TODO). An unimplemented variant costs ~5.7 s rather than ~30 s,
 because the harness traces the kernel on the host and short-circuits before
 launching the simulator — so working the puzzles does not mean waiting on a
 simulator for an answer you have not written yet.
@@ -227,13 +226,13 @@ position is a genuine midpoint, so it still fails on a real defect.
 python tools/vf_lines.py
 ```
 
-Across the 23 paired variants, PTO uses about **three quarters** of ASC's static
+Across the 22 paired variants, PTO uses about **three quarters** of ASC's static
 vector-operation count — concentrated, not uniform:
 
 - **Large wins**: all of `per_token` (`group=` replacing mask-and-select — variant
-  01 is 39 operations against 19), `cast_back/06` and `per_token/07` (vector width,
+  01 is 39 operations against 19), `cast_back/05` and `per_token/07` (vector width,
   FP4 and bfloat16 paths).
-- **Draws**: `cast_back/03`, `/05`, `/07`, `per_token/05`, and essentially all of
+- **Draws**: `cast_back/02`, `/04`, `/06`, `per_token/05`, and essentially all of
   `per_block` and `per_channel`.
 - **PTO slightly longer**: several `per_block` variants, because VMI requires
   explicit `size=` and mask operands and there is nothing to factor out.
@@ -260,6 +259,7 @@ doc/                            all prose lives here, as rendered markdown
   pto-vs-asc.md                 the ASC/VMI comparison, with measurements
   vf-lane-widths-and-limits.md  register geometry; why 32 is not a legal width
   known-issues.md               toolchain limits, each with a repro script
+  ladder-audit.md               does each variant make a meaningful change? measured
 puzzles/<tier>/quant/           code only -- no prose, no tests, no main
   answer/<kernel>/NN_name.py    the kernel body and its host-side launch
   puzzle/<kernel>/NN_name.py    generated from the answer; implementation removed

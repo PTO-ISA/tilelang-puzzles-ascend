@@ -82,7 +82,7 @@ nothing here, and would be wrong for the right-looking reason.
 
 ## Closing the ladder
 
-Across the 23 variants the PTO-versus-ASC picture is not uniform, and that is the
+Across the 22 variants the PTO-versus-ASC picture is not uniform, and that is the
 most useful thing to take from it:
 
 | where VMI wins | why |

@@ -19,7 +19,7 @@ covers all of them:
 
 | `sf_block` | scale array | one scale per | variant |
 |---|---|---|---|
-| $(1, 32)$ | $(M, K/32)$ | row segment of 32 channels | 01, 02, 03, 06, 07 |
+| $(1, 32)$ | $(M, K/32)$ | row segment of 32 channels | 01, 03, 06, 07 |
 | $(32, 32)$ | $(M/32, K/32)$ | 2-D tile | 04 |
 | $(32, 1)$ | $(M/32, K)$ | channel, over 32 tokens | 05 |
 
@@ -31,13 +31,12 @@ UE8M0 exponent byte rather than a float32.
 
 | # | config added | the idea |
 |---|---|---|
-| [01](01_e4m3_fp32sf.md) | FP8 in, FP32 scale, bf16 out | the VF data path end to end |
-| [02](02_fp32_out.md) | float32 output | the output dtype picks the *store instruction* |
-| [03](03_packed_ue8m0.md) | packed UE8M0 scales | decode an exponent byte with a shift and a mask |
-| [04](04_block_sf.md) | `sf_block` $(32,32)$ | a coarser scale axis hoists the scale DMA out of the loop |
-| [05](05_per_channel_sf.md) | `sf_block` $(32,1)$ | per-channel scales: the broadcast disappears |
-| [06](06_fp4_e2m1.md) | FP4 (e2m1) input | 128 values per load, and widening without a convert |
-| [07](07_col_major_compose.md) | column-major scales, composed | consuming a transposed layout is free |
+| [01](01_e4m3_fp32sf.md) | FP8 in, FP32 scale, **either output dtype** | the VF data path end to end, and how the output dtype picks the *store instruction* |
+| [02](02_packed_ue8m0.md) | packed UE8M0 scales | decode an exponent byte with a shift and a mask |
+| [03](03_block_sf.md) | `sf_block` $(32,32)$ | a coarser scale axis hoists the scale DMA out of the loop |
+| [04](04_per_channel_sf.md) | `sf_block` $(32,1)$ | per-channel scales: the broadcast disappears |
+| [05](05_fp4_e2m1.md) | FP4 (e2m1) input | 128 values per load, and widening without a convert |
+| [06](06_col_major_compose.md) | column-major scales, composed | consuming a transposed layout is free |
 
 ## Running them
 
@@ -45,7 +44,7 @@ UE8M0 exponent byte rather than a float32.
 python -m harness.check torch/cast_back/01    # the reference, instant
 python -m harness.check asc/cast_back/01      # Ascend SIMD, under the simulator
 python -m harness.check pto/cast_back/01      # PTO VMI
-python -m harness.check cast_back             # all 7 variants, all 3 tiers
+python -m harness.check cast_back             # all 6 variants, all 3 tiers
 ```
 
 ## Why this kernel is the widest GPU-vs-NPU gap
@@ -76,7 +75,7 @@ best place to see what the difference consists of:
 - the loop nest has to be restructured when the scale granularity changes, because
   the DMA placement depends on it (04).
 
-And one place where they agree exactly: variant 05. Per-channel scales are a plain
+And one place where they agree exactly: variant 04. Per-channel scales are a plain
 contiguous load on the NPU and a plain index expression on the GPU, because nothing
 has to move between lanes or threads.
 

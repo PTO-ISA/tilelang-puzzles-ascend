@@ -33,7 +33,7 @@ fetch them with a single bulk async copy while the matrix tiles stream in. The
 `_tma` in the variant name is the GPU term for that bulk copy; the NPU equivalent
 is the DMA that `T.copy` emits.
 
-[cast_back/07](../cast_back/07_col_major_compose.md) shows the consuming side, where
+[cast_back/06](../cast_back/06_col_major_compose.md) shows the consuming side, where
 a broadcast load does not care about stride at all.
 
 ## PTO vs ASC

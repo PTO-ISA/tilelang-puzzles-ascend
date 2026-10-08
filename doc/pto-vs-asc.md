@@ -119,12 +119,12 @@ it wrong produces wrong numbers, not an error.
 This is the part that makes the rest credible.
 
 `python tools/vf_lines.py` prints static vector-operation counts per variant.
-Across all 23 paired variants PTO sits at roughly **three quarters** of ASC's
+Across all 22 paired variants PTO sits at roughly **three quarters** of ASC's
 operation count — but it is concentrated, not uniform:
 
 - **Large wins** — `per_token` throughout (`group=` replacing mask-and-select),
-  `cast_back/06` and `per_token/07` (width, FP4 and bfloat16).
-- **Draws** — `cast_back/03`, `cast_back/05`, `cast_back/07`, `per_token/05`, and
+  `cast_back/05` and `per_token/07` (width, FP4 and bfloat16).
+- **Draws** — `cast_back/02`, `cast_back/04`, `cast_back/06`, `per_token/05`, and
   essentially all of `per_block` and `per_channel`.
 - **PTO slightly longer** — several `per_block` variants, because VMI requires
   explicit `size=` and mask operands and those variants have nothing to factor out.
