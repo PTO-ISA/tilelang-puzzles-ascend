@@ -4,7 +4,11 @@ The same 23 variants as the torch tier, written against the Ascend SIMD vector I
 (`T.simd`, imported as `S`). These run on the chip — or, here, on a cycle-accurate
 CPU model of it.
 
-Do the torch tier first. Every kernel here is checked against it.
+The torch tier first is recommended — same algorithms, no hardware — but it is not
+required: every kernel here is checked against `harness/oracle.py`, a standalone
+reference that imports nothing from `puzzles/`. This tier also does not depend on
+the PTO one, and the reverse is equally true, so the two can be done in either
+order.
 
 ## Running one
 

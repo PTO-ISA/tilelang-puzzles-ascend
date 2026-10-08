@@ -4,8 +4,16 @@ The same 23 variants again, written against the PTO VMI vector IR (`T.vmi`,
 imported as `V`). Same chip, same schedules, same results — a different vector
 instruction set.
 
-Read the ASC tier first. These files are written as a comparison with it, and each
-one carries a **PTO vs ASC** section naming what changed and why.
+**You can start here.** This tier does not depend on the ASC one: every puzzle
+hint is self-contained VMI, and the checks run against `harness/oracle.py`, a
+standalone reference. For some people this is the better entry point — `group=`,
+`size=` and `dist_mode=` say what you want, where ASC's `BRC_B32` and
+`"float32x64"` require knowing what the machine provides.
+
+What *is* ordered is the comparison: each variant page carries a **PTO vs ASC**
+section naming what changed and why, and those read better with at least one ASC
+kernel behind you. They are commentary, not instructions — skipping them costs you
+the argument, not the kernel.
 
 ## Running one
 

@@ -64,12 +64,19 @@ A selector matches on any prefix of the id, so `pto_05` is every kernel's varian
 before paying for the run; a single id runs in-process so the simulator output
 streams, and several run one subprocess each.
 
-Reading order: `doc/tiers/torch.md` -> `doc/tiers/asc.md` -> `doc/tiers/pto.md`,
-then `doc/quant/README.md` for the maths all four kernels share, then each
-kernel's `doc/quant/<kernel>/README.md` and its variant pages. Every
-variant page carries the algorithm, a worked example, the ASC and PTO code with a
-`PTO vs ASC` section, and what the harness checks -- so the prose sits next to the
-comparison it is making rather than inside a docstring.
+**[`puzzles/README.md`](puzzles/README.md) is the implementation guide**: what to
+write in what order, and what actually depends on what. The short version is that
+the torch tier comes first (same algorithms, no hardware) and then **ASC and PTO
+can be done in either order** — they are two instruction sets over the same chip at
+different levels of abstraction, neither built on the other, so starting with PTO is
+a legitimate path and skips no prerequisite.
+
+For the prose: `doc/tiers/torch.md`, then either NPU tier; `doc/quant/README.md`
+for the maths all four kernels share; then each kernel's
+`doc/quant/<kernel>/README.md` and its variant pages. Every variant page carries
+the algorithm, a worked example, the ASC and PTO code with a `PTO vs ASC` section,
+and what the harness checks -- so the prose sits next to the comparison it is
+making rather than inside a docstring.
 
 ## The ladder
 

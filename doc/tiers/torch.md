@@ -3,11 +3,18 @@
 Twenty-three exercises implementing the four quantization kernels in plain
 PyTorch, on the CPU. They run in under a second each and need no simulator.
 
-**Do these first.** Not because the maths is hard, but because the NPU tiers are
-checked against them: `harness/oracle.py` is the single definition of numerical
-truth in this repo, and these files are its reference implementations. If you are
-unsure what a kernel is *supposed* to compute, the answer is here, not in the
-kernel.
+**Do these first** — a recommendation about learning, not a technical constraint.
+Each exercise is the same arithmetic as its NPU counterpart with none of the
+hardware: no lane widths, no distribution modes, no memory barriers. Getting the
+algorithm wrong here costs a second; getting it wrong inside a vector kernel costs
+thirty, and you will not know which of the two mistakes you made.
+
+All three tiers are checked against `harness/oracle.py`, which is a standalone
+PyTorch reference and imports nothing from `puzzles/`. So skipping this tier does
+not stop an NPU variant from being verified — it just means learning the algorithm
+and the vector surface at the same time. If you are unsure what a kernel is
+*supposed* to compute, the answer is in the oracle and in these exercises, not in
+the kernel.
 
 ## Working them
 
@@ -81,8 +88,11 @@ the demos measure rather than assert them:
 - `per_block/01` shows that coarse blocking costs little relative precision but
   loses values to **underflow** — the usual "one outlier ruins the tile" argument
   applies to integer quantization, not to FP8.
-- `per_block/03` shows FP4 widening the granularity gap about twentyfold.
+- `per_block/03` shows FP4 widening the granularity gap about fourfold.
 
 ## Next
 
-`doc/tiers/asc.md`, then the PTO tier.
+Either NPU tier, in either order: [`doc/tiers/asc.md`](asc.md) for the physical
+instruction set, [`doc/tiers/pto.md`](pto.md) for the logical one. They do not
+depend on each other — see [`puzzles/README.md`](../../puzzles/README.md) for why,
+and for the recommended order within a tier.
