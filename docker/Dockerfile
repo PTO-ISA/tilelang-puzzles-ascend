@@ -74,3 +74,5 @@ RUN curl -fsSL https://claude.ai/install.sh | bash \
 
 COPY docker/smoke_test.sh /usr/local/bin/tilelang-smoke
 RUN chmod +x /usr/local/bin/tilelang-smoke
+
+WORKDIR /workspace

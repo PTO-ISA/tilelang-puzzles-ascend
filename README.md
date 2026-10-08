@@ -110,6 +110,17 @@ git submodule update --init --recursive        # pins tilelang at 3d70ede
 docker build -f docker/Dockerfile -t tilelang-ascend-puzzles .
 ```
 
+Cursor and VS Code can open that same image as a dev container from
+[`.devcontainer/devcontainer.json`](.devcontainer/devcontainer.json). The repo
+root is bind-mounted at the image workdir, `/workspace`, so the editor shows
+the whole tree.
+
+The same mount from the shell:
+
+```bash
+docker run --rm -it -v "$PWD":/workspace tilelang-ascend-puzzles bash
+```
+
 Base image `quay.io/ascend/cann:9.2.0-beta.2-950-ubuntu22.04-py3.12`. Inside the
 container, `tilelang-smoke` runs upstream tilelang's own Ascend test selection as
 an independent check that the toolchain itself is working, separately from this

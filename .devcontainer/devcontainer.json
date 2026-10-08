@@ -1,0 +1,11 @@
+{
+  "name": "tilelang-ascend-puzzles",
+  "build": {
+    "dockerfile": "../docker/Dockerfile",
+    "context": "..",
+    "options": ["-t", "tilelang-ascend-puzzles"]
+  },
+  "workspaceFolder": "/workspace",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
+  "remoteUser": "root"
+}
