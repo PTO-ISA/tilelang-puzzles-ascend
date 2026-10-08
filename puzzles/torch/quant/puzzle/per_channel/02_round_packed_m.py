@@ -16,3 +16,6 @@ def torch_per_channel_cast_packed(x: torch.Tensor, group_tokens: int = BLOCK_MN)
     #       inv_pow2_from_exp(exp).unsqueeze(1); return
     #       pack_ue8m0_along_m((exp+127).to(uint8))
     raise NotImplementedError("torch/per_channel/02_round_packed_m: implement torch_per_channel_cast_packed")
+
+if __name__ == "__main__":        # not a script -- see the module docstring
+    raise SystemExit("Run it through the harness:  python -m harness.check torch/per_channel/02")

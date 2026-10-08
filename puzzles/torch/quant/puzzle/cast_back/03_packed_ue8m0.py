@@ -16,3 +16,6 @@ def torch_cast_back_packed(q: torch.Tensor, sf_packed: torch.Tensor,
     # TODO: decode_packed_ue8m0(sf_packed) gives (M, K/G) float32 scales; then
     #       dequantize exactly as variant 01
     raise NotImplementedError("torch/cast_back/03_packed_ue8m0: implement torch_cast_back_packed")
+
+if __name__ == "__main__":        # not a script -- see the module docstring
+    raise SystemExit("Run it through the harness:  python -m harness.check torch/cast_back/03")

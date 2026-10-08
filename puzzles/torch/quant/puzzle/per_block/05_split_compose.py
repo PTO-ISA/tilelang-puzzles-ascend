@@ -20,3 +20,6 @@ def torch_per_block_cast_only(x: torch.Tensor, sf_cm: torch.Tensor,
     # TODO: transpose sf_cm back, decode_packed_ue8m0 it, then multiply each tile
     #       by 1/scale and cast -- no reduction anywhere
     raise NotImplementedError("torch/per_block/05_split_compose: implement torch_per_block_cast_only")
+
+if __name__ == "__main__":        # not a script -- see the module docstring
+    raise SystemExit("Run it through the harness:  python -m harness.check torch/per_block/05")

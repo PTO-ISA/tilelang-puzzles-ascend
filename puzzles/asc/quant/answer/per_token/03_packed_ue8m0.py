@@ -96,3 +96,6 @@ def launch(x: torch.Tensor):
     status.assert_on_device("per_token 03", q, sf_bytes)
     # The int16 packing is a reinterpretation of the same bytes, not kernel work.
     return q, sf_bytes.view(torch.int16)
+
+if __name__ == "__main__":        # not a script -- see the module docstring
+    raise SystemExit("Run it through the harness:  python -m harness.check asc/per_token/03")

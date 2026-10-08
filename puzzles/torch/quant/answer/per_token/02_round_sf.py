@@ -19,3 +19,6 @@ def torch_per_token_cast_round(x: torch.Tensor, group_size: int = CANONICAL_G):
     q = (grouped * sf_inv.unsqueeze(-1)).view(m, k).to(torch.float8_e4m3fn)
     return q, sf
     # --- END SOLUTION
+
+if __name__ == "__main__":        # not a script -- see the module docstring
+    raise SystemExit("Run it through the harness:  python -m harness.check torch/per_token/02")

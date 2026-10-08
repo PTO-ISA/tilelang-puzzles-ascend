@@ -18,27 +18,51 @@ computes its answer on the host.
 
 ## Start here
 
+Everything runs through one entry point, `python -m harness.check`:
+
 ```bash
 # 1. the prerequisite: plain PyTorch, instant, no simulator
-python puzzles/torch/quant/answer/cast_back/01_e4m3_fp32sf.py
+python -m harness.check torch/cast_back/01
 
 # 2. the same kernel on the NPU (re-launches itself under the CPU simulator)
-python puzzles/asc/quant/answer/cast_back/01_e4m3_fp32sf.py
+python -m harness.check asc/cast_back/01
 
 # 3. the same kernel in VMI
-python puzzles/pto/quant/answer/cast_back/01_e4m3_fp32sf.py
+python -m harness.check pto/cast_back/01
 ```
 
 Then work the puzzle versions, which are the answer files with the implementation
 removed and the hint left in its place:
 
 ```bash
-python -m harness.check asc/cast_back/01 --role puzzle          # prints TODO
+python -m harness.check asc/cast_back/01 --role puzzle   # prints TODO until you
+                                                         # fill in the kernel
 ```
 
-Variant files are not executable on their own -- they hold the kernel and nothing
-else. The harness supplies the shapes, the oracle and the assertions, which is why
-a variant file is ~60 lines rather than ~230.
+**The variant files are not scripts.** They hold the kernel and nothing else — no
+`main`, no tests, no worked examples — which is why one is ~60 lines rather than
+~230. The harness supplies the shapes, the oracle and the assertions, and is the
+only way to run a variant. Running a variant file directly exits with a message
+telling you the command to use instead.
+
+An id is `tier/kernel/NN`, and any prefix of it selects a group:
+
+```bash
+python -m harness.check                      # all 69
+python -m harness.check asc                  # one tier (23)
+python -m harness.check asc/per_token        # one kernel on one tier (7)
+python -m harness.check asc/per_token/05     # exactly one variant
+python -m harness.check per_token/05         # that variant on all three tiers (3)
+python -m harness.check pto_05               # tier + number, across kernels (3)
+python -m harness.check --list               # every id, without running anything
+python -m harness.check pto_05 --list        # what would that selector run?
+```
+
+A selector matches on any prefix of the id, so `pto_05` is every kernel's variant
+05 on the PTO tier -- `cast_back/05`, `per_token/05` and `per_block/05`, since
+`per_channel` stops at 04. Add `--list` to any selector to see what it resolves to
+before paying for the run; a single id runs in-process so the simulator output
+streams, and several run one subprocess each.
 
 Reading order: `doc/tiers/torch.md` -> `doc/tiers/asc.md` -> `doc/tiers/pto.md`,
 then `doc/quant/README.md` for the maths all four kernels share, then each

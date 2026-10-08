@@ -27,3 +27,6 @@ def torch_per_token_bf16_compose(x: torch.Tensor, group_size: int = CANONICAL_G)
     packed = pack_ue8m0_row_major((exp_sf + 127).to(torch.uint8))
     return q, packed
     # --- END SOLUTION
+
+if __name__ == "__main__":        # not a script -- see the module docstring
+    raise SystemExit("Run it through the harness:  python -m harness.check torch/per_token/07")

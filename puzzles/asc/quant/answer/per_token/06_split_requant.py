@@ -134,3 +134,6 @@ def launch(x: torch.Tensor, mode: str = "full", x_sf: torch.Tensor | None = None
     compile_kernel(hidden, mode)(x, xsf, q, sf)
     status.assert_on_device(f"per_token 06 {mode}", q, sf)
     return q, sf
+
+if __name__ == "__main__":        # not a script -- see the module docstring
+    raise SystemExit("Run it through the harness:  python -m harness.check asc/per_token/06")

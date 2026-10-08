@@ -5,9 +5,10 @@
     python -m harness.check asc/per_token        # one kernel in one tier
     python -m harness.check asc/per_token/05     # one variant
     python -m harness.check per_token/05         # that variant in all three tiers
-    python -m harness.check pto_05               # ambiguous -> lists the candidates
+    python -m harness.check pto_05               # tier + number, across kernels
     python -m harness.check --role puzzle asc    # check the unsolved puzzles
     python -m harness.check --list               # print every id
+    python -m harness.check asc/per_token --list # what would that selector run?
 
 A single id runs in this process, so the simulator hand-off and its output are
 visible live. Several ids run one subprocess each -- the NPU tiers re-exec
@@ -110,12 +111,15 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--role", choices=("answer", "puzzle"), default="answer")
     ap.add_argument("--jobs", type=int, default=1,
                     help="parallel processes; keep at 1 for the simulator tiers")
-    ap.add_argument("--list", action="store_true", help="print every id and exit")
+    ap.add_argument("--list", action="store_true",
+                    help="print the selected ids and exit (every id if no selector)")
     ap.add_argument("--verbose", action="store_true", help="dump output of failures")
     args = ap.parse_args(argv)
 
     if args.list:
-        for v, t in resolve([]):
+        # Honour the selector: `--list` with a query answers "what would this
+        # run?", which is how you check a selector before paying for a sweep.
+        for v, t in resolve(args.query):
             print(v.id(t))
         return 0
 

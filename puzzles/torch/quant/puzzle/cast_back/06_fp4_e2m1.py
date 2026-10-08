@@ -15,3 +15,6 @@ def torch_cast_back_fp4(q_packed: torch.Tensor, sf: torch.Tensor,
     # TODO: unpack_e2m1_bytes(q_packed) gives (M, K) float32; then scale per group
     #       exactly as variant 01
     raise NotImplementedError("torch/cast_back/06_fp4_e2m1: implement torch_cast_back_fp4")
+
+if __name__ == "__main__":        # not a script -- see the module docstring
+    raise SystemExit("Run it through the harness:  python -m harness.check torch/cast_back/06")

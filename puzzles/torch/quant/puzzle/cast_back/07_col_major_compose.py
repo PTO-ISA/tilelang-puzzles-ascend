@@ -16,3 +16,6 @@ def torch_cast_back_compose(q_packed: torch.Tensor, sf_cm: torch.Tensor,
     # TODO: transpose sf_cm back to row-major with .T, decode_packed_ue8m0 it,
     #       unpack the FP4 values, then scale per group
     raise NotImplementedError("torch/cast_back/07_col_major_compose: implement torch_cast_back_compose")
+
+if __name__ == "__main__":        # not a script -- see the module docstring
+    raise SystemExit("Run it through the harness:  python -m harness.check torch/cast_back/07")

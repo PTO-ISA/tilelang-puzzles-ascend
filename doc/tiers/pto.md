@@ -10,7 +10,7 @@ one carries a **PTO vs ASC** section naming what changed and why.
 ## Running one
 
 ```bash
-python puzzles/pto/quant/answer/per_token/01_raw_fp32sf.py
+python -m harness.check pto/per_token/01
 ```
 
 Identical harness to the ASC tier. The only difference in the source is the import

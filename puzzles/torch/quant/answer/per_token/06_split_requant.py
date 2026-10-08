@@ -41,3 +41,6 @@ def torch_requant(q_in: torch.Tensor, sf_in: torch.Tensor,
     q = (grouped * (E4M3_MAX / amax).unsqueeze(-1)).view(m, k).to(torch.float8_e4m3fn)
     return q, sf
     # --- END SOLUTION
+
+if __name__ == "__main__":        # not a script -- see the module docstring
+    raise SystemExit("Run it through the harness:  python -m harness.check torch/per_token/06")

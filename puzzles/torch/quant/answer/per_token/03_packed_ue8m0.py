@@ -21,3 +21,6 @@ def torch_per_token_cast_packed(x: torch.Tensor, group_size: int = CANONICAL_G):
     e8m0 = (exp_sf + 127).to(torch.uint8)
     return q, pack_ue8m0_row_major(e8m0)
     # --- END SOLUTION
+
+if __name__ == "__main__":        # not a script -- see the module docstring
+    raise SystemExit("Run it through the harness:  python -m harness.check torch/per_token/03")

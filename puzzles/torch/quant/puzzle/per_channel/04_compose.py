@@ -13,3 +13,6 @@ def torch_per_channel_compose(x: torch.Tensor, group_tokens: int = BLOCK_MN):
     #       inv_pow2_from_exp(exp).unsqueeze(1), and pack (exp+127) with
     #       pack_ue8m0_along_m
     raise NotImplementedError("torch/per_channel/04_compose: implement torch_per_channel_compose")
+
+if __name__ == "__main__":        # not a script -- see the module docstring
+    raise SystemExit("Run it through the harness:  python -m harness.check torch/per_channel/04")

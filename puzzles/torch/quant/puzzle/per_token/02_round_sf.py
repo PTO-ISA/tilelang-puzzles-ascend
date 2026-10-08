@@ -12,3 +12,6 @@ def torch_per_token_cast_round(x: torch.Tensor, group_size: int = CANONICAL_G):
     #       pow2_from_exp(exp); multiply by inv_pow2_from_exp(exp) instead of
     #       dividing
     raise NotImplementedError("torch/per_token/02_round_sf: implement torch_per_token_cast_round")
+
+if __name__ == "__main__":        # not a script -- see the module docstring
+    raise SystemExit("Run it through the harness:  python -m harness.check torch/per_token/02")

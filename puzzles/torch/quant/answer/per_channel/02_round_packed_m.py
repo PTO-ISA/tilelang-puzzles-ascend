@@ -20,3 +20,6 @@ def torch_per_channel_cast_packed(x: torch.Tensor, group_tokens: int = BLOCK_MN)
     q = (grouped * inv_pow2_from_exp(exp_sf).unsqueeze(1)).view(m, k).to(torch.float8_e4m3fn)
     return q, pack_ue8m0_along_m((exp_sf + 127).to(torch.uint8))
     # --- END SOLUTION
+
+if __name__ == "__main__":        # not a script -- see the module docstring
+    raise SystemExit("Run it through the harness:  python -m harness.check torch/per_channel/02")

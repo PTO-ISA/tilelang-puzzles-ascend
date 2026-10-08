@@ -13,3 +13,6 @@ def torch_cast_back_f32(q: torch.Tensor, sf: torch.Tensor, group_size: int = CAN
     grouped = q.float().view(m, k // group_size, group_size)
     return (grouped * sf.unsqueeze(-1)).view(m, k)
     # --- END SOLUTION
+
+if __name__ == "__main__":        # not a script -- see the module docstring
+    raise SystemExit("Run it through the harness:  python -m harness.check torch/cast_back/02")

@@ -17,3 +17,6 @@ def torch_per_token_cast_fp4(x: torch.Tensor, group_size: int = CANONICAL_G):
     quant = (grouped * (E2M1_MAX / amax).unsqueeze(-1)).view(m, k)
     return pack_e2m1_from_fp32(quant), sf
     # --- END SOLUTION
+
+if __name__ == "__main__":        # not a script -- see the module docstring
+    raise SystemExit("Run it through the harness:  python -m harness.check torch/per_token/04")

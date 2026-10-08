@@ -14,3 +14,6 @@ def torch_per_token_cast_col_major(x: torch.Tensor, group_size: int = CANONICAL_
     # TODO: compute (q, sf) with power-of-two scales as in variant 02, then return
     #       oracle.to_col_major(sf) -- a transpose -- instead of sf
     raise NotImplementedError("torch/per_token/05_col_major_sf: implement torch_per_token_cast_col_major")
+
+if __name__ == "__main__":        # not a script -- see the module docstring
+    raise SystemExit("Run it through the harness:  python -m harness.check torch/per_token/05")

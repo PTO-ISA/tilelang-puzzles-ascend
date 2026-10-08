@@ -16,3 +16,6 @@ def torch_cast_back_block(q: torch.Tensor, sf: torch.Tensor,
     out = tiles * sf.unsqueeze(1).unsqueeze(-1)
     return out.view(m, k).to(torch.bfloat16)
     # --- END SOLUTION
+
+if __name__ == "__main__":        # not a script -- see the module docstring
+    raise SystemExit("Run it through the harness:  python -m harness.check torch/cast_back/04")

@@ -12,8 +12,8 @@ kernel.
 ## Working them
 
 ```bash
-python puzzles/torch/quant/puzzle/cast_back/01_e4m3_fp32sf.py   # fill in the TODO
-python puzzles/torch/quant/answer/cast_back/01_e4m3_fp32sf.py   # the reference
+python -m harness.check torch/cast_back/01 --role puzzle   # fill in the TODO
+python -m harness.check torch/cast_back/01                 # the reference
 ```
 
 Each puzzle file is the answer file with the implementation removed and the hint

@@ -11,3 +11,6 @@ def torch_cast_back_block(q: torch.Tensor, sf: torch.Tensor,
     # TODO: view q as (M/bm, bm, K/bk, bk); sf needs two unsqueezes, at dim 1 and
     #       dim -1; then flatten back
     raise NotImplementedError("torch/cast_back/04_block_sf: implement torch_cast_back_block")
+
+if __name__ == "__main__":        # not a script -- see the module docstring
+    raise SystemExit("Run it through the harness:  python -m harness.check torch/cast_back/04")

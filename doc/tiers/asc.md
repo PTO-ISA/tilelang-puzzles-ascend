@@ -9,7 +9,7 @@ Do the torch tier first. Every kernel here is checked against it.
 ## Running one
 
 ```bash
-python puzzles/asc/quant/answer/cast_back/01_e4m3_fp32sf.py
+python -m harness.check asc/cast_back/01
 ```
 
 No NPU is present, so the file re-launches itself under `msprof op simulator`

@@ -19,3 +19,6 @@ def torch_per_block_cast_col_major(x: torch.Tensor, block: tuple = (BLOCK_MN, BL
     q = quant.permute(0, 2, 1, 3).reshape(m, k).to(torch.float8_e4m3fn)
     return q, oracle.to_col_major(sf)
     # --- END SOLUTION
+
+if __name__ == "__main__":        # not a script -- see the module docstring
+    raise SystemExit("Run it through the harness:  python -m harness.check torch/per_block/04")

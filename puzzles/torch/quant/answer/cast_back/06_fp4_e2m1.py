@@ -19,3 +19,6 @@ def torch_cast_back_fp4(q_packed: torch.Tensor, sf: torch.Tensor,
     grouped = values.view(m, k // group_size, group_size)
     return (grouped * sf.unsqueeze(-1)).view(m, k).to(torch.bfloat16)
     # --- END SOLUTION
+
+if __name__ == "__main__":        # not a script -- see the module docstring
+    raise SystemExit("Run it through the harness:  python -m harness.check torch/cast_back/06")

@@ -63,3 +63,6 @@ def launch(q_packed: torch.Tensor, sf: torch.Tensor) -> torch.Tensor:
     out = compile_kernel(hidden)(q, sf)
     status.assert_on_device("cast_back 06", out)
     return out
+
+if __name__ == "__main__":        # not a script -- see the module docstring
+    raise SystemExit("Run it through the harness:  python -m harness.check pto/cast_back/06")

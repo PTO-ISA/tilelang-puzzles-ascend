@@ -22,3 +22,6 @@ def torch_per_token_cast_col_major(x: torch.Tensor, group_size: int = CANONICAL_
     q = (grouped * inv_pow2_from_exp(exp_sf).unsqueeze(-1)).view(m, k).to(torch.float8_e4m3fn)
     return q, oracle.to_col_major(pow2_from_exp(exp_sf))
     # --- END SOLUTION
+
+if __name__ == "__main__":        # not a script -- see the module docstring
+    raise SystemExit("Run it through the harness:  python -m harness.check torch/per_token/05")

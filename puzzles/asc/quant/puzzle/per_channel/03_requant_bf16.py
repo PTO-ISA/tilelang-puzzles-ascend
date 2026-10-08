@@ -62,3 +62,6 @@ def launch(q_in: torch.Tensor, sf_in: torch.Tensor):
     compile_kernel(hidden)(q_in, sf_in, q, sf)
     status.assert_on_device("per_channel 03", q, sf)
     return q, sf
+
+if __name__ == "__main__":        # not a script -- see the module docstring
+    raise SystemExit("Run it through the harness:  python -m harness.check asc/per_channel/03")

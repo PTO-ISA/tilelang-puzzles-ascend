@@ -5,7 +5,7 @@ Removes everything the harness and the markdown now own:
 * the module docstring            -> a one-line pointer to the variant's page
 * ``demo_numbers``                -> doc/quant/<kernel>/<stem>.md "Worked example"
 * ``test_correctness``            -> harness/variants/<kernel>.py
-* ``main`` and the ``__main__`` guard
+* ``main`` and the ``__main__`` guard (except the harness redirect, which is kept)
 * the ``sys.path.insert(..., parents[5])`` shim, which only existed so the file
   could be run as a script
 * import lines left unused afterwards
@@ -60,10 +60,16 @@ def _spans_to_drop(tree: ast.Module, src_lines: list[str]) -> list[tuple[int, in
             spans.append((start, node.end_lineno))
             continue
 
-        # the __main__ guard
+        # the __main__ guard -- but NOT the one that redirects to the harness.
+        # A variant file is no longer a script, so running it directly has to say
+        # so rather than exiting 0 in silence; that guard is the only executable
+        # line a stripped file keeps, and re-running this tool must not undo it.
         if isinstance(node, ast.If):
             test = ast.unparse(node.test)
             if "__name__" in test:
+                body = ast.unparse(node.body)
+                if "harness.check" in body:
+                    continue
                 spans.append((node.lineno, node.end_lineno))
                 continue
 

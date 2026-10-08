@@ -11,3 +11,6 @@ def torch_per_block_cast_col_major(x: torch.Tensor, block: tuple = (BLOCK_MN, BL
     # TODO: tile-reduce as in variant 01, then return oracle.to_col_major(sf) -- a
     #       transpose -- instead of sf
     raise NotImplementedError("torch/per_block/04_col_major_tma: implement torch_per_block_cast_col_major")
+
+if __name__ == "__main__":        # not a script -- see the module docstring
+    raise SystemExit("Run it through the harness:  python -m harness.check torch/per_block/04")

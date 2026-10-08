@@ -17,3 +17,6 @@ def torch_cast_back(q: torch.Tensor, sf: torch.Tensor, group_size: int = CANONIC
     out = grouped * sf.unsqueeze(-1)
     return out.view(m, k).to(torch.bfloat16)
     # --- END SOLUTION
+
+if __name__ == "__main__":        # not a script -- see the module docstring
+    raise SystemExit("Run it through the harness:  python -m harness.check torch/cast_back/01")

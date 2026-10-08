@@ -21,3 +21,6 @@ def torch_cast_back_compose(q_packed: torch.Tensor, sf_cm: torch.Tensor,
     grouped = values.view(m, k // group_size, group_size)
     return (grouped * scale.unsqueeze(-1)).view(m, k).to(torch.bfloat16)
     # --- END SOLUTION
+
+if __name__ == "__main__":        # not a script -- see the module docstring
+    raise SystemExit("Run it through the harness:  python -m harness.check torch/cast_back/07")
