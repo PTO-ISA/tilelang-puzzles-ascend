@@ -101,12 +101,14 @@ cannot run most of the ladder. That is why msprof is the default.
 
 ### Building the container
 
-The image is what everything above was validated in. The build copies the
-vendored tilelang into `/opt/tilelang` and installs it from source, so the
-submodule has to be checked out first:
+The image is what everything above was validated in. The build clones
+[PTO-ISA/tilelang](https://github.com/PTO-ISA/tilelang) at the commit in
+`TILELANG_COMMIT` (`docker/Dockerfile`), checks out its submodules (TVM included),
+and installs it into `/opt/tilelang`. That commit is on branch `pto-dev`.
+`pto-dev` moves; to pick up a newer snapshot, update `TILELANG_COMMIT` by hand.
+Do not track the branch tip.
 
 ```bash
-git submodule update --init --recursive        # pins tilelang at 3d70ede
 docker build -f docker/Dockerfile -t tilelang-ascend-puzzles .
 ```
 
@@ -127,8 +129,8 @@ an independent check that the toolchain itself is working, separately from this
 repo's ladder.
 
 Versions this repo was validated against, 2026-10-07:
-tilelang **0.1.15** (submodule `third_party/tilelang` @ `3d70ede`, branch
-`pto-dev`), ptoas vmi **0.1.9**, CANN **9.2.0-beta.2**, torch 2.9.0+cpu,
+tilelang **0.1.15** (`TILELANG_COMMIT` `3d70ede` on branch `pto-dev`; bump that
+commit by hand when you want a newer `pto-dev`), ptoas vmi **0.1.9**, CANN **9.2.0-beta.2**, torch 2.9.0+cpu,
 torch_npu 2.9.0.post6, Python 3.12.
 
 ## Measured status
@@ -245,8 +247,7 @@ tools/
   make_puzzles.py               regenerate puzzle/ from answer/ (--check in CI)
   vf_lines.py                   measure VF body size and operation counts
   check_math.py                 lint every .md for GitHub LaTeX pitfalls
-docker/                         the container this was validated in
-third_party/tilelang            submodule, pinned to the validated commit
+docker/                         the container this was validated in; clones tilelang at TILELANG_COMMIT
 ```
 
 ## How this repo keeps itself honest
@@ -310,7 +311,7 @@ here depends on a sibling checkout.
 |---|---|---|
 | the production quant kernels (`tile_kernels/quant/*_asc.py`, `*_cuda.py`) that this ladder's endpoint is drawn from | [deepseek-ai/TileKernels](https://github.com/deepseek-ai/TileKernels) | — |
 | their PTO/VMI port — the diff this repo's PTO-vs-ASC argument rests on | [PTO-ISA/TileKernels-PTO](https://github.com/PTO-ISA/TileKernels-PTO), commit `5395526` on branch `pto-demo` | `5395526` |
-| the tilelang fork with the Ascend / PTO backends | [PTO-ISA/tilelang](https://github.com/PTO-ISA/tilelang), branch `pto-dev` | `3d70ede` (this repo's `third_party/tilelang`) |
+| the tilelang fork with the Ascend / PTO backends | [PTO-ISA/tilelang](https://github.com/PTO-ISA/tilelang), branch `pto-dev` | `3d70ede`, cloned by `docker/Dockerfile` (`TILELANG_COMMIT`; update by hand for a newer `pto-dev`) |
 | the PTO instruction specifications (`docs/PTO-micro-Instruction-SPEC.md`, `docs/PTO-vmi-Instruction-SPEC.md`) | [PTO-ISA/PTO-Gym](https://github.com/PTO-ISA/PTO-Gym) | — |
 
 When a kernel docstring names a file like `per_token_cast_asc.py` without further

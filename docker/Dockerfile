@@ -40,7 +40,18 @@ RUN set -eux; \
     pip install --no-cache-dir "/tmp/${PTOAS_FILENAME}"; \
     rm -f "/tmp/${PTOAS_FILENAME}"
 
-COPY third_party/tilelang /opt/tilelang
+# Pin a commit on https://github.com/PTO-ISA/tilelang branch pto-dev.
+# Validated at 3d70ede (2026-10-07). pto-dev moves; to pick up a newer
+# snapshot, update TILELANG_COMMIT by hand. Do not track the branch tip.
+ARG TILELANG_REPO=https://github.com/PTO-ISA/tilelang.git
+ARG TILELANG_COMMIT=3d70ede9643e3e9e5d182f6ae0d569374f403471
+RUN set -eux; \
+    git init /opt/tilelang; \
+    git -C /opt/tilelang remote add origin "${TILELANG_REPO}"; \
+    git -C /opt/tilelang fetch --depth 1 origin "${TILELANG_COMMIT}"; \
+    git -C /opt/tilelang checkout --detach FETCH_HEAD; \
+    git -C /opt/tilelang submodule update --init --recursive --depth 1; \
+    find /opt/tilelang -name .git -prune -exec rm -rf {} +
 ENV USE_CUDA=0 \
     USE_ROCM=0 \
     CMAKE_GENERATOR=Ninja

@@ -1,4 +1,0 @@
-[submodule "third_party/tilelang"]
-	path = third_party/tilelang
-	url = https://github.com/PTO-ISA/tilelang.git
-	branch = pto-dev
