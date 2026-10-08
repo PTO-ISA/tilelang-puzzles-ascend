@@ -1,4 +1,16 @@
-"""Scale-factor and FP4 helpers shared by torch references (Ascend pack_factor=2)."""
+"""Scale-factor and FP4 helpers for the harness's own reference (pack_factor=2).
+
+These are used by ``harness/oracle.py``, ``harness/doc_examples.py`` and
+``harness/variants/*.py`` -- the checking side.
+
+They are deliberately **not** used by ``puzzles/torch/``. That tier exists to
+practise exactly this arithmetic, so its reference answers spell every bit
+operation out in plain torch; importing a helper would hand the student the
+thing the exercise is asking for. The duplication is the point: the torch tier
+and this module are two independent implementations of the same math, and the
+harness compares them on every run, so a mistake in either shows up as a
+numerical failure rather than agreeing with itself.
+"""
 
 import torch
 import torch.nn.functional as F
