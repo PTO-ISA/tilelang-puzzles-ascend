@@ -3,15 +3,17 @@
 import torch
 
 from harness.consts import BLOCK_MN, E4M3_CLAMP_MIN, E4M3_MAX, PACK_FACTOR
-from harness.math_ops import ceil_log2_exp, inv_pow2_from_exp, pack_ue8m0_along_m
 
 
 def torch_per_channel_compose(x: torch.Tensor, group_tokens: int = BLOCK_MN):
     """The fully composed per_channel kernel. Returns ``(q, sf_packed)``."""
-    # TODO: combine variants 01-03: reduce amax along dim=1 in bfloat16, widen,
-    #       exp = ceil_log2_exp(amax/E4M3_MAX), apply
-    #       inv_pow2_from_exp(exp).unsqueeze(1), and pack (exp+127) with
-    #       pack_ue8m0_along_m
+    # TODO: combine variants 01-02: reduce amax along dim=1 in bfloat16 then widen
+    #       to float32 (bfloat16 keeps the full exponent range, so the chosen
+    #       power of two is unchanged); bits = (amax/E4M3_MAX).view(torch.int32);
+    #       exp = ((bits - 1) >> 23) + 1 - 127; apply ((127 - exp) <<
+    #       23).view(torch.float32).unsqueeze(1); and pack (exp +
+    #       127).to(torch.uint8) along M with e8m0[0::2] | (e8m0[1::2] << 8) as in
+    #       variant 02.
     raise NotImplementedError("torch/per_channel/04_compose: implement torch_per_channel_compose")
 
 if __name__ == "__main__":        # not a script -- see the module docstring

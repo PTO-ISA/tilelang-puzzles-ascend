@@ -2,7 +2,6 @@
 
 import torch
 
-from harness import oracle
 from harness.consts import BLOCK_MN, CANONICAL_G, E4M3_CLAMP_MIN, E4M3_MAX
 
 
@@ -14,8 +13,13 @@ def torch_per_channel_requant(q_in: torch.Tensor, sf_in: torch.Tensor,
     ``q_in``/``sf_in`` are per-token: sf_in is (M, K/in_group_size).
     Returns ``(q, sf)`` per-channel: sf is (M/group_tokens, K).
     """
-    # --- BEGIN SOLUTION hint="dequantize with oracle.cast_back(q_in, sf_in, (1, in_group_size), out_dtype=bfloat16); then reduce amax along dim=1 in bfloat16, widen to float32, and apply sf = amax/E4M3_MAX as in variant 01"
-    x = oracle.cast_back(q_in, sf_in, (1, in_group_size), out_dtype=torch.bfloat16)
+    # --- BEGIN SOLUTION hint="first dequantize the per-token input exactly as cast_back/01 did: group q_in by in_group_size and multiply by sf_in.unsqueeze(-1), producing bfloat16. Then the ordinary per_channel pass on that result: reduce amax along dim=1, widen to float32, sf = amax/E4M3_MAX, and quantize with (E4M3_MAX/amax).unsqueeze(1)."
+    # Dequantize the per-token input -- cast_back/01, with bm = 1: one scale
+    # per in_group_size channels of a row, broadcast over the group.
+    mi, ki = q_in.shape
+    x = (q_in.float().view(mi, ki // in_group_size, in_group_size)
+         * sf_in.unsqueeze(-1)).view(mi, ki).to(torch.bfloat16)
+
     m, k = x.shape
     assert m % group_tokens == 0
     grouped = x.view(m // group_tokens, group_tokens, k)

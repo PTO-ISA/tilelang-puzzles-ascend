@@ -2,7 +2,6 @@
 
 import torch
 
-from harness import oracle
 from harness.consts import BLOCK_MN, CANONICAL_G, E4M3_CLAMP_MIN, E4M3_MAX
 
 
@@ -14,9 +13,11 @@ def torch_per_channel_requant(q_in: torch.Tensor, sf_in: torch.Tensor,
     ``q_in``/``sf_in`` are per-token: sf_in is (M, K/in_group_size).
     Returns ``(q, sf)`` per-channel: sf is (M/group_tokens, K).
     """
-    # TODO: dequantize with oracle.cast_back(q_in, sf_in, (1, in_group_size),
-    #       out_dtype=bfloat16); then reduce amax along dim=1 in bfloat16, widen
-    #       to float32, and apply sf = amax/E4M3_MAX as in variant 01
+    # TODO: first dequantize the per-token input exactly as cast_back/01 did:
+    #       group q_in by in_group_size and multiply by sf_in.unsqueeze(-1),
+    #       producing bfloat16. Then the ordinary per_channel pass on that result:
+    #       reduce amax along dim=1, widen to float32, sf = amax/E4M3_MAX, and
+    #       quantize with (E4M3_MAX/amax).unsqueeze(1).
     raise NotImplementedError("torch/per_channel/03_requant_bf16: implement torch_per_channel_requant")
 
 if __name__ == "__main__":        # not a script -- see the module docstring

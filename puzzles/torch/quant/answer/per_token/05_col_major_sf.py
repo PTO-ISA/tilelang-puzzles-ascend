@@ -2,7 +2,6 @@
 
 import torch
 
-from harness import oracle
 from harness.consts import CANONICAL_G, E4M3_CLAMP_MIN, E4M3_MAX
 
 
@@ -11,16 +10,24 @@ def torch_per_token_cast_col_major(x: torch.Tensor, group_size: int = CANONICAL_
 
     Returns ``(q, sf_cm)`` where ``sf_cm`` is (K/group_size, M).
     """
-    # --- BEGIN SOLUTION hint="compute (q, sf) with power-of-two scales as in variant 02, then return oracle.to_col_major(sf) -- a transpose -- instead of sf"
-    from harness.math_ops import ceil_log2_exp, inv_pow2_from_exp, pow2_from_exp
-
+    # --- BEGIN SOLUTION hint="compute (q, sf) with power-of-two scales exactly as variant 02 (bits = (amax/E4M3_MAX).view(torch.int32); exp = ((bits - 1) >> 23) + 1 - 127; sf = ((127 + exp) << 23).view(torch.float32); multiply by ((127 - exp) << 23).view(torch.float32)), then return sf.T.contiguous() instead of sf, shape (K/group_size, M). In torch that transpose is one call; on the NPU the scales sit in vector lanes and the same change needs an index vector and a gather -- see the variant page."
     m, k = x.shape
     assert k % group_size == 0
     grouped = x.float().view(m, k // group_size, group_size)
     amax = grouped.abs().amax(dim=-1).clamp(min=E4M3_CLAMP_MIN)
-    exp_sf = ceil_log2_exp(amax / E4M3_MAX)
-    q = (grouped * inv_pow2_from_exp(exp_sf).unsqueeze(-1)).view(m, k).to(torch.float8_e4m3fn)
-    return q, oracle.to_col_major(pow2_from_exp(exp_sf))
+
+    # The power-of-two scale, as in variant 02.
+    bits = (amax / E4M3_MAX).view(torch.int32)
+    exp_sf = ((bits - 1) >> 23) + 1 - 127
+    sf = ((127 + exp_sf) << 23).view(torch.float32)
+    sf_inv = ((127 - exp_sf) << 23).view(torch.float32)
+
+    q = (grouped * sf_inv.unsqueeze(-1)).view(m, k).to(torch.float8_e4m3fn)
+
+    # The whole config, and in torch it really is just a transpose. The NPU
+    # cannot restride a register, so this same line becomes an index vector and
+    # a gather there -- which is what makes this the hardest variant.
+    return q, sf.T.contiguous()
     # --- END SOLUTION
 
 if __name__ == "__main__":        # not a script -- see the module docstring

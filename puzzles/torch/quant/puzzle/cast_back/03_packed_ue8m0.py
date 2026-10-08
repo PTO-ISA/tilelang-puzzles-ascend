@@ -3,7 +3,6 @@
 import torch
 
 from harness.consts import CANONICAL_G
-from harness.math_ops import decode_packed_ue8m0
 
 
 def torch_cast_back_packed(q: torch.Tensor, sf_packed: torch.Tensor,
@@ -13,8 +12,12 @@ def torch_cast_back_packed(q: torch.Tensor, sf_packed: torch.Tensor,
     ``sf_packed`` is (M, K/group_size/2) int16; each word holds two exponent
     bytes, low byte first.
     """
-    # TODO: decode_packed_ue8m0(sf_packed) gives (M, K/G) float32 scales; then
-    #       dequantize exactly as variant 01
+    # TODO: unpack the scales yourself, then dequantize as variant 01. Split each
+    #       int16 into two bytes -- wide = sf_packed.to(torch.int32); lo = (wide &
+    #       0xFF).to(torch.uint8); hi = ((wide >> 8) & 0xFF).to(torch.uint8) --
+    #       and interleave them low-byte-first with torch.stack([lo, hi],
+    #       dim=-1).reshape(M, K/group_size). A UE8M0 byte is a bare exponent, so
+    #       it decodes as (e8m0.to(torch.int32) << 23).view(torch.float32).
     raise NotImplementedError("torch/cast_back/03_packed_ue8m0: implement torch_cast_back_packed")
 
 if __name__ == "__main__":        # not a script -- see the module docstring

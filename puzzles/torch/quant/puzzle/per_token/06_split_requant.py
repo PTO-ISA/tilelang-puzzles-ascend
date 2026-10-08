@@ -2,7 +2,6 @@
 
 import torch
 
-from harness import oracle
 from harness.consts import CANONICAL_G, E4M3_CLAMP_MIN, E4M3_MAX
 
 
@@ -25,9 +24,11 @@ def torch_cast_only(x: torch.Tensor, sf: torch.Tensor, group_size: int = CANONIC
 def torch_requant(q_in: torch.Tensor, sf_in: torch.Tensor,
                   group_size: int = CANONICAL_G):
     """Dequantize an already-quantized input, then quantize it again."""
-    # TODO: dequantize with oracle.cast_back(q_in, sf_in, (1, group_size),
-    #       out_dtype=float32), then run the ordinary variant-01 quantize on the
-    #       result
+    # TODO: dequantize the input exactly as cast_back/01 did -- group q_in by
+    #       group_size and multiply by sf_in.unsqueeze(-1), in float32 -- then run
+    #       the ordinary variant-01 quantize on the result. The kernel needs a
+    #       scratch buffer and two barriers for this because the new amax cannot
+    #       be known until the whole group is dequantized.
     raise NotImplementedError("torch/per_token/06_split_requant: implement torch_requant")
 
 if __name__ == "__main__":        # not a script -- see the module docstring

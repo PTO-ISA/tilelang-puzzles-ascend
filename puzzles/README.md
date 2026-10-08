@@ -27,6 +27,13 @@ hardware: no lane widths, no distribution modes, no memory barriers. Getting the
 algorithm wrong there costs a second; getting it wrong in a vector kernel costs
 thirty, and you will not know which of the two mistakes you made.
 
+The tiers split the work cleanly: **torch teaches the quantization math** — every
+bit operation written out in plain torch, no helper imports, because those
+operations are the exercise — and **ASC and PTO teach instruction selection** for
+math you already know. An NPU kernel is then a translation of arithmetic you have
+written yourself, not a derivation from scratch. See
+[Explicit by design](../doc/tiers/torch.md#explicit-by-design).
+
 **ASC and PTO do not depend on each other.** They are two instruction sets over
 the same hardware at different levels of abstraction — ASC names the physical
 operation, VMI names the intent — and neither is built on the other. The puzzle
