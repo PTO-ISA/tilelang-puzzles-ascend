@@ -73,7 +73,7 @@ Measured: **32 ASC operations against 33** — PTO is one operation *longer*, ev
 though its loop covers twice the channels per step and therefore runs half as many
 iterations.
 
-That is worth sitting with, because it is the same trap as
+That is worth a second look, because it is the same trap as
 [per_block](../per_block/README.md): the width advantage is real but it is a
 **runtime** effect, and a count of operations *written* cannot see a count of
 operations *executed*. ASC pays for its narrower vector in iterations, not in

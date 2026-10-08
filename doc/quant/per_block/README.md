@@ -87,7 +87,7 @@ than ASC's on four of five variants here. Two reasons, both real: the reduction 
 a whole-vector `group=1` reduce, so the segmented-operation advantage that drives
 `per_token` does not apply; and VMI requires explicit `size=` and mask operands.
 
-The static count also *understates* PTO, which cuts the other way: PTO reduces 128
+The static count also *understates* PTO, in the opposite direction: PTO reduces 128
 lanes per iteration against ASC's 64, so it runs **8 iterations rather than 16**
 and issues fewer instructions at runtime. A count of operations *written* cannot
 see a count of operations *executed*.

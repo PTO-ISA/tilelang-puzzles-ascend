@@ -130,8 +130,9 @@ diff puzzles/asc/quant/answer/per_token/02_round_sf.py \
 `PTO vs ASC` section of each variant page explains the measured difference. It is
 not uniform — VMI collapses segmented reduce-and-broadcast and width changes, and
 gains nothing at all on gathers or whole-vector reductions. `per_token/02` is the
-widest gap in the ladder (45 operations against 14);
-[`per_channel/01`](../doc/quant/per_channel/01_raw_32tokens.md) is a dead heat.
+widest gap in the ladder (45 operations against 14), while
+[`per_channel/01`](../doc/quant/per_channel/01_raw_32tokens.md) comes out level:
+17 operations against 16, and 21 source lines each.
 
 ## Time budget
 

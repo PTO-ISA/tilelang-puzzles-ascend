@@ -21,7 +21,7 @@ A `(32, 64)` tensor is two 32x32 tiles, so two scales:
 | `q[31, 0] = 4` | tile (0,0) again, 31 rows away → `out = 2.0` |
 
 All 32 rows of a tile share one scale. Compare
-[variant 05](05_per_channel_sf.md), where the sharing runs the other way.
+[variant 05](05_per_channel_sf.md), where the sharing is along the other axis.
 
 ## A coarser scale axis means less DMA
 

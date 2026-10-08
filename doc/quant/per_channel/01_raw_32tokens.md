@@ -69,9 +69,11 @@ ASC: acc = S.vmax(acc, S.vabs(S.vld(x_ub[row, col])))
 PTO: acc = V.vmax(acc, V.vabs(V.vload(x_ub[row, col], size=64), mask), mask)
 ```
 
-Measured: 17 ASC operations against 16, and **21 source lines each** -- the closest
-thing to a tie in the whole ladder. VMI's explicit masks cost it the characters that
-its slightly tighter operation set wins back.
+Measured: 17 ASC operations against 16, and **21 source lines each**. Three
+`cast_back` variants also tie on operations, but PTO is longer in lines in each of
+them; here the two surfaces produce the same amount of code by both measures. VMI's
+explicit masks cost it the characters that its slightly tighter operation set wins
+back.
 
 **This is the clearest "no advantage" case in the repo, and it is informative
 rather than disappointing.** VMI's wins come from expressing *segmented* behaviour
