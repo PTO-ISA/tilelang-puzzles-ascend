@@ -8,7 +8,17 @@ from harness.consts import CANONICAL_G, E4M3_CLAMP_MIN, E4M3_MAX
 def torch_per_token_cast_col_major(x: torch.Tensor, group_size: int = CANONICAL_G):
     """Quantize, returning the scales in the kernel-native column-major layout.
 
-    Returns ``(q, sf_cm)`` where ``sf_cm`` is (K/group_size, M).
+    Args:
+        x: ``(M, K)`` **bfloat16** -- the activations to quantize. Row 0 is all
+            zeros in the tests, which is what exercises the clamp.
+        group_size: channels sharing one scale. Fixed at 32 on Ascend.
+
+    Returns:
+        ``q``: ``(M, K)`` **float8_e4m3fn**.
+        ``sf_cm``: ``(K/group_size, M)`` **float32** -- the transpose of
+        variant 02's ``(M, K/group_size)``, so the consuming GEMM can fetch one
+        tile's scales contiguously. In torch this is one ``.T``; on the NPU the
+        scales live in vector lanes and the same change needs a gather.
     """
     # TODO: compute (q, sf) with power-of-two scales exactly as variant 02 (bits =
     #       (amax/E4M3_MAX).view(torch.int32); exp = ((bits - 1) >> 23) + 1 - 127;

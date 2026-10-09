@@ -7,9 +7,17 @@ from harness.consts import CANONICAL_G
 
 def torch_cast_back_fp4(q_packed: torch.Tensor, sf: torch.Tensor,
                         group_size: int = CANONICAL_G):
-    """Dequantize packed-FP4 input.
+    """Dequantize packed-FP4 (e2m1) input.
 
-    ``q_packed`` is (M, K/2) int8; the logical width is K = 2 * q_packed.shape[1].
+    Args:
+        q_packed: ``(M, K/2)`` **int8** -- two e2m1 values per byte, low nibble
+            first. The logical width is ``K = 2 * q_packed.shape[1]``; there is
+            no 4-bit torch dtype, so the nibbles are unpacked by hand.
+        sf: ``(M, K/group_size)`` **float32** -- one positive scale per group.
+        group_size: channels sharing one scale. Fixed at 32 on Ascend.
+
+    Returns:
+        ``(M, K)`` **bfloat16** -- note K, not K/2: the output is unpacked.
     """
     # --- BEGIN SOLUTION hint="decode the nibbles yourself, then scale per group as variant 01. Each byte holds two values, low nibble first: lo = q_packed.to(torch.int16) & 0x0F and hi = (q_packed.to(torch.int16) >> 4) & 0x0F. A nibble is sign|exp(2)|mant(1): s = (n >> 3) & 1, e = (n >> 1) & 3, mant = n & 1. With e == 0 the value is subnormal -- mant * 0.5, no implicit leading one -- otherwise it is (1 + mant/2) * 2**(e - 1), bias 1. Apply the sign, then torch.stack([decode(lo), decode(hi)], dim=-1).reshape to (M, K) so the two nibbles of a byte stay adjacent."
     # Decode the 16 e2m1 codes. Only 8 distinct magnitudes exist

@@ -6,10 +6,20 @@ from harness.consts import BLOCK_MN, E4M3_CLAMP_MIN, E4M3_MAX
 
 
 def torch_per_channel_cast_packed(x: torch.Tensor, group_tokens: int = BLOCK_MN):
-    """Return ``(q, sf_packed)`` with power-of-two scales packed along M.
+    """Quantize per channel with power-of-two scales, packed along **M**.
 
-    ``sf_packed`` is (M/group_tokens/2, K) int16 -- two exponent bytes per word,
-    packed along M.
+    Args:
+        x: ``(M, K)`` **bfloat16** -- the values to quantize. Row 0 is all zeros
+            in the tests, which is what exercises the clamp.
+            M must be a multiple of ``2 * group_tokens`` (64 by default),
+            because packing pairs two token groups into one word.
+        group_tokens: rows sharing one scale. 32 on Ascend.
+
+    Returns:
+        ``q``: ``(M, K)`` **float8_e4m3fn**.
+        ``sf_packed``: ``(M/group_tokens/2, K)`` **int16** -- the two bytes of a
+        word come from *different scale rows*, K bytes apart in memory, which is
+        why the NPU needs a real interleave instruction here.
     """
     # TODO: reduce along dim=1 as in variant 01, then the exponent trick from
     #       per_token/02: bits = (amax/E4M3_MAX).view(torch.int32); exp = ((bits -

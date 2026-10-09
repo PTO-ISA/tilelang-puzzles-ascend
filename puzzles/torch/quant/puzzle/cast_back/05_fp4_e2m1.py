@@ -7,9 +7,17 @@ from harness.consts import CANONICAL_G
 
 def torch_cast_back_fp4(q_packed: torch.Tensor, sf: torch.Tensor,
                         group_size: int = CANONICAL_G):
-    """Dequantize packed-FP4 input.
+    """Dequantize packed-FP4 (e2m1) input.
 
-    ``q_packed`` is (M, K/2) int8; the logical width is K = 2 * q_packed.shape[1].
+    Args:
+        q_packed: ``(M, K/2)`` **int8** -- two e2m1 values per byte, low nibble
+            first. The logical width is ``K = 2 * q_packed.shape[1]``; there is
+            no 4-bit torch dtype, so the nibbles are unpacked by hand.
+        sf: ``(M, K/group_size)`` **float32** -- one positive scale per group.
+        group_size: channels sharing one scale. Fixed at 32 on Ascend.
+
+    Returns:
+        ``(M, K)`` **bfloat16** -- note K, not K/2: the output is unpacked.
     """
     # TODO: decode the nibbles yourself, then scale per group as variant 01. Each
     #       byte holds two values, low nibble first: lo = q_packed.to(torch.int16)

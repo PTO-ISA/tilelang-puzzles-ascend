@@ -9,8 +9,15 @@ def torch_cast_back_packed(q: torch.Tensor, sf_packed: torch.Tensor,
                            group_size: int = CANONICAL_G):
     """Dequantize with packed-UE8M0 scales.
 
-    ``sf_packed`` is (M, K/group_size/2) int16; each word holds two exponent
-    bytes, low byte first.
+    Args:
+        q: ``(M, K)`` **float8_e4m3fn** -- the quantized values.
+        sf_packed: ``(M, K/group_size/2)`` **int16** -- each word holds two
+            UE8M0 exponent bytes, low byte first. A byte ``e`` means the scale
+            ``2^(e-127)``, so there is no mantissa to store.
+        group_size: channels sharing one scale. Fixed at 32 on Ascend.
+
+    Returns:
+        ``(M, K)`` **bfloat16**.
     """
     # TODO: unpack the scales yourself, then dequantize as variant 01. Split each
     #       int16 into two bytes -- wide = sf_packed.to(torch.int32); lo = (wide &

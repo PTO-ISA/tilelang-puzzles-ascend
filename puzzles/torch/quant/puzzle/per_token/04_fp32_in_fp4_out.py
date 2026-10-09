@@ -6,7 +6,19 @@ from harness.consts import CANONICAL_G, E2M1_CLAMP_MIN, E2M1_MAX
 
 
 def torch_per_token_cast_fp4(x: torch.Tensor, group_size: int = CANONICAL_G):
-    """Quantize a float32 input to packed FP4. Returns ``(q_packed, sf)``."""
+    """Quantize a **float32** input to packed FP4 (e2m1).
+
+    Args:
+        x: ``(M, K)`` **float32** -- note this variant takes float32, not
+            bfloat16: it is already the vector unit's compute type, so the
+            load needs no widening convert.
+        group_size: channels sharing one scale. Fixed at 32 on Ascend.
+
+    Returns:
+        ``q_packed``: ``(M, K/2)`` **int8** -- two e2m1 values per byte, low
+        nibble first. e2m1's largest magnitude is 6.0, not 448.
+        ``sf``: ``(M, K/group_size)`` **float32** -- ``amax/6.0`` per group.
+    """
     # TODO: same shape as variant 01 but with E2M1_MAX / E2M1_CLAMP_MIN, and pack
     #       the values to e2m1 by hand instead of casting -- there is no torch
     #       e2m1 dtype. Take the float32 fields (signs = q & 0x80000000, exps = (q

@@ -6,10 +6,20 @@ from harness.consts import BLOCK_MN, E4M3_CLAMP_MIN, E4M3_MAX
 
 
 def torch_per_channel_cast_packed(x: torch.Tensor, group_tokens: int = BLOCK_MN):
-    """Return ``(q, sf_packed)`` with power-of-two scales packed along M.
+    """Quantize per channel with power-of-two scales, packed along **M**.
 
-    ``sf_packed`` is (M/group_tokens/2, K) int16 -- two exponent bytes per word,
-    packed along M.
+    Args:
+        x: ``(M, K)`` **bfloat16** -- the values to quantize. Row 0 is all zeros
+            in the tests, which is what exercises the clamp.
+            M must be a multiple of ``2 * group_tokens`` (64 by default),
+            because packing pairs two token groups into one word.
+        group_tokens: rows sharing one scale. 32 on Ascend.
+
+    Returns:
+        ``q``: ``(M, K)`` **float8_e4m3fn**.
+        ``sf_packed``: ``(M/group_tokens/2, K)`` **int16** -- the two bytes of a
+        word come from *different scale rows*, K bytes apart in memory, which is
+        why the NPU needs a real interleave instruction here.
     """
     # --- BEGIN SOLUTION hint="reduce along dim=1 as in variant 01, then the exponent trick from per_token/02: bits = (amax/E4M3_MAX).view(torch.int32); exp = ((bits - 1) >> 23) + 1 - 127; multiply by ((127 - exp) << 23).view(torch.float32).unsqueeze(1). Then pack along M rather than K: e8m0 = (exp + 127).to(torch.uint8), packed = e8m0[0::2].to(torch.int16) | (e8m0[1::2].to(torch.int16) << 8) -- note the slice is on dim 0, so the two bytes of a word come from different scale rows."
     m, k = x.shape

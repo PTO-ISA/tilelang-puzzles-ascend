@@ -6,7 +6,19 @@ from harness.consts import BLOCK_K, BLOCK_MN, E4M3_CLAMP_MIN, E4M3_MAX
 
 
 def torch_per_block_cast(x: torch.Tensor, block: tuple = (BLOCK_MN, BLOCK_K)):
-    """Return ``(q, sf)`` with one scale per ``block``-shaped tile."""
+    """Quantize with one scale per ``block``-shaped tile -- a 2-D reduction.
+
+    Args:
+        x: ``(M, K)`` **bfloat16** -- the values to quantize. Row 0 is all zeros
+            in the tests, which is what exercises the clamp.
+        block: ``(bm, bk)``, the tile the scale covers. M must be a multiple of
+            ``bm`` and K of ``bk``.
+
+    Returns:
+        ``q``: ``(M, K)`` **float8_e4m3fn**.
+        ``sf``: ``(M/bm, K/bk)`` **float32** -- one scale per tile, so 1024
+        values share a scale at the default (32, 32).
+    """
     # TODO: view x as (M/bm, bm, K/bk, bk), permute to (M/bm, K/bk, bm, bk) so the
     #       tile is the last two axes, amax over dim=(-1,-2), clamp, then scale
     #       and permute back

@@ -6,7 +6,18 @@ from harness.consts import BLOCK_K, BLOCK_MN, E4M3_CLAMP_MIN, E4M3_MAX
 
 
 def torch_per_block_cast_packed(x: torch.Tensor, block: tuple = (BLOCK_MN, BLOCK_K)):
-    """Return ``(q, sf_packed)`` -- power-of-two scales as packed UE8M0 int16."""
+    """Quantize per tile with power-of-two scales, stored as UE8M0 bytes.
+
+    Args:
+        x: ``(M, K)`` **bfloat16** -- the values to quantize. Row 0 is all zeros
+            in the tests, which is what exercises the clamp.
+        block: ``(bm, bk)``, the tile the scale covers.
+
+    Returns:
+        ``q``: ``(M, K)`` **float8_e4m3fn**.
+        ``sf_packed``: ``(M/bm, K/bk/2)`` **int16** -- two exponent bytes per
+        word, low byte first.
+    """
     # TODO: tile-reduce as in variant 01, then the exponent trick from
     #       per_token/02: bits = (amax/E4M3_MAX).view(torch.int32); exp = ((bits -
     #       1) >> 23) + 1 - 127. Multiply the tile by ((127 - exp) <<

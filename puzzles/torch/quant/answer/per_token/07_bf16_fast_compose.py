@@ -6,10 +6,19 @@ from harness.consts import CANONICAL_G, E4M3_CLAMP_MIN, E4M3_MAX
 
 
 def torch_per_token_bf16_compose(x: torch.Tensor, group_size: int = CANONICAL_G):
-    """The fully composed variant: bf16 compute, pow2 packed scale, col-major.
+    """The composed fast path: bfloat16 compute, power-of-two packed scales.
 
-    Returns ``(q, sf_packed)``: FP8 values and the scales as packed UE8M0
-    int16, shape ``(M, K/group_size/2)``.
+    Args:
+        x: ``(M, K)`` **bfloat16** with **K a multiple of 256** -- the fast path
+            steps 256 values at a time, which is why this variant runs at
+            K=256 where the rest of the ladder uses 128.
+        group_size: channels sharing one scale. Fixed at 32 on Ascend.
+
+    Returns:
+        ``q``: ``(M, K)`` **float8_e4m3fn**.
+        ``sf_packed``: ``(M, K/group_size/2)`` **int16** -- packed UE8M0, as in
+        variant 03. The reduction runs in bfloat16 but the scale uses only the
+        exponent, which bfloat16 keeps exactly.
     """
     # --- BEGIN SOLUTION hint="reduce amax in bfloat16 (cast grouped to bfloat16 before .abs().amax()), then widen to float32 for the exponent math -- bfloat16 keeps float32 full exponent range, so the chosen power of two is unaffected. Then exactly variant 03: bits = (amax/E4M3_MAX).view(torch.int32); exp = ((bits - 1) >> 23) + 1 - 127; multiply by ((127 - exp) << 23).view(torch.float32); pack (exp + 127).to(torch.uint8) two bytes per int16 with lo | (hi << 8)."
     m, k = x.shape

@@ -34,8 +34,15 @@ def torch_cast_back_compose(q_packed: torch.Tensor, sf_cm: torch.Tensor,
                             group_size: int = CANONICAL_G):
     """Dequantize FP4 values with column-major packed-UE8M0 scales.
 
-    ``q_packed``: (M, K/2) int8, two e2m1 nibbles per byte.
-    ``sf_cm``    : (K/group_size/2, M) int16 -- transposed *and* byte-packed.
+    Args:
+        q_packed: ``(M, K/2)`` **int8** -- two e2m1 nibbles per byte, low first.
+        sf_cm: ``(K/group_size/2, M)`` **int16** -- transposed *and* byte-packed,
+            so both layout changes apply at once. Transpose it back before
+            unpacking.
+        group_size: channels sharing one scale. Fixed at 32 on Ascend.
+
+    Returns:
+        ``(M, K)`` **bfloat16**.
     """
     # --- BEGIN SOLUTION hint="undo both layouts, then scale per group. Transpose sf_cm back with .T.contiguous(); unpack its two exponent bytes per int16 as in variant 02 (lo = wide & 0xFF, hi = (wide >> 8) & 0xFF, stacked low-byte-first, then e << 23 viewed as float32); and call _unpack_e2m1_bytes for the values -- that is variant 05 work, given back to you here. Note a broadcast load does not care about stride, so consuming the transposed layout costs nothing."
     # Undo the column-major transpose, then unpack two exponent bytes per word

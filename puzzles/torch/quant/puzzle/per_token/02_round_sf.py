@@ -6,7 +6,19 @@ from harness.consts import CANONICAL_G, E4M3_CLAMP_MIN, E4M3_MAX
 
 
 def torch_per_token_cast_round(x: torch.Tensor, group_size: int = CANONICAL_G):
-    """Quantize with a power-of-two scale. Returns ``(q, sf)``, sf still float32."""
+    """Quantize with the scale rounded up to a power of two.
+
+    Args:
+        x: ``(M, K)`` **bfloat16** -- the activations to quantize. Row 0 is all
+            zeros in the tests, which is what exercises the clamp.
+        group_size: channels sharing one scale. Fixed at 32 on Ascend.
+
+    Returns:
+        ``q``: ``(M, K)`` **float8_e4m3fn**.
+        ``sf``: ``(M, K/group_size)`` **float32**, still a full float but now
+        always a power of two -- every mantissa bit is zero, which is what
+        lets variant 03 store it in a single byte.
+    """
     # TODO: amax as in variant 01, then round the scale up to a power of two with
     #       the float32 exponent trick. For v = amax/E4M3_MAX: bits =
     #       v.view(torch.int32); exp = ((bits - 1) >> 23) + 1 - 127 is

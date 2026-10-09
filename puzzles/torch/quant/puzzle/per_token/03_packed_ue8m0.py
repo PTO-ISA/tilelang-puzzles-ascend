@@ -6,9 +6,17 @@ from harness.consts import CANONICAL_G, E4M3_CLAMP_MIN, E4M3_MAX
 
 
 def torch_per_token_cast_packed(x: torch.Tensor, group_size: int = CANONICAL_G):
-    """Quantize with packed-UE8M0 scales. Returns ``(q, sf_packed)``.
+    """Quantize, storing each power-of-two scale as one UE8M0 exponent byte.
 
-    ``sf_packed`` is (M, K/group_size/2) int16 -- two exponent bytes per word.
+    Args:
+        x: ``(M, K)`` **bfloat16** -- the activations to quantize. Row 0 is all
+            zeros in the tests, which is what exercises the clamp.
+        group_size: channels sharing one scale. Fixed at 32 on Ascend.
+
+    Returns:
+        ``q``: ``(M, K)`` **float8_e4m3fn**.
+        ``sf_packed``: ``(M, K/group_size/2)`` **int16** -- two exponent bytes
+        per word, low byte first. 4x less scale memory than variant 02.
     """
     # TODO: as variant 02 for the exponent (bits =
     #       (amax/E4M3_MAX).view(torch.int32); exp = ((bits - 1) >> 23) + 1 -

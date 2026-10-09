@@ -6,7 +6,19 @@ from harness.consts import BLOCK_K, BLOCK_MN, E4M3_CLAMP_MIN, E4M3_MAX
 
 
 def torch_per_block_cast_col_major(x: torch.Tensor, block: tuple = (BLOCK_MN, BLOCK_K)):
-    """Return ``(q, sf_cm)`` with packed power-of-two scales, transposed."""
+    """Quantize per tile, writing the scales transposed.
+
+    Args:
+        x: ``(M, K)`` **bfloat16** -- the values to quantize. Row 0 is all zeros
+            in the tests, which is what exercises the clamp.
+        block: ``(bm, bk)``, the tile the scale covers.
+
+    Returns:
+        ``q``: ``(M, K)`` **float8_e4m3fn**.
+        ``sf_cm``: ``(K/bk, M/bm)`` **float32** -- the transpose of variant
+        01's ``(M/bm, K/bk)``. A tile scale is a single scalar, so unlike
+        per_token/05 this layout change costs nothing.
+    """
     # --- BEGIN SOLUTION hint="tile-reduce exactly as in variant 01, then transpose the scale array instead of returning it as is: sf.T.contiguous(), shape (K/32, M/32). The kernel writes sf[k_block, m_block] so the consuming GEMM can fetch one tile column contiguously. Nothing else changes -- one scalar per tile has no interior layout to disturb."
     m, k = x.shape
     bm, bk = block

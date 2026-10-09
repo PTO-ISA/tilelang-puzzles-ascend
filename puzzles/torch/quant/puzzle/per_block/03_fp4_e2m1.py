@@ -41,7 +41,18 @@ def _pack_e2m1_from_fp32(quant: torch.Tensor) -> torch.Tensor:
 
 
 def torch_per_block_cast_fp4(x: torch.Tensor, block: tuple = (BLOCK_MN, BLOCK_K)):
-    """Return ``(q_packed, sf)`` -- packed FP4 values, one scale per tile."""
+    """Quantize per tile to packed FP4 (e2m1) -- the coarsest combination.
+
+    Args:
+        x: ``(M, K)`` **bfloat16** -- the values to quantize. Row 0 is all zeros
+            in the tests, which is what exercises the clamp.
+        block: ``(bm, bk)``, the tile the scale covers.
+
+    Returns:
+        ``q_packed``: ``(M, K/2)`` **int8** -- two e2m1 values per byte, low
+        nibble first.
+        ``sf``: ``(M/bm, K/bk)`` **float32** -- ``amax/6.0`` per tile.
+    """
     # TODO: tile-reduce as in variant 01 but with E2M1_MAX / E2M1_CLAMP_MIN, then
     #       call _pack_e2m1_from_fp32 on the permuted-back quantized values --
     #       that codec is per_token/04 work, given back to you here so this
