@@ -54,4 +54,4 @@ def torch_cast_back_compose(q_packed: torch.Tensor, sf_cm: torch.Tensor,
     raise NotImplementedError("torch/cast_back/06_col_major_compose: implement torch_cast_back_compose")
 
 if __name__ == "__main__":        # not a script -- see the module docstring
-    raise SystemExit("Run it through the harness:  python -m harness.check torch/cast_back/06")
+    raise SystemExit("Run it through the harness:  python -m harness.check torch/cast_back/06 --role puzzle")

@@ -32,4 +32,4 @@ def torch_per_channel_cast_packed(x: torch.Tensor, group_tokens: int = BLOCK_MN)
     raise NotImplementedError("torch/per_channel/02_round_packed_m: implement torch_per_channel_cast_packed")
 
 if __name__ == "__main__":        # not a script -- see the module docstring
-    raise SystemExit("Run it through the harness:  python -m harness.check torch/per_channel/02")
+    raise SystemExit("Run it through the harness:  python -m harness.check torch/per_channel/02 --role puzzle")

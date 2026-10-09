@@ -27,4 +27,4 @@ def torch_per_block_cast_packed(x: torch.Tensor, block: tuple = (BLOCK_MN, BLOCK
     raise NotImplementedError("torch/per_block/02_round_packed: implement torch_per_block_cast_packed")
 
 if __name__ == "__main__":        # not a script -- see the module docstring
-    raise SystemExit("Run it through the harness:  python -m harness.check torch/per_block/02")
+    raise SystemExit("Run it through the harness:  python -m harness.check torch/per_block/02 --role puzzle")

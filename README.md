@@ -49,7 +49,7 @@ An id is `tier/kernel/NN`, and any prefix of it selects a group:
 
 ```bash
 python -m harness.check                      # all 66
-python -m harness.check asc                  # one tier (23)
+python -m harness.check asc                  # one tier (22)
 python -m harness.check asc/per_token        # one kernel on one tier (7)
 python -m harness.check asc/per_token/05     # exactly one variant
 python -m harness.check per_token/05         # that variant on all three tiers (3)

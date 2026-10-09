@@ -29,4 +29,4 @@ def torch_per_channel_compose(x: torch.Tensor, group_tokens: int = BLOCK_MN):
     raise NotImplementedError("torch/per_channel/04_compose: implement torch_per_channel_compose")
 
 if __name__ == "__main__":        # not a script -- see the module docstring
-    raise SystemExit("Run it through the harness:  python -m harness.check torch/per_channel/04")
+    raise SystemExit("Run it through the harness:  python -m harness.check torch/per_channel/04 --role puzzle")

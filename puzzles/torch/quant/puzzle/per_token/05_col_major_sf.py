@@ -30,4 +30,4 @@ def torch_per_token_cast_col_major(x: torch.Tensor, group_size: int = CANONICAL_
     raise NotImplementedError("torch/per_token/05_col_major_sf: implement torch_per_token_cast_col_major")
 
 if __name__ == "__main__":        # not a script -- see the module docstring
-    raise SystemExit("Run it through the harness:  python -m harness.check torch/per_token/05")
+    raise SystemExit("Run it through the harness:  python -m harness.check torch/per_token/05 --role puzzle")

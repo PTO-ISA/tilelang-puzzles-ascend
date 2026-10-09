@@ -60,4 +60,4 @@ def launch(q_packed: torch.Tensor, sf_cm: torch.Tensor) -> torch.Tensor:
     return out
 
 if __name__ == "__main__":        # not a script -- see the module docstring
-    raise SystemExit("Run it through the harness:  python -m harness.check asc/cast_back/06")
+    raise SystemExit("Run it through the harness:  python -m harness.check asc/cast_back/06 --role puzzle")

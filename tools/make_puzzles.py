@@ -31,6 +31,10 @@ ROOT = Path(__file__).resolve().parents[1]
 BEGIN = re.compile(r'^(\s*)# --- BEGIN SOLUTION(?:\s+hint="([^"]*)")?\s*$')
 END = re.compile(r'^\s*# --- END SOLUTION\s*$')
 DEF = re.compile(r'^\s*def\s+(\w+)')
+# The __main__ guard names the command to run this file. In an ANSWER that is
+# the plain id; in a PUZZLE it must carry --role puzzle, or the file sends the
+# reader off to check the reference answer instead of their own work.
+GUARD_CMD = re.compile(r'(python -m harness\.check \S+)(")')
 
 
 def to_puzzle(text: str, variant: str) -> str:
@@ -45,7 +49,7 @@ def to_puzzle(text: str, variant: str) -> str:
             current_def = m.group(1)
         begin = BEGIN.match(line)
         if not begin:
-            out.append(line)
+            out.append(GUARD_CMD.sub(r"\1 --role puzzle\2", line))
             i += 1
             continue
         indent, hint = begin.group(1), begin.group(2) or "implement this"

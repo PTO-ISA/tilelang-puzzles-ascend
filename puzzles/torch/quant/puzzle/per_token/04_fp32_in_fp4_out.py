@@ -31,4 +31,4 @@ def torch_per_token_cast_fp4(x: torch.Tensor, group_size: int = CANONICAL_G):
     raise NotImplementedError("torch/per_token/04_fp32_in_fp4_out: implement torch_per_token_cast_fp4")
 
 if __name__ == "__main__":        # not a script -- see the module docstring
-    raise SystemExit("Run it through the harness:  python -m harness.check torch/per_token/04")
+    raise SystemExit("Run it through the harness:  python -m harness.check torch/per_token/04 --role puzzle")

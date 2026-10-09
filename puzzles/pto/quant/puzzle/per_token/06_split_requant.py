@@ -74,4 +74,4 @@ def launch(x: torch.Tensor, mode: str = "full", x_sf: torch.Tensor | None = None
     return q, sf
 
 if __name__ == "__main__":        # not a script -- see the module docstring
-    raise SystemExit("Run it through the harness:  python -m harness.check pto/per_token/06")
+    raise SystemExit("Run it through the harness:  python -m harness.check pto/per_token/06 --role puzzle")

@@ -25,4 +25,4 @@ def torch_per_block_cast(x: torch.Tensor, block: tuple = (BLOCK_MN, BLOCK_K)):
     raise NotImplementedError("torch/per_block/01_raw_32x32: implement torch_per_block_cast")
 
 if __name__ == "__main__":        # not a script -- see the module docstring
-    raise SystemExit("Run it through the harness:  python -m harness.check torch/per_block/01")
+    raise SystemExit("Run it through the harness:  python -m harness.check torch/per_block/01 --role puzzle")

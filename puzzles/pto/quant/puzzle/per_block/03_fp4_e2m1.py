@@ -72,4 +72,4 @@ def launch(x: torch.Tensor):
     return q.view(torch.uint8).view(torch.int8), sf
 
 if __name__ == "__main__":        # not a script -- see the module docstring
-    raise SystemExit("Run it through the harness:  python -m harness.check pto/per_block/03")
+    raise SystemExit("Run it through the harness:  python -m harness.check pto/per_block/03 --role puzzle")

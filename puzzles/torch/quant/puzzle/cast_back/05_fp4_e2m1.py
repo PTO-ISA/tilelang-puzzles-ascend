@@ -30,4 +30,4 @@ def torch_cast_back_fp4(q_packed: torch.Tensor, sf: torch.Tensor,
     raise NotImplementedError("torch/cast_back/05_fp4_e2m1: implement torch_cast_back_fp4")
 
 if __name__ == "__main__":        # not a script -- see the module docstring
-    raise SystemExit("Run it through the harness:  python -m harness.check torch/cast_back/05")
+    raise SystemExit("Run it through the harness:  python -m harness.check torch/cast_back/05 --role puzzle")

@@ -28,4 +28,4 @@ def torch_per_token_cast_packed(x: torch.Tensor, group_size: int = CANONICAL_G):
     raise NotImplementedError("torch/per_token/03_packed_ue8m0: implement torch_per_token_cast_packed")
 
 if __name__ == "__main__":        # not a script -- see the module docstring
-    raise SystemExit("Run it through the harness:  python -m harness.check torch/per_token/03")
+    raise SystemExit("Run it through the harness:  python -m harness.check torch/per_token/03 --role puzzle")

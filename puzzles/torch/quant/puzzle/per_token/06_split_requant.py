@@ -61,4 +61,4 @@ def torch_requant(q_in: torch.Tensor, sf_in: torch.Tensor,
     raise NotImplementedError("torch/per_token/06_split_requant: implement torch_requant")
 
 if __name__ == "__main__":        # not a script -- see the module docstring
-    raise SystemExit("Run it through the harness:  python -m harness.check torch/per_token/06")
+    raise SystemExit("Run it through the harness:  python -m harness.check torch/per_token/06 --role puzzle")

@@ -30,4 +30,4 @@ def torch_per_token_bf16_compose(x: torch.Tensor, group_size: int = CANONICAL_G)
     raise NotImplementedError("torch/per_token/07_bf16_fast_compose: implement torch_per_token_bf16_compose")
 
 if __name__ == "__main__":        # not a script -- see the module docstring
-    raise SystemExit("Run it through the harness:  python -m harness.check torch/per_token/07")
+    raise SystemExit("Run it through the harness:  python -m harness.check torch/per_token/07 --role puzzle")

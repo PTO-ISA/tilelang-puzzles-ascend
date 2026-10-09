@@ -25,4 +25,4 @@ def torch_per_channel_cast(x: torch.Tensor, group_tokens: int = BLOCK_MN):
     raise NotImplementedError("torch/per_channel/01_raw_32tokens: implement torch_per_channel_cast")
 
 if __name__ == "__main__":        # not a script -- see the module docstring
-    raise SystemExit("Run it through the harness:  python -m harness.check torch/per_channel/01")
+    raise SystemExit("Run it through the harness:  python -m harness.check torch/per_channel/01 --role puzzle")

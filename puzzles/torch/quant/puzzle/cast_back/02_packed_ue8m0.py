@@ -28,4 +28,4 @@ def torch_cast_back_packed(q: torch.Tensor, sf_packed: torch.Tensor,
     raise NotImplementedError("torch/cast_back/02_packed_ue8m0: implement torch_cast_back_packed")
 
 if __name__ == "__main__":        # not a script -- see the module docstring
-    raise SystemExit("Run it through the harness:  python -m harness.check torch/cast_back/02")
+    raise SystemExit("Run it through the harness:  python -m harness.check torch/cast_back/02 --role puzzle")

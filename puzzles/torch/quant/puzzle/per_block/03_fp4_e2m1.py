@@ -62,4 +62,4 @@ def torch_per_block_cast_fp4(x: torch.Tensor, block: tuple = (BLOCK_MN, BLOCK_K)
     raise NotImplementedError("torch/per_block/03_fp4_e2m1: implement torch_per_block_cast_fp4")
 
 if __name__ == "__main__":        # not a script -- see the module docstring
-    raise SystemExit("Run it through the harness:  python -m harness.check torch/per_block/03")
+    raise SystemExit("Run it through the harness:  python -m harness.check torch/per_block/03 --role puzzle")

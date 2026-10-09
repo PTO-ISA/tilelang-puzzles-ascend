@@ -24,4 +24,4 @@ def torch_cast_back_block(q: torch.Tensor, sf: torch.Tensor,
     raise NotImplementedError("torch/cast_back/03_block_sf: implement torch_cast_back_block")
 
 if __name__ == "__main__":        # not a script -- see the module docstring
-    raise SystemExit("Run it through the harness:  python -m harness.check torch/cast_back/03")
+    raise SystemExit("Run it through the harness:  python -m harness.check torch/cast_back/03 --role puzzle")
