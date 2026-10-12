@@ -46,8 +46,8 @@ So the interesting question is not whether the thread model exists on this chip
 but what it costs, and there is a measurement rather than an opinion:
 
 - **53% of ASC's source lines** across all 22 variants, inside the VF region.
-- **3.20x to 99.62x ASC's simulated VF cycles, mean 14.50x** — an order of
-  magnitude on the small-group reductions — see
+- **3.20x to 21.18x ASC's simulated VF cycles, mean 10.44x**, plus one outlier
+  at 99.62x where a hand-written FP4 encoder replaces a hardware convert — see
   [`quant_vf_cycle_comparison.md`](quant_vf_cycle_comparison.md).
 
 Two specifics are worth carrying back to the GPU comparison.

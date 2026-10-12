@@ -134,8 +134,10 @@ use rather than machinery it has improved on.
 The three-tier version of this story ends with ASC naming the machine, PTO naming
 the intent, and the measurement saying PTO costs 74% of ASC's vector operations.
 The SIMT tier adds a fourth point that is not further along the same line: 53% of
-ASC's source lines across all 22 variants, at **3.20x to 99.62x** ASC's simulated
-VF cycles (mean 14.50x). Easiest to write and fastest to run are different axes,
+ASC's source lines across all 22 variants, at **3.20x to 21.18x** ASC's simulated
+VF cycles (mean 10.44x), plus one outlier at 99.62x where a hand-written FP4
+encoder replaces a hardware convert. Easiest to write and fastest to run are
+different axes,
 and [per_token/05](../per_token/05_col_major_sf.md) is where they most clearly
 disagree — the largest source-length win in the ladder, at 13.74x the cycles.
 
