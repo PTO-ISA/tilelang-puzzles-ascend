@@ -15,7 +15,7 @@ from harness.consts import BLOCK_K, BLOCK_MN, CANONICAL_G
 from harness.demo import randn_with_zero_row
 from harness.math_ops import decode_packed_ue8m0, unpack_e2m1_bytes
 
-from harness.spec import Ctx, Variant, register
+from harness.spec import WITH_SIMT, Ctx, Variant, register
 
 CPU = torch.device("cpu")
 BLOCK = (BLOCK_MN, BLOCK_K)
@@ -128,17 +128,17 @@ def _v05(ctx: Ctx) -> None:
 
 register(
     Variant("per_block", "01_raw_32x32", _v01, torch_fn="torch_per_block_cast",
-            torch_shapes=((32, 128), (64, 64))),
+            torch_shapes=((32, 128), (64, 64)), tiers=WITH_SIMT),
     Variant("per_block", "02_round_packed", _v02,
             torch_fn="torch_per_block_cast_packed",
-            torch_shapes=((32, 128), (64, 128))),
+            torch_shapes=((32, 128), (64, 128)), tiers=WITH_SIMT),
     Variant("per_block", "03_fp4_e2m1", _v03, torch_fn="torch_per_block_cast_fp4",
-            torch_shapes=((32, 128), (64, 64))),
+            torch_shapes=((32, 128), (64, 64)), tiers=WITH_SIMT),
     Variant("per_block", "04_col_major_tma", _v04,
             torch_fn="torch_per_block_cast_col_major",
-            torch_shapes=((64, 128), (128, 256))),
+            torch_shapes=((64, 128), (128, 256)), tiers=WITH_SIMT),
     Variant("per_block", "05_split_compose", _v05,
             torch_fn="torch_per_block_sf_only",
             torch_shapes=((32, 128), (64, 256)),
-            probe_args=lambda m, k: (k, "full")),
+            probe_args=lambda m, k: (k, "full"), tiers=WITH_SIMT),
 )

@@ -41,6 +41,10 @@ DROP_ASSIGNS = {"VARIANT"}
 # cast_back), so whether it survives is decided by usage analysis like everything
 # else.
 HARNESS_ONLY_MODULES = {"sim", "demo"}
+# Tier -> the label used in the one-line doc pointer. Keyed off the directory
+# name, so a new tier is one entry here rather than two hardcoded tuples; a tier
+# whose directory does not exist for this kernel is skipped.
+TIER_LABELS = {"torch": "torch", "asc": "ASC", "pto": "PTO", "simt": "SIMT"}
 
 
 def _spans_to_drop(tree: ast.Module, src_lines: list[str]) -> list[tuple[int, int]]:
@@ -155,10 +159,11 @@ def main() -> int:
     args = ap.parse_args()
 
     total_before = total_after = 0
-    for tier in ("torch", "asc", "pto"):
+    for tier, label in TIER_LABELS.items():
         d = ROOT / "puzzles" / tier / "quant" / "answer" / args.kernel
+        if not d.is_dir():
+            continue
         for path in sorted(d.glob("[0-9]*.py")):
-            label = {"torch": "torch", "asc": "ASC", "pto": "PTO"}[tier]
             pointer = (f"{args.kernel} {path.stem.split('_')[0]} ({label}). "
                        f"See doc/quant/{args.kernel}/{path.stem}.md")
             src = path.read_text()

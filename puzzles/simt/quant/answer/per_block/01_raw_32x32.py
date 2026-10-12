@@ -1,0 +1,97 @@
+"""per_block 01 (SIMT). See doc/quant/per_block/01_raw_32x32.md"""
+
+import torch
+import tilelang
+import tilelang.ascend.language as T
+
+from harness import status
+from harness.consts import BLOCK_K, BLOCK_MN, E4M3_CLAMP_MIN, E4M3_MAX
+
+THREADS = 128
+
+
+@tilelang.jit(target="ascend")
+def compile_kernel(hidden: int, block: tuple = (BLOCK_MN, BLOCK_K)):
+    """Quantize bfloat16 -> FP8 e4m3 with one FP32 scale per `block` tile.
+
+    One scale for 1024 values means a reduction all the way down to a scalar,
+    and this is the shape a GPU programmer reaches for: a partial per thread
+    into shared memory, then one thread finishing the job. The SIMD tiers do
+    exactly the same two levels for the same reason -- a vector reduction stops
+    at one value per register, so the partials have to meet in UB.
+
+    The honest reading of this variant is that SIMT buys nothing here. The
+    structure is identical; only the spelling of a maximum changes.
+    """
+    bm, bk = block
+    assert bm == 32 and bk == 32, "Ascend per_block granularity is 32x32"
+    assert hidden % bk == 0
+    num_k_blocks = hidden // bk
+    num_tokens = T.dynamic("num_tokens")
+    num_m_blocks = T.ceildiv(num_tokens, bm)
+
+    @T.prim_func
+    def per_block_cast(
+        X: T.Tensor((num_tokens, hidden), T.bfloat16),
+        Q: T.Tensor((num_tokens, hidden), T.float8_e4m3fn),
+        Sf: T.Tensor((num_m_blocks, num_k_blocks), T.float32),
+    ):
+        with T.Kernel(1):
+            # A 2-D UB tile is right here, unlike per_token: the tile really is
+            # 32 tokens by 32 channels, so T.copy's 2-D region is what we want.
+            x_ub = T.alloc_shared((bm, bk), T.bfloat16)
+            q_ub = T.alloc_shared((bm, bk), T.float8_e4m3fn)
+            row_ub = T.alloc_shared((bm,), T.float32)     # per-row partials
+            sf_ub = T.alloc_shared((1,), T.float32)
+            inv_ub = T.alloc_shared((1,), T.float32)
+
+            for mb in T.serial(num_m_blocks):
+                for kb in T.serial(num_k_blocks):
+                    T.copy(X[mb * bm, kb * bk], x_ub)
+
+                    # --- BEGIN SOLUTION hint="a two-level reduction, the same two levels the SIMD tiers need. (1) T.Parallel(bm): each thread scans its own row of bk out of the UB tile and writes the partial to row_ub[t]. (2) T.Parallel(1): one thread folds the bm partials into the tile maximum, seeded at E4M3_CLAMP_MIN, and writes sf = amax/448 and inv = 448/amax into one-element shared buffers -- a scalar result belongs in shared, not in a fragment. (3) T.Parallel(bm, bk): apply, reading the single inv_ub[0] that every thread shares. Note there is no index arithmetic anywhere in this variant: the tile is already the reduction domain, so SIMT's advantage over SIMD is nil here and the structures match line for line."
+                    with T.SimtVF(threads=THREADS):
+                        q_l = T.alloc_fragment((bm, bk), T.float32)
+
+                        # level 1: one thread per row of the tile
+                        for t in T.Parallel(bm):
+                            amax = T.alloc_var(T.float32)
+                            amax = E4M3_CLAMP_MIN
+                            for j in T.serial(bk):
+                                amax = T.max(amax,
+                                             T.abs(T.Cast("float32", x_ub[t, j])))
+                            row_ub[t] = amax
+
+                        # level 2: one thread folds the partials to a scalar
+                        for _z in T.Parallel(1):
+                            tile = T.alloc_var(T.float32)
+                            tile = E4M3_CLAMP_MIN
+                            for t in T.serial(bm):
+                                tile = T.max(tile, row_ub[t])
+                            sf_ub[0] = tile / E4M3_MAX
+                            inv_ub[0] = E4M3_MAX / tile
+
+                        # apply: every thread reads the same scalar scale
+                        for i, j in T.Parallel(bm, bk):
+                            q_l[i, j] = T.Cast("float32", x_ub[i, j]) * inv_ub[0]
+
+                        T.copy(q_l, q_ub)
+                    # --- END SOLUTION
+
+                    T.copy(q_ub, Q[mb * bm, kb * bk])
+                    T.copy(sf_ub[0:1], Sf[mb, kb:kb + 1])
+
+    return per_block_cast
+
+
+def launch(x: torch.Tensor):
+    m, hidden = x.shape
+    q = torch.empty((m, hidden), dtype=torch.float8_e4m3fn, device=x.device)
+    sf = torch.empty((m // BLOCK_MN, hidden // BLOCK_K), dtype=torch.float32,
+                     device=x.device)
+    compile_kernel(hidden)(x, q, sf)
+    status.assert_on_device("per_block 01", q, sf)
+    return q, sf
+
+if __name__ == "__main__":        # not a script -- see the module docstring
+    raise SystemExit("Run it through the harness:  python -m harness.check simt/per_block/01")
