@@ -168,6 +168,26 @@ the same reason as its ASC and PTO siblings: the region is the pack alone, and t
 reduction and scale math above it are given. It is listed in the table above with
 them.
 
+### A second deliberate departure: `simt/per_token/04`'s extra keyword
+
+Every tier's `launch(x)` and `compile_kernel(hidden)` are otherwise identical
+across torch, ASC, PTO and SIMT — that is what makes the files diffable and the
+harness tier-agnostic. `simt/per_token/04` is the one exception: it takes an
+additive `branch_free: bool = False` on both, because it ships **two spellings
+of the e2m1 encoder** that differ by 1.78x in simulated cycles.
+
+The divergence is deliberately the smallest kind. The keyword is additive with a
+default, so `launch(x)` — the call the harness makes on every tier — is
+unchanged, and the default path is the one the published measurement reports.
+The harness exercises the second arm too and asserts it is byte-identical.
+
+The alternative was to keep the faster spelling only in
+`harness/probe/simt_divergence.py`, which would have made it an aside rather
+than a reference answer. Shipping both is the better trade: the 1.78x is one of
+the more useful things this tier teaches, and a flag in the file is where a
+reader will find it. See
+[`quant/per_token/04_fp32_in_fp4_out.md`](quant/per_token/04_fp32_in_fp4_out.md).
+
 ### One deliberate 1:1 departure: `per_token/03`
 
 Every other variant's SIMT region covers the same stages as its ASC and PTO

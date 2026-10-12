@@ -57,6 +57,19 @@ DRIVEN = {
     "per_block/05_split_compose": "full",
 }
 
+# Alternative spellings of a variant that are shipped and verified, but are not
+# a variant of their own: the harness entry point exposes one of them as the
+# default, so the other needs the driver. Reported in their own section rather
+# than in the 22-row ASC:PTO:SIMT table, which stays one row per variant.
+# id -> (driver mode, what it is)
+EXTRA = {
+    "simt/per_token/04_fp32_in_fp4_out": [
+        ("branch_free", "the e2m1 encoder's conditionals as mask arithmetic "
+                        "instead of `T.if_then_else`"),
+    ],
+}
+EXTRA_SEP = "+"
+
 OUT_RE = re.compile(r"^\[sim\] out=(.+)$", re.M)
 STATUS_RE = re.compile(r"^\[status\] variant=(\S+) result=(\w+)", re.M)
 SOC_RE = re.compile(r"soc=(\S+?)[,)\s]", re.M)
@@ -240,6 +253,8 @@ def build_table(records: dict) -> str:
     """ASC : PTO : SIMT per variant, with ASC as the 1.00 baseline."""
     by_variant: dict[str, dict[str, dict]] = defaultdict(dict)
     for vid, rec in records.items():
+        if EXTRA_SEP in vid:
+            continue                    # an alternative spelling, not a variant
         tier, kernel, stem = vid.split("/")
         by_variant[f"{kernel}/{stem}"][tier] = rec
 
@@ -317,6 +332,8 @@ def write_report(records: dict) -> None:
 
     by_variant: dict[str, dict[str, dict]] = defaultdict(dict)
     for vid, rec in records.items():
+        if EXTRA_SEP in vid:
+            continue                    # an alternative spelling, not a variant
         tier, kernel, stem = vid.split("/")
         by_variant[f"{kernel}/{stem}"][tier] = rec
 
@@ -426,6 +443,20 @@ def write_report(records: dict) -> None:
         lo, lo_n = min(ratios["simt"])
         vals = sorted(r for r, _ in ratios["simt"])
         rest = [r for r, n in ratios["simt"] if n != hi_n]
+        # If that worst row ships an alternative spelling, quote its measured
+        # effect rather than a remembered one.
+        alt_ratio, alt_vs_asc = "fewer cycles", "lower"
+        base_id = f"simt/{hi_n}"
+        for mode, _why in EXTRA.get(base_id, []):
+            alt = records.get(f"{base_id}{EXTRA_SEP}{mode}", {})
+            base = records.get(base_id, {})
+            asc_c = records.get(f"asc/{hi_n}", {}).get("cycles")
+            if alt.get("cycles") and base.get("cycles"):
+                alt_ratio = (f"{base['cycles'] / alt['cycles']:.2f}x fewer "
+                             f"cycles ({base['cycles']:,.0f} to "
+                             f"{alt['cycles']:,.0f})")
+                if asc_c:
+                    alt_vs_asc = f"{alt['cycles'] / asc_c:.1f}x ASC"
         lines += [
             "## Reading the SIMT column",
             "",
@@ -450,31 +481,27 @@ def write_report(records: dict) -> None:
             "| worse cycles per instruction | 4.94 against 1.90-2.01 |",
             "",
             "The second factor is **branch divergence**, and it is not inherent.",
-            "`simt/per_token/04` is the only variant in the ladder carrying a large",
-            "number of `SIMT_START_DVG` / `SIMT_END_DVG` markers, because",
-            "`T.if_then_else` on a data-dependent per-element condition lowers to a",
-            "real branch rather than a predicated select.",
-            "`harness/probe/simt_divergence.py` rewrites the encoder's three",
-            "conditionals as mask arithmetic, changes nothing else, and both arms",
-            "stay bit-exact against the torch packer:",
+            f"`{hi_n}` is the only variant in the ladder carrying a large number of",
+            "`SIMT_START_DVG` / `SIMT_END_DVG` markers, because `T.if_then_else` on",
+            "a data-dependent per-element condition lowers to a real branch rather",
+            "than a predicated select. That variant therefore **ships both",
+            "spellings**, the harness asserts they are byte-identical, and both are",
+            "measured -- see \"Alternative spellings\" below for the numbers and",
+            "`harness/probe/simt_divergence.py` for the controlled experiment.",
             "",
-            "| spelling | cycles | instructions | cycles/instr | divergence |",
-            "|---|---:|---:|---:|---:|",
-            "| `T.if_then_else` (shipped) | 615,170 | 124,294 | 4.95 | 5,864 |",
-            "| mask arithmetic | **351,956** | 179,908 | **1.96** | **0** |",
-            "",
-            "So the branch-free spelling issues 45% **more** instructions and runs",
-            "**1.75x fewer cycles**, landing at 57x ASC rather than 100x. Its 1.96",
-            "cycles per instruction is exactly the rest of the tier's.",
+            "The short version: the branch-free spelling issues 45% **more**",
+            f"instructions and runs **{alt_ratio}** -- "
+            f"{alt_vs_asc} rather than {hi:.1f}x -- and its cycles per instruction",
+            "lands on the rest of the tier's 1.90-2.01 instead of 4.94.",
             "",
             "Two conclusions, and they pull in opposite directions, which is why",
-            "both are stated. The 99.62x is a true measurement of the kernel as",
+            f"both are stated. The {hi:.2f}x is a true measurement of the kernel as",
             "written, and it is not a measurement artefact -- the trace audit",
-            "confirms the right kernel with the right launch count. But roughly a",
-            "1.75x slice of it is a **codegen gap** rather than a cost of the thread",
-            "model: on a GPU that conditional would be predicated into a select and",
-            "cost nothing. The kernel keeps the natural spelling deliberately, since",
-            "the comparison asked for was the one a GPU programmer writes first.",
+            "confirms the right kernel with the right launch count. But that slice",
+            "of it is a **codegen gap** rather than a cost of the thread model: on a",
+            "GPU the conditional would be predicated into a select and cost nothing.",
+            "The default keeps the natural spelling deliberately, since the",
+            "comparison asked for was the one a GPU programmer writes first.",
             "",
             "**The cost is not the arithmetic.** Scalar bit manipulation is",
             "essentially free; what SIMT gives up is lane occupancy. The small-group",
@@ -600,6 +627,50 @@ def write_report(records: dict) -> None:
             "costs about 11% more.",
             "",
         ]
+    alts = [(base, mode, why, records[f"{base}{EXTRA_SEP}{mode}"])
+            for base, lst in EXTRA.items() for mode, why in lst
+            if f"{base}{EXTRA_SEP}{mode}" in records]
+    if alts:
+        lines += [
+            "## Alternative spellings, shipped and measured",
+            "",
+            "These are not variants. Each is a second spelling of one variant's",
+            "kernel, shipped in the same file behind a trace-time flag, verified",
+            "by the harness to be byte-identical to the default, and measured",
+            "here so the cost of the choice is on the record rather than implied.",
+            "They are kept out of the table above, which stays one row per",
+            "variant.",
+            "",
+            "| variant | spelling | cycles | vs the default | vs ASC |",
+            "|---|---|---:|---:|---:|",
+        ]
+        for base, mode, why, rec in alts:
+            tier, kernel, stem = base.split("/")
+            parent = records.get(base, {})
+            asc = records.get(f"asc/{kernel}/{stem}", {}).get("cycles")
+            d = parent.get("cycles")
+            c = rec.get("cycles")
+            f = lambda v: "—" if v is None else f"{v:,.0f}"
+            vs_d = f"{c / d:.2f}x" if c and d else "—"
+            vs_a = f"{c / asc:.1f}x" if c and asc else "—"
+            lines += [
+                f"| `{kernel}/{stem}` | default (`T.if_then_else`) | {f(d)} | "
+                f"1.00x | {f'{d / asc:.1f}x' if d and asc else '—'} |",
+                f"| `{kernel}/{stem}` | `{mode}` | **{f(c)}** | **{vs_d}** | "
+                f"**{vs_a}** |",
+            ]
+        lines += [
+            "",
+            f"`{alts[0][1]}` is {why}. It issues **more** instructions than the",
+            "default and runs in fewer cycles, because `T.if_then_else` on a",
+            "data-dependent per-element condition lowers to a real branch on this",
+            "toolchain while the mask form lowers to a select. The default keeps",
+            "the conditional deliberately: this ladder measures the spelling a GPU",
+            "programmer reaches for first. `harness/probe/simt_divergence.py` is",
+            "the controlled experiment, and `doc/known-issues.md` records it as a",
+            "codegen gap rather than a property of the thread model.",
+            "",
+        ]
     lines += [
         "## Confirming the trace is the quant kernel",
         "",
@@ -666,16 +737,22 @@ def main() -> int:
         return 0
 
     if args.drive:
-        todo = [vid for vid in records
-                if "/".join(vid.split("/")[1:]) in DRIVEN]
+        todo = [(vid, DRIVEN["/".join(vid.split("/")[1:])], vid)
+                for vid in records
+                if EXTRA_SEP not in vid
+                and "/".join(vid.split("/")[1:]) in DRIVEN]
+        todo += [(base, mode, f"{base}{EXTRA_SEP}{mode}")
+                 for base, alts in EXTRA.items() if base in records
+                 for mode, _ in alts]
         if not todo:
             print("nothing to drive; run --all first so the harness verdicts exist")
             return 1
-        print(f"re-measuring {len(todo)} variant(s) through tools/vf_drive.py\n")
-        for vid in sorted(todo):
-            mode = DRIVEN["/".join(vid.split("/")[1:])]
-            rec = measure_driven(vid, mode, records.get(vid))
-            records[vid] = rec
+        print(f"re-measuring {len(todo)} kernel(s) through tools/vf_drive.py\n")
+        for base, mode, key in sorted(todo, key=lambda t: t[2]):
+            rec = measure_driven(base, mode, records.get(base))
+            rec["id"] = key
+            records[key] = rec
+            vid = key
             cyc = "-" if rec.get("cycles") is None else f"{rec['cycles']:,.0f}"
             print(f"  {vid:34} {str(rec['result']):>8} {cyc:>10} cycles  "
                   f"calls={rec.get('call_count', 0)}  mode={mode}")

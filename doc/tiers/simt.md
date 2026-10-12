@@ -104,7 +104,7 @@ Stated plainly, because it makes the rest trustworthy.
 | `cast_back/04` | nothing. The SIMD tiers are getting a refund here (the broadcast disappears when there is one scale per channel); SIMT never paid it, so its line count does not move |
 | `per_block/01`, `/04` | a draw. A tile scale is a scalar, so no tier has lane-placement work to do; the two-level reduction has the same shape in all three |
 | `per_channel/01` | a draw, and the mirror of why PTO draws here: a channel is a lane for SIMD and a thread for SIMT, so the data already lines up either way |
-| `per_token/04`, `per_block/03` | **SIMT is decisively worse.** No FP4 convert is reachable from a `SimtVF` region, so the e2m1 encode is written out by hand: 18 lines against PTO's 4-operation round-to-odd |
+| `per_token/04`, `per_block/03` | **SIMT is decisively worse.** No FP4 convert is reachable from a `SimtVF` region, so the e2m1 encode is written out by hand: 18 lines against PTO's 4-operation round-to-odd. `per_token/04` ships both a natural and a branch-free spelling of that encoder, 1.78x apart — see below |
 | `per_token/07`, `per_channel/04` | the variant's *lesson* does not port. Both exist to show bfloat16 doubling the lane count; SIMT has no lane width to trade, so its body is an earlier variant's at a larger size |
 | `cast_back/05` | PTO wins. A format conversion is one thing the hardware does, so the tier that can name it directly should be shortest |
 
@@ -152,6 +152,32 @@ The measurements do not support reading it as one line.
   the vector unit idle doing it.
 - **Short source and fast kernel are not two readings of one axis.** They are two
   axes, and the four tiers are a trade rather than a ranking.
+
+### One variant ships two spellings, 1.78x apart
+
+`per_token/04` is the exception to "one kernel per variant", and the reason is
+worth knowing before you write any SIMT code here.
+
+`T.if_then_else` on a data-dependent per-element condition lowers to a **real
+branch** on this toolchain, not a predicated select. In that variant's encoder
+there are three such conditionals, and the cost is 4.94 cycles per instruction
+against the rest of the tier's 1.90–2.01 — it is the only variant in the ladder
+whose trace carries a large number of `SIMT_START_DVG` markers. Respelling the
+conditionals as mask arithmetic (`m = -T.Cast("int32", cond)`, then
+`(a & m) | (b & ~m)`) issues **45% more instructions and runs 1.78x fewer
+cycles**: 613,632 down to 345,189, which is 56.0x ASC instead of 99.6x.
+
+Both are in the file behind `branch_free=`, both are checked by the harness to
+be byte-identical, and both are measured in
+[`quant_vf_cycle_comparison.md`](../quant_vf_cycle_comparison.md). The default is
+the conditional, because that is the spelling this ladder set out to measure.
+
+On a GPU the choice would not exist: a compiler predicates that conditional into
+a select. So this is a **codegen gap, not a cost of the thread model** — and it
+is the one place where writing the natural thing and writing the fast thing
+genuinely diverge in this tier. `doc/known-issues.md` records it under
+performance cliffs; `harness/probe/simt_divergence.py` is the controlled
+experiment.
 
 ### And do not over-read the cycle column either
 

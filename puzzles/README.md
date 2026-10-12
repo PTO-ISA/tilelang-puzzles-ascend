@@ -164,14 +164,15 @@ both are right about their own axis.
 | torch | ~5 s | 1.8 min |
 | ASC | 18–42 s (one at 64 s) | 10.3 min |
 | PTO | 18–41 s (one at 62 s) | 10.2 min |
-| SIMT | 21–105 s (**one at 495 s**) | 28.8 min |
+| SIMT | 21–105 s (**one at 820 s**) | 34.3 min |
 | unsolved puzzle, any tier | ~6 s | 8.1 min (all 88) |
 
 SIMT is the slowest tier to *check*, which is worth knowing before you pick it
-as your first one. The outlier is `per_token/04`: its hand-written FP4 encoder
-expands into thousands of scalar instructions per thread, and both compilation
-and cycle-accurate simulation scale with that. Everything else in the tier is
-under two minutes.
+as your first one. The outlier is `per_token/04`, at about fourteen minutes: it
+compiles and simulates **two** kernels, because it ships both spellings of its
+FP4 encoder and the harness verifies both, and that encoder expands into
+thousands of scalar instructions per thread either way. Everything else in the
+tier is under two minutes.
 
 Measured end to end including compilation, on the CPU simulator. The per-variant
 table is in the [root README](../README.md).

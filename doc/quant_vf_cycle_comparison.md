@@ -95,31 +95,26 @@ expensive", and it splits into two independent factors:
 | worse cycles per instruction | 4.94 against 1.90-2.01 |
 
 The second factor is **branch divergence**, and it is not inherent.
-`simt/per_token/04` is the only variant in the ladder carrying a large
-number of `SIMT_START_DVG` / `SIMT_END_DVG` markers, because
-`T.if_then_else` on a data-dependent per-element condition lowers to a
-real branch rather than a predicated select.
-`harness/probe/simt_divergence.py` rewrites the encoder's three
-conditionals as mask arithmetic, changes nothing else, and both arms
-stay bit-exact against the torch packer:
+`per_token/04_fp32_in_fp4_out` is the only variant in the ladder carrying a large number of
+`SIMT_START_DVG` / `SIMT_END_DVG` markers, because `T.if_then_else` on
+a data-dependent per-element condition lowers to a real branch rather
+than a predicated select. That variant therefore **ships both
+spellings**, the harness asserts they are byte-identical, and both are
+measured -- see "Alternative spellings" below for the numbers and
+`harness/probe/simt_divergence.py` for the controlled experiment.
 
-| spelling | cycles | instructions | cycles/instr | divergence |
-|---|---:|---:|---:|---:|
-| `T.if_then_else` (shipped) | 615,170 | 124,294 | 4.95 | 5,864 |
-| mask arithmetic | **351,956** | 179,908 | **1.96** | **0** |
-
-So the branch-free spelling issues 45% **more** instructions and runs
-**1.75x fewer cycles**, landing at 57x ASC rather than 100x. Its 1.96
-cycles per instruction is exactly the rest of the tier's.
+The short version: the branch-free spelling issues 45% **more**
+instructions and runs **1.78x fewer cycles (613,632 to 345,189)** -- 56.0x ASC rather than 99.6x -- and its cycles per instruction
+lands on the rest of the tier's 1.90-2.01 instead of 4.94.
 
 Two conclusions, and they pull in opposite directions, which is why
 both are stated. The 99.62x is a true measurement of the kernel as
 written, and it is not a measurement artefact -- the trace audit
-confirms the right kernel with the right launch count. But roughly a
-1.75x slice of it is a **codegen gap** rather than a cost of the thread
-model: on a GPU that conditional would be predicated into a select and
-cost nothing. The kernel keeps the natural spelling deliberately, since
-the comparison asked for was the one a GPU programmer writes first.
+confirms the right kernel with the right launch count. But that slice
+of it is a **codegen gap** rather than a cost of the thread model: on a
+GPU the conditional would be predicated into a select and cost nothing.
+The default keeps the natural spelling deliberately, since the
+comparison asked for was the one a GPU programmer writes first.
 
 **The cost is not the arithmetic.** Scalar bit manipulation is
 essentially free; what SIMT gives up is lane occupancy. The small-group
@@ -183,7 +178,7 @@ case. A SIMT kernel issuing more would want explaining.
 
 ## Two variants are measured differently, and why
 
-`per_block/05_split_compose`, `per_token/06_split_requant` are measured through `tools/vf_drive.py` rather
+`per_block/05_split_compose`, `per_token/04_fp32_in_fp4_out+branch_free`, `per_token/06_split_requant` are measured through `tools/vf_drive.py` rather
 than through `python -m harness.check`, at `mode="full"`.
 
 `msprof op simulator` profiles a **single operator** -- in practice the
@@ -208,6 +203,29 @@ selection should produce, since `full` mode emits variant 01's kernel.
 ASC's does not, and does not claim to: its four-mode body is
 restructured (3 barriers against 2, 11 vector loads against 9), and it
 costs about 11% more.
+
+## Alternative spellings, shipped and measured
+
+These are not variants. Each is a second spelling of one variant's
+kernel, shipped in the same file behind a trace-time flag, verified
+by the harness to be byte-identical to the default, and measured
+here so the cost of the choice is on the record rather than implied.
+They are kept out of the table above, which stays one row per
+variant.
+
+| variant | spelling | cycles | vs the default | vs ASC |
+|---|---|---:|---:|---:|
+| `per_token/04_fp32_in_fp4_out` | default (`T.if_then_else`) | 613,632 | 1.00x | 99.6x |
+| `per_token/04_fp32_in_fp4_out` | `branch_free` | **345,189** | **0.56x** | **56.0x** |
+
+`branch_free` is the e2m1 encoder's conditionals as mask arithmetic instead of `T.if_then_else`. It issues **more** instructions than the
+default and runs in fewer cycles, because `T.if_then_else` on a
+data-dependent per-element condition lowers to a real branch on this
+toolchain while the mask form lowers to a select. The default keeps
+the conditional deliberately: this ladder measures the spelling a GPU
+programmer reaches for first. `harness/probe/simt_divergence.py` is
+the controlled experiment, and `doc/known-issues.md` records it as a
+codegen gap rather than a property of the thread model.
 
 ## Confirming the trace is the quant kernel
 
