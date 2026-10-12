@@ -33,6 +33,43 @@ worth taking seriously).
 Concretely, `cast_back_cuda.py` is 87 lines for the same contract that takes
 203 lines of `cast_back_asc.py` — and the CUDA body is three statements.
 
+## The NPU has a thread model too, and this repo measures it
+
+The framing above is the honest one for the SIMD tiers, but it would be wrong to
+leave it as *GPU has threads, NPU has lanes*. `T.SimtVF` gives the Ascend vector
+unit a thread model, and the top of this page — `for i, j in T.Parallel(...)`
+indexing elements — **is** valid NPU code. `puzzles/simt/` is the whole 22-variant
+ladder written that way, and
+[`tiers/simt.md`](tiers/simt.md) is the account of it.
+
+So the interesting question is not whether the thread model exists on this chip
+but what it costs, and there is a measurement rather than an opinion:
+
+- **53% of ASC's source lines** across all 22 variants, inside the VF region.
+- **Several times ASC's simulated VF cycles**, and an order of magnitude on the
+  small-group reductions — see
+  [`quant_vf_cycle_comparison.md`](quant_vf_cycle_comparison.md).
+
+Two specifics are worth carrying back to the GPU comparison.
+
+**The lane-placement sections on each variant page are about lanes, not about
+NPUs.** Where a page says the GPU gets a config for free because "the thread model
+lets any element go anywhere", the SIMT tier confirms it on this chip:
+`per_token/05`'s transposed store costs ASC a lane-index vector and a
+`S.vgather2`, PTO nearly as much, and SIMT one subscript. The cost was never
+the chip; it was the choice to program the vector registers directly.
+
+**But the GPU-style spelling leaves the vector unit idle.** `per_token/05` is also
+the worst SIMT cycle ratio in the ladder. With `group_size = 32`, a kernel that
+puts one thread on each quant group uses 4 threads out of 128. On a GPU the
+hardware scheduler hides a lot of that; here the cost is visible and large.
+
+The useful conclusion is not that one model wins. It is that **ease of expression
+and lane occupancy are separate axes**, and the NPU exposes the trade where the
+GPU mostly hides it. A GPU programmer coming to this chip can write `T.Parallel`
+and be correct quickly — and then has a measured reason to care about what the
+SIMD tiers are buying.
+
 ## What the NPU makes explicit that the GPU hides
 
 | concern | GPU | NPU |
@@ -87,6 +124,9 @@ every NPU kernel is checked against it. If a torch variant is three lines and th
 NPU variant is eighty, the eighty are all hardware, not algorithm — and reading the
 pair makes that distinction concrete rather than rhetorical.
 
-The *schedule* is also shared between the two NPU backends: tiling, UB allocation,
-DMA, buffer versions and core assignment are written once and the ASC/VMI choice
-only changes what goes inside `T.SimdVF()`. See `pto-vs-asc.md`.
+The *schedule* is also shared across the NPU backends: tiling, UB allocation,
+DMA, buffer versions and core assignment are written once, and the ASC/VMI choice
+only changes what goes inside `T.SimdVF()`. See `pto-vs-asc.md`. The SIMT tier
+keeps the same staging — `T.Kernel(1)`, the same UB buffers, the same `T.copy`
+in and out — and changes only what the VF region contains, which is why adding it
+needed no new harness field.

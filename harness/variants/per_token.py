@@ -19,7 +19,7 @@ from harness.consts import BLOCK_MN, CANONICAL_G
 from harness.demo import randn_with_zero_row
 from harness.math_ops import decode_packed_ue8m0, unpack_e2m1_bytes
 
-from harness.spec import WITH_SIMT, Ctx, Shape, Variant, register
+from harness.spec import Ctx, Shape, Variant, register
 
 G = CANONICAL_G
 CPU = torch.device("cpu")
@@ -212,26 +212,25 @@ def _v07(ctx: Ctx) -> None:
 
 register(
     Variant("per_token", "01_raw_fp32sf", _v01, torch_fn="torch_per_token_cast",
-            tiers=WITH_SIMT,
             torch_shapes=((32, 128), (8, 64), (64, 256))),
     Variant("per_token", "02_round_sf", _v02, torch_fn="torch_per_token_cast_round",
-            torch_shapes=((32, 128), (8, 64)), tiers=WITH_SIMT),
+            torch_shapes=((32, 128), (8, 64))),
     Variant("per_token", "03_packed_ue8m0", _v03,
             torch_fn="torch_per_token_cast_packed",
-            torch_shapes=((32, 128), (8, 128)), tiers=WITH_SIMT),
+            torch_shapes=((32, 128), (8, 128))),
     Variant("per_token", "04_fp32_in_fp4_out", _v04,
             torch_fn="torch_per_token_cast_fp4",
-            torch_shapes=((32, 128), (8, 64)), tiers=WITH_SIMT),
-    Variant("per_token", "05_col_major_sf", _v05, tiers=WITH_SIMT,
+            torch_shapes=((32, 128), (8, 64))),
+    Variant("per_token", "05_col_major_sf", _v05,
             torch_fn="torch_per_token_cast_col_major",
             torch_shapes=((32, 128), (8, 64))),
     # the split modes are compile-time, so the TODO probe needs one of them
     Variant("per_token", "06_split_requant", _v06, torch_fn="torch_sf_only",
             torch_shapes=((32, 128),),
-            probe_args=lambda m, k: (k, "full"), tiers=WITH_SIMT),
+            probe_args=lambda m, k: (k, "full")),
     Variant("per_token", "07_bf16_fast_compose", _v07,
             torch_fn="torch_per_token_bf16_compose",
             shape=Shape(fixed_k=BF16_K),
             torch_shapes=((32, 256), (8, 512)),
-            probe_args=lambda m, k: (BF16_K,), tiers=WITH_SIMT),
+            probe_args=lambda m, k: (BF16_K,)),
 )

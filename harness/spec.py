@@ -1,15 +1,16 @@
 """What the harness knows about each variant.
 
-One record per variant, shared by all three tiers. That sharing is possible
-because the ASC and PTO tiers are semantically identical in how they are driven
-and checked -- the only differences between their old ``test_correctness``
-functions were dropped comments and inlined tuples. The torch tier differs in
-two specific ways (it sweeps several shapes, and its tolerances are tighter),
-and those are expressed as fields rather than as a separate code path.
+One record per variant, shared by all four tiers. That sharing is possible
+because the ASC, PTO and SIMT tiers are semantically identical in how they are
+driven and checked -- the only differences between the ASC and PTO tiers' old
+``test_correctness`` functions were dropped comments and inlined tuples, and the
+SIMT tier needed no new field at all. The torch tier differs in two specific ways
+(it sweeps several shapes, and its tolerances are tighter), and those are
+expressed as fields rather than as a separate code path.
 
 Each variant supplies exactly one ``body(ctx)`` function. It builds the inputs,
 invokes the tier's entry point through ``ctx``, and asserts. Writing it once per
-variant rather than once per (variant, tier) is what collapses 66
+variant rather than once per (variant, tier) is what collapses 88
 ``test_correctness`` functions into 22.
 """
 
@@ -21,13 +22,7 @@ from typing import Callable, Sequence
 
 import torch
 
-TIERS = ("torch", "asc", "pto")
-
-# The SIMT tier is being filled in variant by variant. A variant opts in with
-# `tiers=WITH_SIMT` until all 22 exist, at which point "simt" joins TIERS and
-# these overrides go away -- a missing file is a FAIL, not a skip, so enrolling
-# the tier wholesale before the files exist would turn the sweep red.
-WITH_SIMT = TIERS + ("simt",)
+TIERS = ("torch", "asc", "pto", "simt")
 KERNELS = ("cast_back", "per_token", "per_block", "per_channel")
 
 

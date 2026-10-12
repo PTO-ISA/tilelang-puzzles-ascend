@@ -9,7 +9,7 @@ hardware: no lane widths, no distribution modes, no memory barriers. Getting the
 algorithm wrong here costs a second; getting it wrong inside a vector kernel costs
 thirty, and you will not know which of the two mistakes you made.
 
-All three tiers are checked against `harness/oracle.py`, which is a standalone
+All four tiers are checked against `harness/oracle.py`, which is a standalone
 PyTorch reference and imports nothing from `puzzles/`. So skipping this tier does
 not stop an NPU variant from being verified — it just means learning the algorithm
 and the vector surface at the same time. If you are unsure what a kernel is
@@ -91,7 +91,7 @@ the downstream GEMM. Every test deliberately zeroes row 0 to exercise it.
 ## The variant ladder
 
 Each kernel's variants add one config at a time, and the numbering matches across
-all three tiers — `per_token/03` is the same feature in torch, ASC and PTO.
+all four tiers — `per_token/03` is the same feature in torch, ASC, PTO and SIMT.
 
 | # | config introduced |
 |---|---|
@@ -130,7 +130,9 @@ the demos measure rather than assert them:
 
 ## Next
 
-Either NPU tier, in either order: [`doc/tiers/asc.md`](asc.md) for the physical
-instruction set, [`doc/tiers/pto.md`](pto.md) for the logical one. They do not
-depend on each other — see [`puzzles/README.md`](../../puzzles/README.md) for why,
-and for the recommended order within a tier.
+Any NPU tier, in any order: [`doc/tiers/asc.md`](asc.md) for the physical
+instruction set, [`doc/tiers/pto.md`](pto.md) for the logical one,
+[`doc/tiers/simt.md`](simt.md) for threads instead of lanes — the easiest of the
+three to write, and the slowest to run. None depends on another; see
+[`puzzles/README.md`](../../puzzles/README.md) for why, and for the recommended
+order within a tier.
