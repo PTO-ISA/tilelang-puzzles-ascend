@@ -123,14 +123,18 @@ allow more than one index pattern. And the input scales are staged with a single
 is what is wanted, 32 tokens by `num_in_groups` scales, which is the opposite of
 the trap [per_token/01](../per_token/01_raw_fp32sf.md) describes.
 
-### The non-bit-exact result carries over unchanged
+### The non-bit-exact result carries over exactly
 
-This is the one variant whose FP8 output is deliberately not bit-exact: requantizing
-input that already sits on the FP8 grid produces **exact ties**, which different
-implementations break differently. The harness does not loosen a tolerance for it —
-it asserts that no difference exceeds one code *and* that every differing position
-is a genuine midpoint. The SIMT arm satisfies both, so the tie count is a property
-of the arithmetic rather than of any one tier's rounding.
+This is the one variant whose FP8 output is deliberately not bit-exact:
+requantizing input that already sits on the FP8 grid produces **exact ties**,
+which different implementations break differently. The harness does not loosen a
+tolerance for it — it asserts that no difference exceeds one code *and* that
+every differing position is a genuine midpoint.
+
+The SIMT arm reports **the same 97 of 4096 codes, all 97 proven ties**, as ASC
+and PTO do. That is worth more than passing the assertion: the count is
+identical across three unrelated implementations, which shows it is a property
+of where the FP8 grid falls, not of any one tier's rounding behaviour.
 
 ## What the harness checks
 

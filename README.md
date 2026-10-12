@@ -243,6 +243,11 @@ land on such ties and the hardware and torch break them differently. The test
 asserts that every difference is at most one code **and** that every differing
 position is a genuine midpoint, so it still fails on a real defect.
 
+All three NPU tiers report **the same 97, all 97 proven ties** — ASC, PTO and
+SIMT alike. Three unrelated implementations agreeing on the count is what shows
+it is a property of where the FP8 grid falls rather than of any one tier's
+rounding.
+
 ## PTO vs ASC, measured
 
 ```bash
