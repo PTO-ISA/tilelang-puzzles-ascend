@@ -63,6 +63,23 @@ def drive_per_token_06(mod, mode: str):
     return args
 
 
+def drive_per_token_04(mod, mode: str):
+    """per_token/04, whose two modes are two spellings of the e2m1 encoder.
+
+    Unlike the two variants above, this one's launch() runs no device op first,
+    so the harness path measures it correctly. It is driven only because the
+    *alternative* spelling has no harness entry point of its own -- the harness
+    calls launch(x), which is the default arm.
+    """
+    ng = K // CANONICAL_G
+    x = torch.randn(M, K, dtype=torch.float32) * 3.0
+    q = torch.empty((M, K // 2), dtype=torch.uint8)
+    sf = torch.empty((M, ng), dtype=torch.float32)
+    args = [t.npu() for t in (x, q, sf)]
+    mod.compile_kernel(K, branch_free=(mode == "branch_free"))(*args)
+    return args
+
+
 def drive_per_block_05(mod, mode: str):
     nm, nk = M // BLOCK_MN, K // BLOCK_K
     x = torch.randn(M, K, dtype=torch.float32).to(torch.bfloat16)
@@ -76,6 +93,7 @@ def drive_per_block_05(mod, mode: str):
 
 DRIVERS = {
     "per_token/06": drive_per_token_06,
+    "per_token/04": drive_per_token_04,
     "per_block/05": drive_per_block_05,
 }
 DEFAULT_MODE = "full"

@@ -702,6 +702,19 @@
   "soc": "Ascend950PR_9599",
   "us": 340.910004
  },
+ "simt/per_token/04_fp32_in_fp4_out+branch_free": {
+  "call_count": 32,
+  "cycles": 345189.0,
+  "instr": "VF_SIMT",
+  "kind": "SIMT",
+  "method": "driver",
+  "mode": "branch_free",
+  "note": "measured through tools/vf_drive.py at mode=branch_free; the harness path profiles this variant's placeholder torch.zeros fill instead of its kernel",
+  "result": "PASS",
+  "shape": "32x128",
+  "soc": "Ascend950PR_9599",
+  "us": 191.770004
+ },
  "simt/per_token/05_col_major_sf": {
   "call_count": 32,
   "cycles": 75281.0,

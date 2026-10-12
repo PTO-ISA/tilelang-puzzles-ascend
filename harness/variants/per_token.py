@@ -115,6 +115,23 @@ def _v04(ctx: Ctx) -> None:
     rel = (back - x).abs().max().item() / x.abs().max().item()
     ctx.note(f"round-trip rel-err {rel:.1%} (FP4 has one mantissa bit)")
 
+    # The SIMT tier ships two spellings of the e2m1 encoder's conditionals: the
+    # natural `T.if_then_else` one, and a branch-free one that is 1.78x faster
+    # because `T.if_then_else` lowers to a divergent branch here. They must be
+    # byte-identical, and both are reference answers, so both are checked --
+    # nothing in this repo publishes a kernel it has not verified.
+    if ctx.tier == "simt":
+        q2, sf2 = ctx.call(ctx.dev(x), branch_free=True)
+        assert torch.equal(ctx.host(q2).view(torch.uint8),
+                           ctx.host(q).view(torch.uint8)), (
+            "the branch-free encoder must produce byte-identical nibbles"
+        )
+        assert torch.equal(ctx.host(sf2), ctx.host(sf)), (
+            "the branch-free arm must not perturb the scales"
+        )
+        ctx.note("the branch-free encoder is byte-identical to the shipped one "
+                 "(same nibbles, same scales)")
+
 
 # ---------------------------------------------------------------------------
 # 05 -- column-major scales
