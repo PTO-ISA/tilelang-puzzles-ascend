@@ -260,6 +260,7 @@ doc/                            all prose lives here, as rendered markdown
   vf-lane-widths-and-limits.md  register geometry; why 32 is not a legal width
   known-issues.md               toolchain limits, each with a repro script
   ladder-audit.md               does each variant make a meaningful change? measured
+  vf_cycles_from_msprof_simulator.md  how the VF-cycle numbers are obtained
 puzzles/<tier>/quant/           code only -- no prose, no tests, no main
   answer/<kernel>/NN_name.py    the kernel body and its host-side launch
   puzzle/<kernel>/NN_name.py    generated from the answer; implementation removed
