@@ -60,7 +60,6 @@ DRIVEN = {
 OUT_RE = re.compile(r"^\[sim\] out=(.+)$", re.M)
 STATUS_RE = re.compile(r"^\[status\] variant=(\S+) result=(\w+)", re.M)
 SOC_RE = re.compile(r"soc=(\S+?)[,)\s]", re.M)
-SHAPE_RE = re.compile(r"shape=\((\d+),\s*(\d+)\)")
 
 
 # ---------------------------------------------------------------------------
@@ -164,7 +163,24 @@ def measure_driven(vid: str, mode: str, prior: dict | None) -> dict:
     return rec
 
 
-def measure(vid: str) -> dict:
+def effective_shape(variant, tier: str) -> str | None:
+    """The (M, K) this variant actually runs at, from the spec -- not the output.
+
+    Parsing ``shape=(m, k)`` out of the relayed log looked fine and was wrong:
+    it matched the *configured* base shape, so the three variants with their own
+    shape rules (``per_token/07`` at K=256, ``per_channel/02`` and ``/04`` at
+    M=64) were all recorded as 32x128. Ask the spec instead.
+    """
+    try:
+        sys.path.insert(0, str(ROOT))
+        from harness import sim as _sim
+        m, k = variant.shape.resolve(*_sim.sim_shapes())
+        return f"{m}x{k}"
+    except Exception:                                         # noqa: BLE001
+        return None
+
+
+def measure(vid: str, shape: str | None = None) -> dict:
     """Run one variant under the simulator and sum its VF launch rows."""
     env = dict(os.environ, TLP_KEEP_SIM_OUT="1")
     proc = subprocess.run([sys.executable, "-B", "-m", "harness.check", vid],
@@ -180,8 +196,7 @@ def measure(vid: str) -> dict:
     # under rather than asking the reader to trust them.
     soc = SOC_RE.search(out)
     rec["soc"] = soc.group(1) if soc else None
-    sh = SHAPE_RE.search(out)
-    rec["shape"] = f"{sh.group(1)}x{sh.group(2)}" if sh else None
+    rec["shape"] = shape
 
     om = OUT_RE.search(out)
     if not om:
@@ -329,7 +344,12 @@ def write_report(records: dict) -> None:
         "silicon-fidelity claim is made.",
         "",
         f"SoC `{'`, `'.join(sorted(socs)) or 'unrecorded'}`; "
-        f"core `core0.veccore0`; shapes `{'`, `'.join(shapes) or 'unrecorded'}` (M x K).",
+        f"core `core0.veccore0`.",
+        "",
+        "**Each row's three tiers run at the same shape**, so the ratios are",
+        "within-variant and valid; cycle counts are *not* comparable between rows,",
+        "which run at different shapes and do different amounts of work. Shapes in",
+        f"use: `{'`, `'.join(shapes) or 'unrecorded'}` (M x K).",
         "",
         "Every row below passed the same correctness check as its ASC and PTO",
         "twin — the same oracle comparison, the same `assert_on_device` proof that",
@@ -355,10 +375,16 @@ def write_report(records: dict) -> None:
                      f"{'**' + rp + '**' if a and pt and pt / a < FASTER else rp}"
                      f" | {rs} |")
 
+    odd = sorted({(n, r[t]["shape"]) for n, row in by_variant.items()
+                  for t in row for r in [row]
+                  if row[t].get("shape") and row[t]["shape"] != "32x128"})
+    if odd:
+        lines += ["", "Variants that do not run at the default `32x128`: "
+                  + ", ".join(f"`{n}` at `{sh}`" for n, sh in odd) + "."]
     lines += ["", f"ASC is the 1.00 baseline. A ratio below {FASTER:.2f}x — shown in",
               "bold — means that tier used **fewer** simulated cycles than ASC.",
               "Ratios between that and 1.00x are draws: these are simulated cycles",
-              "on a single shape, and a fraction of a percent is not a result.", ""]
+              "on one shape per variant, and a fraction of a percent is not a result.", ""]
 
     for tier in ("pto", "simt"):
         v = ratios[tier]
@@ -582,19 +608,20 @@ def main() -> int:
     from harness.check import resolve                      # noqa: E402
 
     if args.all:
-        ids = [v.id(t) for v, t in resolve([]) if t in VECTOR_TIERS]
+        pairs = [(v, t) for v, t in resolve([]) if t in VECTOR_TIERS]
     elif args.query:
-        ids = [v.id(t) for v, t in resolve(args.query) if t in VECTOR_TIERS]
+        pairs = [(v, t) for v, t in resolve(args.query) if t in VECTOR_TIERS]
     else:
         ap.error("give one or more selectors, or --all")
 
-    if not ids:
+    if not pairs:
         print("no vector-tier variants matched (torch has no simulator run)")
         return 1
 
-    print(f"measuring {len(ids)} variant(s) under the simulator\n")
-    for vid in ids:
-        rec = measure(vid)
+    print(f"measuring {len(pairs)} variant(s) under the simulator\n")
+    for variant, tier in pairs:
+        vid = variant.id(tier)
+        rec = measure(vid, effective_shape(variant, tier))
         records[vid] = rec
         cyc = "-" if rec.get("cycles") is None else f"{rec['cycles']:,.0f}"
         extra = f"  {rec['note']}" if rec.get("note") else ""

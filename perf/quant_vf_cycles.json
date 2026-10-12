@@ -126,7 +126,7 @@
   "instr": "VF",
   "kind": "SIMD",
   "result": "PASS",
-  "shape": "32x128",
+  "shape": "64x128",
   "soc": "Ascend950PR_9599",
   "us": 0.47
  },
@@ -146,7 +146,7 @@
   "instr": "VF",
   "kind": "SIMD",
   "result": "PASS",
-  "shape": "32x128",
+  "shape": "64x128",
   "soc": "Ascend950PR_9599",
   "us": 0.41
  },
@@ -217,7 +217,7 @@
   "instr": "VF",
   "kind": "SIMD",
   "result": "PASS",
-  "shape": "32x128",
+  "shape": "32x256",
   "soc": "Ascend950PR_9599",
   "us": 2.7
  },
@@ -348,7 +348,7 @@
   "instr": "VF",
   "kind": "SIMD",
   "result": "PASS",
-  "shape": "32x128",
+  "shape": "64x128",
   "soc": "Ascend950PR_9599",
   "us": 0.45
  },
@@ -368,7 +368,7 @@
   "instr": "VF",
   "kind": "SIMD",
   "result": "PASS",
-  "shape": "32x128",
+  "shape": "64x128",
   "soc": "Ascend950PR_9599",
   "us": 0.41
  },
@@ -439,7 +439,7 @@
   "instr": "VF",
   "kind": "SIMD",
   "result": "PASS",
-  "shape": "32x128",
+  "shape": "32x256",
   "soc": "Ascend950PR_9599",
   "us": 2.85
  },
@@ -570,7 +570,7 @@
   "instr": "VF_SIMT",
   "kind": "SIMT",
   "result": "PASS",
-  "shape": "32x128",
+  "shape": "64x128",
   "soc": "Ascend950PR_9599",
   "us": 3.31
  },
@@ -590,7 +590,7 @@
   "instr": "VF_SIMT",
   "kind": "SIMT",
   "result": "PASS",
-  "shape": "32x128",
+  "shape": "64x128",
   "soc": "Ascend950PR_9599",
   "us": 3.31
  },
@@ -661,7 +661,7 @@
   "instr": "VF_SIMT",
   "kind": "SIMT",
   "result": "PASS",
-  "shape": "32x128",
+  "shape": "32x256",
   "soc": "Ascend950PR_9599",
   "us": 40.27
  }
