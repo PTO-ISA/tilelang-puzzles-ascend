@@ -17,7 +17,7 @@ from harness.asserts import assert_bf16_near, assert_fp32_ulps
 from harness.consts import BLOCK_K, BLOCK_MN, CANONICAL_G
 from harness.math_ops import pack_ue8m0_row_major
 
-from harness.spec import Ctx, Shape, Variant, register
+from harness.spec import WITH_SIMT, Ctx, Shape, Variant, register
 
 G = CANONICAL_G
 
@@ -137,7 +137,7 @@ def _v06(ctx: Ctx) -> None:
 
 register(
     Variant("cast_back", "01_e4m3_fp32sf", _v01, torch_fn="torch_cast_back",
-            torch_shapes=((32, 128), (8, 64), (64, 256))),
+            torch_shapes=((32, 128), (8, 64), (64, 256)), tiers=WITH_SIMT),
     Variant("cast_back", "02_packed_ue8m0", _v02, torch_fn="torch_cast_back_packed",
             torch_shapes=((32, 128), (8, 128))),
     Variant("cast_back", "03_block_sf", _v03, torch_fn="torch_cast_back_block",
