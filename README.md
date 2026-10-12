@@ -301,27 +301,36 @@ harness/                        everything that is not a kernel
   probe/                        reproducible toolchain-limit probes
 tools/
   make_puzzles.py               regenerate puzzle/ from answer/ (--check in CI)
-  vf_lines.py                   measure VF body size and operation counts
+  vf_lines.py                   VF body size and op counts, per vector tier
+  vf_cycles.py                  measure simulated VF cycles; --report writes the table
+  ladder_table.py               generate doc/ladder-audit.md's table (--check)
+  check_doc_numbers.py          verify the line counts quoted in the variant pages
   check_math.py                 lint every .md for GitHub LaTeX pitfalls
 docker/                         the container this was validated in; clones tilelang at TILELANG_COMMIT
 ```
 
 ## How this repo keeps itself honest
 
-A quantization ladder has two easy ways to lie: report `PASS` for a variant that
+A quantization ladder has several easy ways to lie: report `PASS` for a variant that
 quietly computed its answer in PyTorch on the host, and ship a status table
 describing a toolchain that has since moved. Three mechanisms exist so neither can
-happen here:
+happen here, and a third — publish a comparison the reader cannot check:
 
-1. **`harness/status.py` asserts results come back from the device.** A kernel
+1. **Published numbers are re-derived from the source, not retyped.**
+   `tools/ladder_table.py --check` regenerates the audit's measurement table and
+   fails if it drifted; `tools/check_doc_numbers.py` re-counts every line-count
+   triple quoted in the 22 variant pages; `harness/doc_examples.py` re-runs the
+   worked examples. A claim nobody can re-derive is a claim that will be wrong
+   eventually.
+2. **`harness/status.py` asserts results come back from the device.** A kernel
    variant either runs on the NPU or reports `XFAIL`; `launch()` is never allowed
    to return a host-computed answer. `harness/check.py` tallies `PASS`/`XFAIL`/`TODO`/
    `FAIL` separately and exits nonzero only on `FAIL`, so neither a documented
    toolchain limitation nor an unsolved exercise can masquerade as success.
-2. **`harness/sim.py` requires an explicit verdict.** The simulator SIGSEGVs during
+3. **`harness/sim.py` requires an explicit verdict.** The simulator SIGSEGVs during
    teardown after the program exits; that specific case is tolerated, but a run
    that produced no `PASS`/`XFAIL` at all is a failure, not a pass.
-3. **Every documented toolchain limit has a script.** `harness/probe/` reproduces
+4. **Every documented toolchain limit has a script.** `harness/probe/` reproduces
    each one, tagged with the version measured. Prose goes stale silently; a script
    does not.
 
@@ -341,6 +350,8 @@ So the limits are not written down as facts. Each one is a script:
 ```bash
 python harness/probe/vf_lane_limits.py          # which VF bodies lower
 python harness/probe/fp8_out_idx.py             # whether out_idx can allocate FP8
+python harness/probe/simt_limits.py             # what a T.SimtVF region can lower
+python harness/probe/simt_limits.py --run       # ...and what it silently gets wrong
 ```
 
 `vf_lane_limits.py` checks four bodies and prints what each one does. On the pinned
