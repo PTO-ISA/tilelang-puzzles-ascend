@@ -12,7 +12,7 @@ launch — `VF_SIMT` for a SIMT kernel, `VF` for a SIMD one. `cycles` is
 already the total for its row and is never scaled by `call_count`. No
 silicon-fidelity claim is made.
 
-SoC `unrecorded`; core `core0.veccore0`; shapes `unrecorded` (M x K).
+SoC `Ascend950PR_9599`; core `core0.veccore0`; shapes `32x128` (M x K).
 
 Every row below passed the same correctness check as its ASC and PTO
 twin — the same oracle comparison, the same `assert_on_device` proof that
@@ -23,21 +23,28 @@ wrong answer is worse than no number.
 | variant | ASC | PTO | SIMT | PTO/ASC | SIMT/ASC |
 |---|---:|---:|---:|---:|---:|
 | `cast_back/01_e4m3_fp32sf` | 2,105 | 2,201 | 6,908 | 1.05x | 3.28x |
+| `cast_back/02_packed_ue8m0` | 2,201 | 2,233 | 7,033 | 1.01x | 3.20x |
+| `cast_back/03_block_sf` | 2,080 | 2,144 | 6,969 | 1.03x | 3.35x |
+| `cast_back/04_per_channel_sf` | 2,016 | 2,048 | 6,983 | 1.02x | 3.46x |
+| `cast_back/05_fp4_e2m1` | 2,296 | 2,584 | 10,152 | 1.13x | 4.42x |
+| `cast_back/06_col_major_compose` | 2,272 | 2,528 | 9,275 | 1.11x | 4.08x |
 | `per_token/01_raw_fp32sf` | 6,176 | 4,576 | 71,606 | **0.74x** | 11.59x |
-| `per_token/05_col_major_sf` | 5,477 | 5,448 | 75,281 | 0.99x | 13.74x |
+| `per_token/02_round_sf` | 4,608 | 4,688 | 71,008 | 1.02x | 15.41x |
+| `per_token/03_packed_ue8m0` | 4,608 | 4,672 | 74,136 | 1.01x | 16.09x |
+| `per_token/04_fp32_in_fp4_out` | 6,160 | 4,784 | — | **0.78x** | — |
 
 ASC is the 1.00 baseline. A ratio below 0.98x — shown in
 bold — means that tier used **fewer** simulated cycles than ASC.
 Ratios between that and 1.00x are draws: these are simulated cycles
 on a single shape, and a fraction of a percent is not a result.
 
-**PTO vs ASC**, over 3 variants: 0.74x (`per_token/01_raw_fp32sf`) to 1.05x (`cast_back/01_e4m3_fp32sf`), mean 0.93x.
+**PTO vs ASC**, over 10 variants: 0.74x (`per_token/01_raw_fp32sf`) to 1.13x (`cast_back/05_fp4_e2m1`), mean 0.99x.
 
-**SIMT vs ASC**, over 3 variants: 3.28x (`cast_back/01_e4m3_fp32sf`) to 13.74x (`per_token/05_col_major_sf`), mean 9.54x.
+**SIMT vs ASC**, over 9 variants: 3.20x (`cast_back/02_packed_ue8m0`) to 16.09x (`per_token/03_packed_ue8m0`), mean 7.21x.
 
 ## PTO is faster than ASC on some variants
 
-Reported as measured. 1 of 3 variants come out below 1.00x: `per_token/01_raw_fp32sf`.
+Reported as measured. 2 of 10 variants come out below 0.98x: `per_token/01_raw_fp32sf`, `per_token/04_fp32_in_fp4_out`.
 
 The expected story going in was that ASC — the most verbose tier,
 naming the physical operation — would also be the fastest. On this
@@ -49,7 +56,7 @@ comparison is like-for-like.
 
 ## Reading the SIMT column
 
-SIMT is slower everywhere here, by between 3.3x (`cast_back/01_e4m3_fp32sf`) and 13.7x (`per_token/05_col_major_sf`). Two things are worth
+SIMT is slower everywhere here, by between 3.2x (`cast_back/02_packed_ue8m0`) and 16.1x (`per_token/03_packed_ue8m0`). Two things are worth
 separating out.
 
 **The cost is not the arithmetic.** Scalar bit manipulation is
@@ -65,18 +72,43 @@ source-length win and the worst cycle ratio — the thread model removes
 the lane-placement problem and leaves most of the vector unit idle
 doing it.
 
-None of this was tuned. The SIMT kernels are written the way a GPU
-programmer would write them first, which is the comparison that was
-wanted; a tuned SIMT kernel would land somewhere else.
+**None of this was tuned.** The SIMT kernels are written the way a
+GPU programmer would write them first, which is the comparison that
+was wanted here. A tuned SIMT kernel lands somewhere else, and the
+next section says how far.
+
+## Do not generalise this table past this sample
+
+Every row here has SIMT slower, and it would be easy to read that as
+a law. It is not one, for two reasons.
+
+**These are 22 single-config quantization kernels at one shape.** The
+reductions all have `group_size = 32`, which is the case that leaves
+the most threads idle. A kernel whose natural parallelism matches the
+thread count would not look like this.
+
+**Tuning moves it by more than the gap on some variants.** A separate
+SIMT-versus-SIMD suite, measured on the same simulator and SoC but
+not part of this repo, swept several SIMT strategies per kernel and
+found ratios from **0.33x to 53x** — that is, SIMT *winning* by 3x on
+some grouped reductions and losing by 50x elsewhere. In one case the
+strategy choice alone (keeping values in registers versus streaming
+through UB) moved the ratio from 0.63x to 0.33x, a factor of two, on
+an identical kernel.
+
+So the honest scope of this table is: *for these kernels, at this
+shape, written the obvious way, SIMT costs this much more.* It
+supports the claim that the thread model trades cycles for ease. It
+does not support a claim about SIMT in general, and the four-tier
+story in `tiers/simt.md` is written not to make one.
 
 ## Checking a comparison is like-for-like
 
 `call_count` is the guard the method doc insists on: *a large speed-up
 with a mismatched `call_count` is a different kernel, not a faster one.*
-Where the counts differ here, the reason is in the data file — at
-`per_token/05`, ASC and PTO issue 34 VF launches against SIMT's 32,
-and the two extra are the one-time gather-index setup that SIMT does
-not need.
+Every row above was checked against it.
+
+**All 9 comparable variants issue the same number of VF launches in every tier**, so no ratio here is explained by one tier simply doing less work.
 
 Per-variant commentary on *why* each row looks the way it does is on the
 variant pages under `doc/quant/`; [`tiers/simt.md`](tiers/simt.md)

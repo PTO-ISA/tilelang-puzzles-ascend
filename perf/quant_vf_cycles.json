@@ -5,7 +5,59 @@
   "instr": "VF",
   "kind": "SIMD",
   "result": "PASS",
+  "shape": "32x128",
+  "soc": "Ascend950PR_9599",
   "us": 1.17
+ },
+ "asc/cast_back/02_packed_ue8m0": {
+  "call_count": 32,
+  "cycles": 2201.0,
+  "instr": "VF",
+  "kind": "SIMD",
+  "result": "PASS",
+  "shape": "32x128",
+  "soc": "Ascend950PR_9599",
+  "us": 1.22
+ },
+ "asc/cast_back/03_block_sf": {
+  "call_count": 32,
+  "cycles": 2080.0,
+  "instr": "VF",
+  "kind": "SIMD",
+  "result": "PASS",
+  "shape": "32x128",
+  "soc": "Ascend950PR_9599",
+  "us": 1.16
+ },
+ "asc/cast_back/04_per_channel_sf": {
+  "call_count": 32,
+  "cycles": 2016.0,
+  "instr": "VF",
+  "kind": "SIMD",
+  "result": "PASS",
+  "shape": "32x128",
+  "soc": "Ascend950PR_9599",
+  "us": 1.12
+ },
+ "asc/cast_back/05_fp4_e2m1": {
+  "call_count": 32,
+  "cycles": 2296.0,
+  "instr": "VF",
+  "kind": "SIMD",
+  "result": "PASS",
+  "shape": "32x128",
+  "soc": "Ascend950PR_9599",
+  "us": 1.28
+ },
+ "asc/cast_back/06_col_major_compose": {
+  "call_count": 32,
+  "cycles": 2272.0,
+  "instr": "VF",
+  "kind": "SIMD",
+  "result": "PASS",
+  "shape": "32x128",
+  "soc": "Ascend950PR_9599",
+  "us": 1.26
  },
  "asc/per_token/01_raw_fp32sf": {
   "call_count": 32,
@@ -13,15 +65,39 @@
   "instr": "VF",
   "kind": "SIMD",
   "result": "PASS",
+  "shape": "32x128",
+  "soc": "Ascend950PR_9599",
   "us": 3.43
  },
- "asc/per_token/05_col_major_sf": {
-  "call_count": 34,
-  "cycles": 5477.0,
+ "asc/per_token/02_round_sf": {
+  "call_count": 32,
+  "cycles": 4608.0,
   "instr": "VF",
   "kind": "SIMD",
   "result": "PASS",
-  "us": 3.04
+  "shape": "32x128",
+  "soc": "Ascend950PR_9599",
+  "us": 2.56
+ },
+ "asc/per_token/03_packed_ue8m0": {
+  "call_count": 32,
+  "cycles": 4608.0,
+  "instr": "VF",
+  "kind": "SIMD",
+  "result": "PASS",
+  "shape": "32x128",
+  "soc": "Ascend950PR_9599",
+  "us": 2.56
+ },
+ "asc/per_token/04_fp32_in_fp4_out": {
+  "call_count": 32,
+  "cycles": 6160.0,
+  "instr": "VF",
+  "kind": "SIMD",
+  "result": "PASS",
+  "shape": "32x128",
+  "soc": "Ascend950PR_9599",
+  "us": 3.42
  },
  "pto/cast_back/01_e4m3_fp32sf": {
   "call_count": 32,
@@ -29,7 +105,59 @@
   "instr": "VF",
   "kind": "SIMD",
   "result": "PASS",
+  "shape": "32x128",
+  "soc": "Ascend950PR_9599",
   "us": 1.22
+ },
+ "pto/cast_back/02_packed_ue8m0": {
+  "call_count": 32,
+  "cycles": 2233.0,
+  "instr": "VF",
+  "kind": "SIMD",
+  "result": "PASS",
+  "shape": "32x128",
+  "soc": "Ascend950PR_9599",
+  "us": 1.24
+ },
+ "pto/cast_back/03_block_sf": {
+  "call_count": 32,
+  "cycles": 2144.0,
+  "instr": "VF",
+  "kind": "SIMD",
+  "result": "PASS",
+  "shape": "32x128",
+  "soc": "Ascend950PR_9599",
+  "us": 1.19
+ },
+ "pto/cast_back/04_per_channel_sf": {
+  "call_count": 32,
+  "cycles": 2048.0,
+  "instr": "VF",
+  "kind": "SIMD",
+  "result": "PASS",
+  "shape": "32x128",
+  "soc": "Ascend950PR_9599",
+  "us": 1.14
+ },
+ "pto/cast_back/05_fp4_e2m1": {
+  "call_count": 32,
+  "cycles": 2584.0,
+  "instr": "VF",
+  "kind": "SIMD",
+  "result": "PASS",
+  "shape": "32x128",
+  "soc": "Ascend950PR_9599",
+  "us": 1.44
+ },
+ "pto/cast_back/06_col_major_compose": {
+  "call_count": 32,
+  "cycles": 2528.0,
+  "instr": "VF",
+  "kind": "SIMD",
+  "result": "PASS",
+  "shape": "32x128",
+  "soc": "Ascend950PR_9599",
+  "us": 1.4
  },
  "pto/per_token/01_raw_fp32sf": {
   "call_count": 32,
@@ -37,15 +165,39 @@
   "instr": "VF",
   "kind": "SIMD",
   "result": "PASS",
+  "shape": "32x128",
+  "soc": "Ascend950PR_9599",
   "us": 2.54
  },
- "pto/per_token/05_col_major_sf": {
-  "call_count": 34,
-  "cycles": 5448.0,
+ "pto/per_token/02_round_sf": {
+  "call_count": 32,
+  "cycles": 4688.0,
   "instr": "VF",
   "kind": "SIMD",
   "result": "PASS",
-  "us": 3.0200000000000005
+  "shape": "32x128",
+  "soc": "Ascend950PR_9599",
+  "us": 2.6
+ },
+ "pto/per_token/03_packed_ue8m0": {
+  "call_count": 32,
+  "cycles": 4672.0,
+  "instr": "VF",
+  "kind": "SIMD",
+  "result": "PASS",
+  "shape": "32x128",
+  "soc": "Ascend950PR_9599",
+  "us": 2.6
+ },
+ "pto/per_token/04_fp32_in_fp4_out": {
+  "call_count": 32,
+  "cycles": 4784.0,
+  "instr": "VF",
+  "kind": "SIMD",
+  "result": "PASS",
+  "shape": "32x128",
+  "soc": "Ascend950PR_9599",
+  "us": 2.66
  },
  "simt/cast_back/01_e4m3_fp32sf": {
   "call_count": 32,
@@ -53,7 +205,59 @@
   "instr": "VF_SIMT",
   "kind": "SIMT",
   "result": "PASS",
+  "shape": "32x128",
+  "soc": "Ascend950PR_9599",
   "us": 3.84
+ },
+ "simt/cast_back/02_packed_ue8m0": {
+  "call_count": 32,
+  "cycles": 7033.0,
+  "instr": "VF_SIMT",
+  "kind": "SIMT",
+  "result": "PASS",
+  "shape": "32x128",
+  "soc": "Ascend950PR_9599",
+  "us": 3.91
+ },
+ "simt/cast_back/03_block_sf": {
+  "call_count": 32,
+  "cycles": 6969.0,
+  "instr": "VF_SIMT",
+  "kind": "SIMT",
+  "result": "PASS",
+  "shape": "32x128",
+  "soc": "Ascend950PR_9599",
+  "us": 3.87
+ },
+ "simt/cast_back/04_per_channel_sf": {
+  "call_count": 32,
+  "cycles": 6983.0,
+  "instr": "VF_SIMT",
+  "kind": "SIMT",
+  "result": "PASS",
+  "shape": "32x128",
+  "soc": "Ascend950PR_9599",
+  "us": 3.88
+ },
+ "simt/cast_back/05_fp4_e2m1": {
+  "call_count": 32,
+  "cycles": 10152.0,
+  "instr": "VF_SIMT",
+  "kind": "SIMT",
+  "result": "PASS",
+  "shape": "32x128",
+  "soc": "Ascend950PR_9599",
+  "us": 5.64
+ },
+ "simt/cast_back/06_col_major_compose": {
+  "call_count": 32,
+  "cycles": 9275.0,
+  "instr": "VF_SIMT",
+  "kind": "SIMT",
+  "result": "PASS",
+  "shape": "32x128",
+  "soc": "Ascend950PR_9599",
+  "us": 5.15
  },
  "simt/per_token/01_raw_fp32sf": {
   "call_count": 32,
@@ -61,14 +265,28 @@
   "instr": "VF_SIMT",
   "kind": "SIMT",
   "result": "PASS",
+  "shape": "32x128",
+  "soc": "Ascend950PR_9599",
   "us": 39.779999
  },
- "simt/per_token/05_col_major_sf": {
+ "simt/per_token/02_round_sf": {
   "call_count": 32,
-  "cycles": 75281.0,
+  "cycles": 71008.0,
   "instr": "VF_SIMT",
   "kind": "SIMT",
   "result": "PASS",
-  "us": 41.819998
+  "shape": "32x128",
+  "soc": "Ascend950PR_9599",
+  "us": 39.450001
+ },
+ "simt/per_token/03_packed_ue8m0": {
+  "call_count": 32,
+  "cycles": 74136.0,
+  "instr": "VF_SIMT",
+  "kind": "SIMT",
+  "result": "PASS",
+  "shape": "32x128",
+  "soc": "Ascend950PR_9599",
+  "us": 41.189999
  }
 }
