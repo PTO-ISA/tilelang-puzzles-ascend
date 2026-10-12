@@ -9,6 +9,12 @@ Compare two kernels by **simulated VF cycles**: a TileLang SIMT kernel (`T.SimtV
 | SIMT VF | `VF_SIMT` |
 | SIMD / PTO VF | `VF`, or `VF_SIMD` if that is the name in the file |
 
+Both names are **confirmed on `Ascend950PR_9599`**: a `T.SimdVF` kernel emits
+`VF`, and a `T.SimtVF` kernel emits `VF_SIMT`. (`VF_SIMT` is absent from every
+trace taken before this repo ran a SIMT kernel, which is why it reads as
+unverified in older notes -- nothing had emitted one yet, the name was never
+wrong.)
+
 `cycles` on a row is already the total for that row. Do not multiply it by `call_count`. Add a row only when the same launch name appears again (another PC / another launch).
 
 PTO speed-up at the same shape:
@@ -18,6 +24,24 @@ pto_speedup = simt_vf_cycles / pto_vf_cycles
 ```
 
 A value above 1 means the PTO kernel spent fewer simulated VF cycles. Wall microseconds are a second number; they include scalar issue, DMA, and flags, so they are not the VF comparison.
+
+## 0. In this repo, use the tool
+
+`tools/vf_cycles.py` implements everything below against the puzzle ladder:
+
+```bash
+python tools/vf_cycles.py cast_back/01     # every vector tier of one variant
+python tools/vf_cycles.py --all            # the whole ASC : PTO : SIMT table
+python tools/vf_cycles.py --table          # re-print without re-measuring
+```
+
+It runs each variant through `python -m harness.check`, which re-execs under the
+simulator, reads the `--output` path that `harness/sim.py` prints when
+`TLP_KEEP_SIM_OUT=1`, and sums the launch rows. It **withholds the cycle count
+for any variant that did not pass**, because a number from a kernel that computes
+the wrong answer is worse than no number.
+
+The rest of this page is the underlying method, for use outside this repo.
 
 ## 1. Run both kernels the same way
 
@@ -70,7 +94,7 @@ Columns in `*_instr_exe.csv`:
 | `cycles` | Add these cells. This is the metric. |
 | `call_count` | How many times that row's instruction ran. Do not scale `cycles` by it. |
 | `running_time(us)` | Optional VF microseconds, summed over the same rows. |
-| `pipe` | `VEC` for these launches. MTE/CUBE rows are not VF cycles. |
+| `pipe` | **`PUSHQ`** on VF launch rows -- not `VEC`. Do not filter on this column: `MOVEMASK` and `PUSH_PB` sit on PUSHQ too, so `instr` is the only safe key. MTE/CUBE rows are not VF cycles. |
 | `addr` | PC. Distinct PCs are distinct rows and are all included. |
 
 Inner opcodes (`vadd`, loads, stores, `RVECEX`, and so on) sit inside the VF. Their `cycles` overlap. Summing them is not the VF total. Whole-core fields such as `aiv_total_cycles`, `aiv_vec_simt_vf_ratio`, and the `duration_time` line for `core0.veccore0` in `msprof.stdout.log` are also different measurements.
