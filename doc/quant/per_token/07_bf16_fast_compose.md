@@ -107,6 +107,36 @@ instruction sequence, not a parameter change.
 All three tiers compose the same set here, so the comparison stays fair. The gap to
 production is this one config, and it is named rather than glossed.
 
+## SIMT — the one variant whose lesson does not survive the port
+
+This page calls PTO-vs-ASC the widest gap in the repo, and the reason is lane
+width: bfloat16 halves the element size, so one instruction covers 256 values
+instead of 128, and `group=8` folds eight group reductions into one operation.
+
+**SIMT has no lane width to trade.** Parallelism is threads; `T.copy` widens
+bfloat16 to float32 on the way into a fragment; and a cross-thread reduction in
+bfloat16 ICEs on this toolchain. So the SIMT body for this variant is
+[variant 03](03_packed_ue8m0.md)'s body at a larger `hidden`, and nothing else:
+
+```python
+for g in T.Parallel(num_groups):          # num_groups is 8 now, not 4
+    ...                                   # identical to variant 03
+```
+
+Saying that plainly is better than manufacturing an advantage. The composition is
+free — power-of-two scale, UE8M0 byte, FP8 output, all carried over unchanged —
+but the *point* of the variant is a vector-width optimisation that the thread
+model cannot express.
+
+It is still numerically identical, and for a reason worth keeping: the scale is a
+power of two, so multiplying a bfloat16 value by it is exact in either precision,
+and the reduction uses only the **exponent** of the maximum, which bfloat16
+represents exactly. The harness asserts exactly that, and the SIMT arm passes it
+for free by computing in float32 throughout.
+
+15 lines against ASC's 39 and PTO's 24 — a real number that nonetheless measures
+the wrong thing here, since the saving is variant 03's, not this variant's.
+
 ## What the harness checks
 
 - `assert_same_bytes` on the packed scales, and `assert_fp8_near` on the values;

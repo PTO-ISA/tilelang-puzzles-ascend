@@ -67,6 +67,19 @@ On a GPU the scale granularity is an index expression and the compiler handles t
 rest; there is no DMA to hoist because there is no explicit staging buffer. Here
 the granularity decides the loop nest.
 
+## SIMT — the config is a divisor, and that is all
+
+All three vector tiers agree this variant is nearly free, and SIMT agrees most
+cheaply. The scale axis gets coarser, so the index changes:
+
+```python
+o_l[i] = q_l[i] * sf_ub[i // bk]        # bk instead of group_size
+```
+
+Where ASC and PTO change the `group=`/segment count of a broadcast, SIMT changes
+a divisor. There is nothing else to say about it, which is the point of the
+variant: a 6-line body that is identical to variant 01's except for one name.
+
 ## What the harness checks
 
 - a divisibility guard: `M` and `K` must both be multiples of 32, asserted with a

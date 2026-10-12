@@ -94,6 +94,37 @@ body is otherwise unchanged — the compiler re-assigns elements to threads.
 Here the axis chooses the *instruction*, so the two kernels have genuinely
 different shapes. The overview's table lays out the four consequences.
 
+## SIMT — a genuine draw, and the reason mirrors the PTO-vs-ASC one
+
+This page already explains why PTO buys nothing here: a channel is a lane, so the
+reduction along M is an elementwise `vmax` of 32 loaded rows into an accumulator
+register, with no cross-lane step and no broadcast to emulate. ASC is already
+saying exactly what it means.
+
+SIMT is the mirror image of that argument. A channel is a **thread**, so the
+reduction is a serial loop down 32 rows and the output scale is indexed by the
+channel alone:
+
+```python
+for c in T.Parallel(hidden):
+    amax = T.alloc_var(T.float32); amax = E4M3_CLAMP_MIN
+    for row in T.serial(group_tokens):
+        amax = T.max(amax, T.abs(T.Cast("float32", x_ub[row, c])))
+    sf_ub[c] = amax / E4M3_MAX
+    inv_ub[c] = E4M3_MAX / amax
+
+for row, c in T.Parallel(group_tokens, hidden):
+    q_l[row, c] = T.Cast("float32", x_ub[row, c]) * inv_ub[c]
+```
+
+No group arithmetic anywhere, in any tier. 12 lines against ASC's 21 and PTO's
+21 — the shortest of the three, but the saving is notation, not structure: the
+kernel has the same three stages and the same memory traffic in all three.
+
+The rule this confirms, now from the thread side: **SIMT pays off where the SIMD
+tiers had to move data between lanes.** When the data already lines up with the
+lanes, there is nothing for the thread model to buy.
+
 ## What the harness checks
 
 - `M % 32 == 0` and `K % 64 == 0`, with messages naming the reason;

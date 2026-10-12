@@ -102,6 +102,72 @@ ASC leaves it to the instruction default.
 
 Measured: 37 ASC operations against 17.
 
+## SIMT — the variant where SIMT is decisively worse
+
+Everything above about round-to-odd describes a two-step rounding that works
+*because the hardware has a float32-to-e2m1 convert*. ASC and PTO pre-round to
+bfloat16 with a sticky bit so the hardware's second rounding cannot
+double-round, and then convert. That is four operations in PTO.
+
+No FP4 convert is reachable from a `SimtVF` region, so there is no second
+rounding to protect, and no round-to-odd step either. Instead the SIMT file does
+the **entire e2m1 encode by hand** — the torch tier's bit-exact packer
+transcribed onto scalars:
+
+```python
+bits = T.reinterpret("int32", v)
+sign_nib = (bits >> 28) & 0x8
+exps = (bits >> 23) & 0xFF
+mant = bits & 0x7FFFFF
+is_sub = exps < 127                       # below 1.0 -> the subnormal row
+sh = T.min(126 - exps, 31)
+mant_pre = 0x400000 | (mant >> 1)
+sticky_sub = T.if_then_else(is_sub, (mant & 1) | (mant_pre & ((1 << sh) - 1)), 0)
+mant_eff = T.if_then_else(is_sub, mant_pre >> sh, mant)
+exp_eff = T.max(exps, 126) - 126
+m2 = (mant_eff >> 21) & 3
+guard, lsb = m2 & 1, (m2 >> 1) & 1
+sticky = sticky_sub | (mant_eff & 0x1FFFFF)
+inc = guard & (T.if_then_else(sticky != 0, 1, 0) | lsb)
+tmp = (((exp_eff << 2) | m2) + inc) >> 1
+nibble = sign_nib | T.min(tmp, 7)         # saturate at the 6.0 code
+```
+
+Eighteen lines against four, and it is the right trade only because correctness
+comes first: the result is bit-exact against the oracle packer, verified over
+several seeds before the kernel was ever run.
+
+One subtlety in that code. The subnormal path shifts right by `126 - exps`, which
+for a zero input is 126 — past the word width, and undefined. The torch packer
+leans on its own ">= 32 gives 0" behaviour; the kernel clamps the shift to 31
+instead, which is provably identical because `mant_pre < 2**23`, so every shift
+of 23 or more already yields 0.
+
+### The packing, which does go SIMT's way
+
+Two nibbles share a byte. A thread owning one *nibble* would have to exchange
+with its neighbour; a thread owning one **output byte** encodes both halves
+itself and the pack needs no exchange at all:
+
+```python
+for p in T.Parallel(hidden // 2):
+    inv = inv_l[p // (group_size // 2)]
+    lo = e2m1_nibble(x_ub[2 * p] * inv)
+    hi = e2m1_nibble(x_ub[2 * p + 1] * inv)
+    q_ub[p] = T.Cast("uint8", lo | (hi << 4))
+```
+
+Indexing the shared `x_ub` twice in one body is allowed; a fragment would reject
+the second pattern.
+
+### Why the line table understates this
+
+`tools/vf_lines.py` counts only what is inside the VF region, in every tier. PTO's
+round-to-odd lives in a `@T.macro` outside it and SIMT's encoder is a Python
+expression builder outside it, so **both are excluded** — which flatters SIMT
+here by eighteen lines. The 15-line SIMT figure for this variant is not
+comparable to the others.
+
 ## What the harness checks
 
 - scales within 1 ULP (0 on the torch tier);
