@@ -240,3 +240,42 @@ State soc, CANN build, shape, dtype, which core's CSV, and that both kernels mat
 Speed-up is unitless simulated-cycle ratio. Quote the absolute cycles next to it. If several VF rows were summed, say how many. A whole-core `duration_time(us)` from `msprof.stdout.log` may be listed beside this table and labeled as vec-core time, not as VF cycles.
 
 Check the two CSVs describe the same work: same grid, same trip count, and a `call_count` that matches the launches you expect. A large speed-up with a mismatched `call_count` is a different kernel, not a faster one.
+
+## Confirming the trace belongs to the kernel you meant
+
+The method above answers *how many cycles*, not *whose*. `msprof op simulator`
+profiles a **single operator** — in practice the first one the process launches
+— so the cycle total is the kernel's only if the kernel is what got profiled.
+In this repo it twice was not: `per_token/06` and `per_block/05` allocate a
+placeholder input with `torch.zeros(..., device=...)` inside `launch()`, which
+on the NPU is a fill *kernel*, and all three tiers measured that fill instead.
+They reported identical cycle counts, which is what gave it away: three
+different implementations cannot cost the same.
+
+The instruction CSV cannot tell you what it profiled, because its VF row is one
+aggregated launch. **`dump/core0.veccore0.instr_log.dump` can**, because it
+names every instruction that issued, with its pipe:
+
+| pipe | what issues there |
+|---|---|
+| `RVECEX` | vector execute — `RV_VCVT_F2F`, `RV_VMUL`, `RV_VMAX`, `RV_VSEL`, `RV_VAND`, `RV_VSHL` … |
+| `RVECLD` / `RVECST` | vector loads and stores — `RV_VLDI`, `RV_VSTI` |
+| `RVECSU` | the vector special unit |
+| `PUSHQ` | the `VF` launch itself, carrying `instr_num` |
+| — | on a SIMT kernel the same work appears as the `SIMT_*` stream (`SIMT_F2F`, `SIMT_FMUL`, `SIMT_FMNMX`, `SIMT_LDS`) |
+
+`tools/vf_trace_audit.py` reads that log for every measured variant and checks
+the mnemonics are a quantization kernel's — it multiplies by a scale, and it
+either converts a format or computes a maximum. A fill does neither.
+
+Two things make this a real check rather than a gesture. The counts are
+predictable from the source: `asc/cast_back/01` at `K=128` with 64-lane vectors
+is two strips per token, and the log shows exactly 6 `RV_VLDI`, 4
+`RV_VCVT_F2F`, 2 `RV_VSEL`, 2 `RV_VMUL` and 2 `RV_VSTI` per launch — the
+source's per-strip ops, doubled. And the negative control is reproducible:
+
+```bash
+python tools/vf_trace_audit.py --dump <OPPROF_dir>   # the torch.zeros fill:
+                                                     # one RV_VDUPS, two stores,
+                                                     # no multiply -> exit 1
+```
