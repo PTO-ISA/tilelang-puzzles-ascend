@@ -155,9 +155,52 @@ table. `per_block` is the clear case: PTO's static count is slightly higher, but
 its reduction loop is 8 iterations of 128 lanes against ASC's 16 of 64. A static
 count cannot see that, so read the per-variant docs rather than only the totals.
 
+## And now the dynamic measurement, which changes the conclusion
+
+Everything above is a source-size argument. Simulated VF cycles for all 22
+variants are now measured —
+[`quant_vf_cycle_comparison.md`](quant_vf_cycle_comparison.md), raw data in
+[`../perf/quant_vf_cycles.json`](../perf/quant_vf_cycles.json) — and they say
+something the static counts could not:
+
+**PTO uses fewer simulated cycles than ASC on 9 of the 22 variants, with a mean
+of 0.92x and a floor of 0.64x.** Only `cast_back/05` and `/06` go meaningfully
+the other way, at 1.13x and 1.11x.
+
+| | PTO relative to ASC |
+|---|---|
+| vector operations written | 74% |
+| source lines written | 89% |
+| **simulated VF cycles** | **92% mean, 0.64x–1.13x** |
+
+That is worth stating plainly because the expected story was the opposite. ASC
+names the physical operation, so it is the tier you would expect to be fastest,
+with PTO trading cycles for readability. On this sample it does not trade
+anything: it is shorter *and*, on average, cheaper.
+
+The caveat above is exactly why. `per_block` is where it shows: PTO's static
+operation count is *higher* on `per_block/01`, `/02`, `/04` and `/05`, and yet
+its measured cycles are **lower** on two of those four — 0.85x on `/01` and
+0.65x on `/04` — with the other two line-ball at 1.02x. Writing more operations
+and running fewer cycles at the same time is exactly what a wider vector does,
+and exactly what a static count cannot see.
+
+`per_block/03` is the largest single gap in the table, at 0.64x, and there PTO
+is shorter *and* cheaper: 26 operations against 28.
+
+Two honest limits on that claim. These are simulator cycles on one shape
+(`M=32, K=128`), not silicon. And every row was checked for equal VF launch
+counts across tiers before being compared, because a cheaper kernel and a
+smaller kernel look identical in a cycle total; `per_token/05` is the only
+variant where the counts differ, and the reason is in the comparison doc.
+
 ## The honest summary
 
-VMI is **not** torch and not `T.Parallel`. You still open a vector scope, write
+VMI is **not** torch and not `T.Parallel` — and `T.Parallel` is now a real
+alternative on this chip rather than a GPU-only comparison, with its own tier and
+its own measured cost: see [`tiers/simt.md`](tiers/simt.md).
+
+VMI is not it, though. You still open a vector scope, write
 memory barriers by hand, live inside explicit Unified Buffer allocations, and spell
 every width. What it removes is the *width and segment bookkeeping* — the part of
 ASC code that exists only because the algorithm's natural granularity and the

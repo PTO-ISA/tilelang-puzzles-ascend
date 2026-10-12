@@ -134,11 +134,17 @@ use rather than machinery it has improved on.
 The three-tier version of this story ends with ASC naming the machine, PTO naming
 the intent, and the measurement saying PTO costs 74% of ASC's vector operations.
 The SIMT tier adds a fourth point that is not further along the same line: 53% of
-ASC's source lines across all 22 variants, at a simulated cycle cost that is
-consistently several times ASC's and an order of magnitude on the small-group
-reductions. Easiest to write and fastest to run are different axes, and
-[per_token/05](../per_token/05_col_major_sf.md) is where they most clearly
-disagree.
+ASC's source lines across all 22 variants, at **3.20x to 99.62x** ASC's simulated
+VF cycles (mean 14.50x). Easiest to write and fastest to run are different axes,
+and [per_token/05](../per_token/05_col_major_sf.md) is where they most clearly
+disagree — the largest source-length win in the ladder, at 13.74x the cycles.
+
+Measuring cycles also unsettled the three-tier claim it was meant to extend.
+**PTO uses fewer simulated cycles than ASC on 9 of the 22 variants, mean 0.92x**,
+down to 0.64x on [per_block/03](../per_block/03_fp4_e2m1.md) — so "most verbose is
+fastest" is not what the simulator says either, and the static operation count
+was never going to tell us. See
+[the cycle comparison](../../quant_vf_cycle_comparison.md).
 
 ## What the harness checks
 
