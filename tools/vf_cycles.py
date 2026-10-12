@@ -423,12 +423,22 @@ def write_report(records: dict) -> None:
     if ratios["simt"]:
         hi, hi_n = max(ratios["simt"])
         lo, lo_n = min(ratios["simt"])
+        vals = sorted(r for r, _ in ratios["simt"])
+        rest = [r for r, n in ratios["simt"] if n != hi_n]
         lines += [
             "## Reading the SIMT column",
             "",
-            "SIMT is slower everywhere here, by between "
-            f"{lo:.1f}x (`{lo_n}`) and {hi:.1f}x (`{hi_n}`). Two things are worth",
-            "separating out.",
+            "SIMT is slower on every variant here, by between "
+            f"{lo:.2f}x (`{lo_n}`) and {hi:.2f}x (`{hi_n}`). Three things are",
+            "worth separating out.",
+            "",
+            f"**The top of that range is one variant, and it is a special case.**",
+            f"`{hi_n}` at {hi:.0f}x is the FP4 output: no FP4 store is reachable",
+            "from a `SimtVF` region, so an 18-line hand-written e2m1 encoder stands",
+            "in for a hardware conversion the SIMD tiers simply name. Dropping that",
+            f"one row, the range is {min(rest):.2f}x to {max(rest):.2f}x with a mean",
+            f"of {sum(rest) / len(rest):.2f}x (median {vals[len(vals) // 2]:.2f}x).",
+            "Read the headline mean with that in mind.",
             "",
             "**The cost is not the arithmetic.** Scalar bit manipulation is",
             "essentially free; what SIMT gives up is lane occupancy. The small-group",
@@ -437,11 +447,11 @@ def write_report(records: dict) -> None:
             "",
             "**Shorter source and fewer cycles are different axes.** Across all 22",
             "variants SIMT is 53% of ASC's source lines inside the VF region",
-            "(`python tools/vf_lines.py`) at several times the cycles. The sharpest",
-            "single case is `per_token/05`, which is simultaneously the largest",
-            "source-length win and the worst cycle ratio — the thread model removes",
-            "the lane-placement problem and leaves most of the vector unit idle",
-            "doing it.",
+            "(`python tools/vf_lines.py`). `per_token/05` is where the two axes",
+            "separate most cleanly: it is the largest source-length win in the",
+            "ladder — 15 lines against ASC's 54 — and it costs 13.74x the cycles.",
+            "The thread model removes the lane-placement problem there, and leaves",
+            "most of the vector unit idle doing it.",
             "",
             "**None of this was tuned.** The SIMT kernels are written the way a",
             "GPU programmer would write them first, which is the comparison that",
@@ -453,10 +463,10 @@ def write_report(records: dict) -> None:
             "Every row here has SIMT slower, and it would be easy to read that as",
             "a law. It is not one, for two reasons.",
             "",
-            "**These are 22 single-config quantization kernels at one shape.** The",
-            "reductions all have `group_size = 32`, which is the case that leaves",
-            "the most threads idle. A kernel whose natural parallelism matches the",
-            "thread count would not look like this.",
+            "**These are 22 single-config quantization kernels, one shape each.**",
+            "The reductions all have `group_size = 32`, which is the case that",
+            "leaves the most threads idle. A kernel whose natural parallelism",
+            "matches the thread count would not look like this.",
             "",
             "**Tuning moves it by more than the gap on some variants.** A separate",
             "SIMT-versus-SIMD suite, measured on the same simulator and SoC but",
