@@ -91,3 +91,7 @@ This is why `simt/per_token/04` measures 99.6x ASC while the rest of the SIMT
 tier sits between 3.2x and 21.2x — and why roughly a 1.75x slice of that gap is
 a codegen gap rather than a cost of the thread model. See
 `doc/known-issues.md`.
+
+Both spellings now ship in that variant behind a `branch_free` flag, and the
+harness asserts they are byte-identical, so this probe is the *explanation*
+rather than the only place the faster form exists.

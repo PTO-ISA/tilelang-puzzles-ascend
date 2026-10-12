@@ -3,7 +3,7 @@
     python harness/probe/simt_divergence.py            # both arms, ~16 min
     python harness/probe/simt_divergence.py --mode sel # one arm
 
-It lowers to a **branch**, and on `simt/per_token/04` that costs 1.75x.
+It lowers to a **branch**, and on `simt/per_token/04` that costs 1.78x.
 
 This probe exists because that variant measured 99.6x ASC's simulated VF
 cycles, far outside the rest of the SIMT tier (3.2x-21.2x), and "the hand-written
@@ -15,6 +15,11 @@ nothing else, and see what moves.
 
 Both arms are bit-exact against the torch packer, so this is a like-for-like
 comparison of two spellings of one algorithm.
+
+This probe's own numbers, from a standalone rebuild of the encoder. The shipped
+variant measures 613,632 and 345,189 (ratio 1.78x) -- the same instruction
+counts to the digit, cycles within 2%, because the surrounding kernel differs
+slightly. `doc/quant_vf_cycle_comparison.md` publishes the variant's.
 
 Measured 2026-10-12, tilelang 0.1.15 + CANN 9.2.0-beta.2, Ascend950PR_9599,
 M=32 K=128:
@@ -36,9 +41,11 @@ is a real branch. That is a **codegen quality gap, not a property of the thread
 model**, and it is why the ladder's headline SIMT figures quote the range with
 `per_token/04` set aside.
 
-The shipped kernel keeps `T.if_then_else` deliberately: the brief asked for the
-spelling a GPU programmer reaches for first, not the tuned one. The faster
-spelling is below, and `doc/quant/per_token/04_fp32_in_fp4_out.md` says so.
+Both spellings now ship in the variant itself, behind `branch_free=`, and the
+harness asserts they are byte-identical. The default stays `T.if_then_else`: the
+brief asked for the spelling a GPU programmer reaches for first, not the tuned
+one. This probe remains the controlled experiment that explains why they differ;
+`doc/quant/per_token/04_fp32_in_fp4_out.md` has the variant's own numbers.
 """
 
 from __future__ import annotations

@@ -179,28 +179,50 @@ happen somewhere, and on ASC and PTO it happens inside one hardware instruction.
 only variant in the ladder whose trace carries a large number of
 `SIMT_START_DVG` / `SIMT_END_DVG` markers, because `T.if_then_else` on a
 data-dependent per-element condition lowers to a *real branch* rather than a
-predicated select. `harness/probe/simt_divergence.py` rewrites the three
-conditionals as mask arithmetic — `m = -T.Cast("int32", cond)`, then
-`(a & m) | (b & ~m)` — changes nothing else, and keeps both arms bit-exact:
+predicated select. Rewriting the three conditionals as mask arithmetic —
+`m = -T.Cast("int32", cond)`, then `(a & m) | (b & ~m)` — changes nothing else
+and keeps both arms bit-exact. Measured on this variant:
 
 | spelling | cycles | instructions | cycles/instr | divergence |
 |---|---:|---:|---:|---:|
-| `T.if_then_else` (shipped) | 615,170 | 124,294 | 4.95 | 5,864 |
-| mask arithmetic | **351,956** | 179,908 | **1.96** | **0** |
+| `T.if_then_else` (default) | 613,632 | 124,294 | 4.94 | 5,864 |
+| `branch_free=True` | **345,189** | 179,908 | **1.92** | **0** |
 
-The branch-free form issues **45% more instructions and runs 1.75x fewer
-cycles** — 57x ASC rather than 100x — and its cycles-per-instruction is exactly
-the rest of the tier's.
+The branch-free form issues **45% more instructions and runs 1.78x fewer
+cycles** — **56.0x** ASC rather than 99.6x — and its cycles-per-instruction
+lands exactly on the rest of the tier's 1.90–2.01.
+
+(`harness/probe/simt_divergence.py` is the controlled experiment behind this. It
+rebuilds the encoder standalone and gets the same instruction counts to the
+digit, and cycles within 2%: 615,170 and 351,956, a 1.75x ratio.)
 
 On a GPU this would not arise: `cond ? a : b` over cheap arithmetic gets
 predicated into a select, so the natural conditional costs nothing. So about a
-1.75x slice of this variant's gap is a **codegen gap, not a cost of the thread
+1.78x slice of this variant's gap is a **codegen gap, not a cost of the thread
 model**, and `doc/known-issues.md` records it as such.
 
-The kernel above keeps `T.if_then_else` on purpose. This ladder wants the
-spelling a GPU programmer reaches for first, and the measurement is more useful
-when it says what that spelling costs than when it reports a tuned number. If
-you need the cycles, the probe has the faster form.
+### Both spellings ship
+
+The variant file carries both, behind a trace-time flag:
+
+```python
+def e2m1_nibble(v, branch_free: bool = False): ...
+
+launch(x)                      # the natural conditional -- what the ladder measures
+launch(x, branch_free=True)    # the mask form -- 1.78x fewer cycles
+```
+
+The default stays the conditional on purpose: this ladder wants the spelling a
+GPU programmer reaches for first, and a measurement of *that* is more useful
+than a tuned number. But the faster form is not a footnote in a probe — it is a
+reference answer in the same file, and the harness **checks both**, asserting
+the branch-free arm is byte-identical in nibbles and scales. Neither spelling
+could land here without being verified.
+
+Reading the two together is the point. The flag changes three lines inside one
+helper, nothing about the algorithm, and nothing about the output. What it
+changes is whether 64 threads that disagree about `exps < 127` proceed together
+or take turns.
 
 ### Why the line table understates this
 

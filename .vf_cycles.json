@@ -151,7 +151,7 @@
  },
  "asc/per_block/05_split_compose": {
   "call_count": 4,
-  "csv": "/root/.cache/tlp_sim/run_js9lshz7/OPPROF_20261012200704_DDNSJNJGDPKTOPAA/simulator/core0.veccore0/core0.veccore0_instr_exe.csv",
+  "csv": "/root/.cache/tlp_sim/run_8lrbnbbn/OPPROF_20261012222757_SQOFTBWGQXSSNTEB/simulator/core0.veccore0/core0.veccore0_instr_exe.csv",
   "cycles": 918.0,
   "id": "asc/per_block/05_split_compose",
   "instr": "VF",
@@ -302,7 +302,7 @@
  },
  "asc/per_token/06_split_requant": {
   "call_count": 32,
-  "csv": "/root/.cache/tlp_sim/run_hv2b0bds/OPPROF_20261012200723_CVUEAQFWSFVZDNBV/simulator/core0.veccore0/core0.veccore0_instr_exe.csv",
+  "csv": "/root/.cache/tlp_sim/run_i1bvlw87/OPPROF_20261012222816_JYASMQLCFUTVBSPD/simulator/core0.veccore0/core0.veccore0_instr_exe.csv",
   "cycles": 6864.0,
   "id": "asc/per_token/06_split_requant",
   "instr": "VF",
@@ -483,7 +483,7 @@
  },
  "pto/per_block/05_split_compose": {
   "call_count": 4,
-  "csv": "/root/.cache/tlp_sim/run_1m_qql7d/OPPROF_20261012200754_YCJDNLQLENOYQCVN/simulator/core0.veccore0/core0.veccore0_instr_exe.csv",
+  "csv": "/root/.cache/tlp_sim/run_owc8tfvx/OPPROF_20261012222847_OPJXMNQUILAHYWGW/simulator/core0.veccore0/core0.veccore0_instr_exe.csv",
   "cycles": 940.0,
   "id": "pto/per_block/05_split_compose",
   "instr": "VF",
@@ -634,7 +634,7 @@
  },
  "pto/per_token/06_split_requant": {
   "call_count": 32,
-  "csv": "/root/.cache/tlp_sim/run_76fc4uh3/OPPROF_20261012200812_TZCBWGXATAROGXRR/simulator/core0.veccore0/core0.veccore0_instr_exe.csv",
+  "csv": "/root/.cache/tlp_sim/run_ghr0hjmw/OPPROF_20261012222906_RZQKLEEOVBMDPCDI/simulator/core0.veccore0/core0.veccore0_instr_exe.csv",
   "cycles": 4576.0,
   "id": "pto/per_token/06_split_requant",
   "instr": "VF",
@@ -815,7 +815,7 @@
  },
  "simt/per_block/05_split_compose": {
   "call_count": 4,
-  "csv": "/root/.cache/tlp_sim/run_ka_f_byw/OPPROF_20261012200840_FOVYNQJFUTHHQUOO/simulator/core0.veccore0/core0.veccore0_instr_exe.csv",
+  "csv": "/root/.cache/tlp_sim/run_cz24l3gx/OPPROF_20261012222935_KCNVBZSNGTJPIBRD/simulator/core0.veccore0/core0.veccore0_instr_exe.csv",
   "cycles": 19444.0,
   "id": "simt/per_block/05_split_compose",
   "instr": "VF_SIMT",
@@ -936,7 +936,7 @@
  },
  "simt/per_token/04_fp32_in_fp4_out": {
   "call_count": 32,
-  "csv": "/root/.cache/tlp_sim/run_jf_nmng8/OPPROF_20261012193529_VZXCCSJMXWARHFEN/simulator/core0.veccore0/core0.veccore0_instr_exe.csv",
+  "csv": "/root/.cache/tlp_sim/run_jrhq7kx2/OPPROF_20261012221407_KRPGETKDXRQMPEBH/simulator/core0.veccore0/core0.veccore0_instr_exe.csv",
   "cycles": 613632.0,
   "id": "simt/per_token/04_fp32_in_fp4_out",
   "instr": "VF_SIMT",
@@ -948,6 +948,22 @@
   "shape": "32x128",
   "soc": "Ascend950PR_9599",
   "us": 340.910004
+ },
+ "simt/per_token/04_fp32_in_fp4_out+branch_free": {
+  "call_count": 32,
+  "csv": "/root/.cache/tlp_sim/run_ka5i7lpy/OPPROF_20261012223007_RPYHXHSLFILBWLRG/simulator/core0.veccore0/core0.veccore0_instr_exe.csv",
+  "cycles": 345189.0,
+  "id": "simt/per_token/04_fp32_in_fp4_out+branch_free",
+  "instr": "VF_SIMT",
+  "kind": "SIMT",
+  "method": "driver",
+  "mode": "branch_free",
+  "note": "measured through tools/vf_drive.py at mode=branch_free; the harness path profiles this variant's placeholder torch.zeros fill instead of its kernel",
+  "result": "PASS",
+  "rows": 1,
+  "shape": "32x128",
+  "soc": "Ascend950PR_9599",
+  "us": 191.770004
  },
  "simt/per_token/05_col_major_sf": {
   "call_count": 32,
@@ -966,7 +982,7 @@
  },
  "simt/per_token/06_split_requant": {
   "call_count": 32,
-  "csv": "/root/.cache/tlp_sim/run_m1d9ja27/OPPROF_20261012200912_FISSNOTWKOXAKISU/simulator/core0.veccore0/core0.veccore0_instr_exe.csv",
+  "csv": "/root/.cache/tlp_sim/run_xxf01888/OPPROF_20261012223623_VAYDACHYUDTDABEL/simulator/core0.veccore0/core0.veccore0_instr_exe.csv",
   "cycles": 71606.0,
   "id": "simt/per_token/06_split_requant",
   "instr": "VF_SIMT",

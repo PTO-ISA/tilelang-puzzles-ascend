@@ -120,23 +120,26 @@ is what it is.
 
 ### `T.if_then_else` lowers to a divergent branch, not a select
 
-This one costs **1.75x** on `simt/per_token/04`, and it is the reason that
+This one costs **1.78x** on `simt/per_token/04`, and it is the reason that
 variant measures 99.6x ASC's simulated VF cycles while the rest of the SIMT
 tier sits between 3.2x and 21.2x.
 
-`harness/probe/simt_divergence.py` runs the same e2m1 encoder twice, changing
-only how three conditionals are spelled. Both arms are bit-exact against the
-torch packer:
+Measured on that variant, which ships both spellings and whose two arms the
+harness asserts are byte-identical:
 
 | spelling | cycles | instructions | cycles/instr | divergence markers |
 |---|---:|---:|---:|---:|
-| `T.if_then_else(c, a, b)` | 615,170 | 124,294 | 4.95 | 5,864 |
-| `(a & m) \| (b & ~m)`, `m = -T.Cast("int32", c)` | **351,956** | 179,908 | **1.96** | **0** |
+| `T.if_then_else(c, a, b)` | 613,632 | 124,294 | 4.94 | 5,864 |
+| `(a & m) \| (b & ~m)`, `m = -T.Cast("int32", c)` | **345,189** | 179,908 | **1.92** | **0** |
 
-The branch-free form issues **45% more instructions and runs 1.75x fewer
-cycles**. Its 1.96 cycles per instruction is exactly what every other SIMT
-`per_token` variant achieves (1.90-2.01); the conditional form's 4.95 is the
-divergence penalty.
+The branch-free form issues **45% more instructions and runs 1.78x fewer
+cycles**. Its 1.92 cycles per instruction is what every other SIMT `per_token`
+variant achieves (1.90-2.01); the conditional form's 4.94 is the divergence
+penalty and nothing else.
+
+`harness/probe/simt_divergence.py` is the controlled experiment: it rebuilds the
+encoder standalone, reproduces the instruction counts to the digit, and gets
+cycles within 2% (615,170 and 351,956, ratio 1.75x).
 
 The trace names the mechanism directly: `SIMT_START_DVG` / `SIMT_END_DVG`
 markers appear only where `T.if_then_else` is used on a data-dependent
@@ -152,10 +155,16 @@ compiler, so the natural conditional costs nothing; here it is a real branch.
 `(a & m) | (b & ~m)`. Both arms must be safe to evaluate unconditionally, which
 in the FP4 encoder they are, because the shift amount is already clamped.
 
-The shipped kernel keeps `T.if_then_else` on purpose: this ladder wants the
-spelling a GPU programmer reaches for first, and the measurement is more useful
-when it reports what that spelling actually costs. `per_token/04`'s page says
-so, and the published SIMT range quotes that variant separately.
+**Both spellings ship.** `simt/per_token/04` takes a `branch_free` flag:
+`launch(x)` is the conditional form and `launch(x, branch_free=True)` the mask
+form. The harness checks both and asserts they are byte-identical, so neither is
+an unverified aside, and `doc/quant_vf_cycle_comparison.md` publishes both cycle
+counts.
+
+The default stays the conditional on purpose: this ladder wants the spelling a
+GPU programmer reaches for first, and the measurement is more useful when it
+reports what that spelling actually costs. The published SIMT range quotes that
+variant separately for the same reason.
 
 ### A single-thread `T.Parallel(1)` diverges too, by definition
 
