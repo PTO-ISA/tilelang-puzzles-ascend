@@ -22,6 +22,12 @@ from typing import Callable, Sequence
 import torch
 
 TIERS = ("torch", "asc", "pto")
+
+# The SIMT tier is being filled in variant by variant. A variant opts in with
+# `tiers=WITH_SIMT` until all 22 exist, at which point "simt" joins TIERS and
+# these overrides go away -- a missing file is a FAIL, not a skip, so enrolling
+# the tier wholesale before the files exist would turn the sweep red.
+WITH_SIMT = TIERS + ("simt",)
 KERNELS = ("cast_back", "per_token", "per_block", "per_channel")
 
 

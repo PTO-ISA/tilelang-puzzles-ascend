@@ -1,7 +1,7 @@
 {
  "asc/cast_back/01_e4m3_fp32sf": {
   "call_count": 32,
-  "csv": "/root/.cache/tlp_sim/run_r40q1efg/OPPROF_20261012145626_SQUADWUBAAZQCNAN/simulator/core0.veccore0/core0.veccore0_instr_exe.csv",
+  "csv": "/root/.cache/tlp_sim/run_k8mxkdki/OPPROF_20261012150342_HKYFLZRZFQNHYNBG/simulator/core0.veccore0/core0.veccore0_instr_exe.csv",
   "cycles": 2105.0,
   "id": "asc/cast_back/01_e4m3_fp32sf",
   "instr": "VF",
@@ -11,9 +11,33 @@
   "rows": 1,
   "us": 1.17
  },
+ "asc/per_token/01_raw_fp32sf": {
+  "call_count": 32,
+  "csv": "/root/.cache/tlp_sim/run_wj7lsu59/OPPROF_20261012151903_NQBDOIJFOJQDZSWP/simulator/core0.veccore0/core0.veccore0_instr_exe.csv",
+  "cycles": 6176.0,
+  "id": "asc/per_token/01_raw_fp32sf",
+  "instr": "VF",
+  "kind": "SIMD",
+  "note": "",
+  "result": "PASS",
+  "rows": 1,
+  "us": 3.43
+ },
+ "asc/per_token/05_col_major_sf": {
+  "call_count": 34,
+  "csv": "/root/.cache/tlp_sim/run_t2nxk1cb/OPPROF_20261012152144_ODAXTBKMIDGZKDGA/simulator/core0.veccore0/core0.veccore0_instr_exe.csv",
+  "cycles": 5477.0,
+  "id": "asc/per_token/05_col_major_sf",
+  "instr": "VF",
+  "kind": "SIMD",
+  "note": "",
+  "result": "PASS",
+  "rows": 3,
+  "us": 3.04
+ },
  "pto/cast_back/01_e4m3_fp32sf": {
   "call_count": 32,
-  "csv": "/root/.cache/tlp_sim/run_hkfigdtc/OPPROF_20261012145706_WYPXDBRBEDZPXPYP/simulator/core0.veccore0/core0.veccore0_instr_exe.csv",
+  "csv": "/root/.cache/tlp_sim/run_jcp0d37t/OPPROF_20261012150423_MDSJLQBLANQBKGMM/simulator/core0.veccore0/core0.veccore0_instr_exe.csv",
   "cycles": 2201.0,
   "id": "pto/cast_back/01_e4m3_fp32sf",
   "instr": "VF",
@@ -22,5 +46,65 @@
   "result": "PASS",
   "rows": 1,
   "us": 1.22
+ },
+ "pto/per_token/01_raw_fp32sf": {
+  "call_count": 32,
+  "csv": "/root/.cache/tlp_sim/run_1a4guqhw/OPPROF_20261012151935_WIQXQKPJVJASUTDD/simulator/core0.veccore0/core0.veccore0_instr_exe.csv",
+  "cycles": 4576.0,
+  "id": "pto/per_token/01_raw_fp32sf",
+  "instr": "VF",
+  "kind": "SIMD",
+  "note": "",
+  "result": "PASS",
+  "rows": 1,
+  "us": 2.54
+ },
+ "pto/per_token/05_col_major_sf": {
+  "call_count": 34,
+  "csv": "/root/.cache/tlp_sim/run_z9249uuq/OPPROF_20261012152214_RFQETMGPZLTABZQA/simulator/core0.veccore0/core0.veccore0_instr_exe.csv",
+  "cycles": 5448.0,
+  "id": "pto/per_token/05_col_major_sf",
+  "instr": "VF",
+  "kind": "SIMD",
+  "note": "",
+  "result": "PASS",
+  "rows": 3,
+  "us": 3.0200000000000005
+ },
+ "simt/cast_back/01_e4m3_fp32sf": {
+  "call_count": 32,
+  "csv": "/root/.cache/tlp_sim/run_0_zj4yao/OPPROF_20261012150504_URSPTKMGCBACKHGE/simulator/core0.veccore0/core0.veccore0_instr_exe.csv",
+  "cycles": 6908.0,
+  "id": "simt/cast_back/01_e4m3_fp32sf",
+  "instr": "VF_SIMT",
+  "kind": "SIMT",
+  "note": "",
+  "result": "PASS",
+  "rows": 1,
+  "us": 3.84
+ },
+ "simt/per_token/01_raw_fp32sf": {
+  "call_count": 32,
+  "csv": "/root/.cache/tlp_sim/run_lt5pn0dh/OPPROF_20261012152004_DCLOVGKEZNIOTQYZ/simulator/core0.veccore0/core0.veccore0_instr_exe.csv",
+  "cycles": 71606.0,
+  "id": "simt/per_token/01_raw_fp32sf",
+  "instr": "VF_SIMT",
+  "kind": "SIMT",
+  "note": "",
+  "result": "PASS",
+  "rows": 1,
+  "us": 39.779999
+ },
+ "simt/per_token/05_col_major_sf": {
+  "call_count": 32,
+  "csv": "/root/.cache/tlp_sim/run__xpijwr1/OPPROF_20261012152245_OROMVCPVGUPIUCBC/simulator/core0.veccore0/core0.veccore0_instr_exe.csv",
+  "cycles": 75281.0,
+  "id": "simt/per_token/05_col_major_sf",
+  "instr": "VF_SIMT",
+  "kind": "SIMT",
+  "note": "",
+  "result": "PASS",
+  "rows": 2,
+  "us": 41.819998
  }
 }
