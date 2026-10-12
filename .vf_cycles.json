@@ -125,6 +125,20 @@
   "soc": "Ascend950PR_9599",
   "us": 2.56
  },
+ "asc/per_token/04_fp32_in_fp4_out": {
+  "call_count": 32,
+  "csv": "/root/.cache/tlp_sim/run_b80avrri/OPPROF_20261012193426_ALRMAZKRBWUTJCJA/simulator/core0.veccore0/core0.veccore0_instr_exe.csv",
+  "cycles": 6160.0,
+  "id": "asc/per_token/04_fp32_in_fp4_out",
+  "instr": "VF",
+  "kind": "SIMD",
+  "note": "",
+  "result": "PASS",
+  "rows": 1,
+  "shape": "32x128",
+  "soc": "Ascend950PR_9599",
+  "us": 3.42
+ },
  "pto/cast_back/01_e4m3_fp32sf": {
   "call_count": 32,
   "csv": "/root/.cache/tlp_sim/run_nnoaehli/OPPROF_20261012191707_RQOBSEVZSAGGPVMX/simulator/core0.veccore0/core0.veccore0_instr_exe.csv",
@@ -250,6 +264,20 @@
   "shape": "32x128",
   "soc": "Ascend950PR_9599",
   "us": 2.6
+ },
+ "pto/per_token/04_fp32_in_fp4_out": {
+  "call_count": 32,
+  "csv": "/root/.cache/tlp_sim/run_f1n3shqc/OPPROF_20261012193459_NYVIXNWWFJESOKQW/simulator/core0.veccore0/core0.veccore0_instr_exe.csv",
+  "cycles": 4784.0,
+  "id": "pto/per_token/04_fp32_in_fp4_out",
+  "instr": "VF",
+  "kind": "SIMD",
+  "note": "",
+  "result": "PASS",
+  "rows": 1,
+  "shape": "32x128",
+  "soc": "Ascend950PR_9599",
+  "us": 2.66
  },
  "simt/cast_back/01_e4m3_fp32sf": {
   "call_count": 32,
