@@ -68,7 +68,8 @@ of indices on the final copy:
 T.copy(sf_ub[0:1], SfCm[kb, mb:mb + 1])
 ```
 
-18 lines in both variants, identical to ASC's and PTO's own no-change result.
+18 lines against ASC's 21 and PTO's 25 — the same as variant 01 in every tier,
+which is the no-change result all three report.
 
 The contrast with [per_token/05](../per_token/05_col_major_sf.md) is worth
 holding onto, because the two variants ask for the *same* transposed layout and

@@ -86,8 +86,8 @@ does not move at all — 6 lines, the same as variant 01. SIMT never paid the co
 that the SIMD tiers are getting refunded.
 
 So this is the one variant in `cast_back` where SIMT has **no** advantage to
-report: ASC 6 lines, PTO 7, SIMT 6. The lesson belongs to the other tiers, and
-the SIMT file exists to show the convergence rather than to win.
+report: 6 lines against ASC's 6 and PTO's 7. The lesson belongs to the other
+tiers, and the SIMT file exists to show the convergence rather than to win.
 
 ## What the harness checks
 
