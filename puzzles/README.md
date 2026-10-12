@@ -166,7 +166,7 @@ both are right about their own axis.
 | torch | ~5 s | 1.9 min |
 | ASC | 18–32 s (one at 64 s) | 10.6 min |
 | PTO | 17–31 s (one at 61 s) | 10.4 min |
-| unsolved puzzle, any tier | ~6 s | 6.3 min |
+| unsolved puzzle, any tier | ~6 s | 8.1 min (all 88) |
 
 Measured end to end including compilation, on the CPU simulator. The per-variant
 table is in the [root README](../README.md).
