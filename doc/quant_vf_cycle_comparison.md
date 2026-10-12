@@ -28,23 +28,35 @@ wrong answer is worse than no number.
 | `cast_back/04_per_channel_sf` | 2,016 | 2,048 | 6,983 | 1.02x | 3.46x |
 | `cast_back/05_fp4_e2m1` | 2,296 | 2,584 | 10,152 | 1.13x | 4.42x |
 | `cast_back/06_col_major_compose` | 2,272 | 2,528 | 9,275 | 1.11x | 4.08x |
+| `per_block/01_raw_32x32` | 1,086 | 924 | 19,276 | **0.85x** | 17.75x |
+| `per_block/02_round_packed` | 918 | 936 | 19,444 | 1.02x | 21.18x |
+| `per_block/03_fp4_e2m1` | 1,625 | 1,040 | 27,256 | **0.64x** | 16.77x |
+| `per_block/04_col_major_tma` | 1,414 | 924 | 19,272 | **0.65x** | 13.63x |
+| `per_block/05_split_compose` | 918 | 940 | 19,444 | 1.02x | 21.18x |
+| `per_channel/01_raw_32tokens` | 502 | 387 | 2,677 | **0.77x** | 5.33x |
+| `per_channel/02_round_packed_m` | 849 | 811 | 5,964 | **0.96x** | 7.02x |
+| `per_channel/03_requant_bf16` | 930 | 721 | 4,073 | **0.78x** | 4.38x |
+| `per_channel/04_compose` | 738 | 736 | 5,964 | 1.00x | 8.08x |
 | `per_token/01_raw_fp32sf` | 6,176 | 4,576 | 71,606 | **0.74x** | 11.59x |
 | `per_token/02_round_sf` | 4,608 | 4,688 | 71,008 | 1.02x | 15.41x |
 | `per_token/03_packed_ue8m0` | 4,608 | 4,672 | 74,136 | 1.01x | 16.09x |
-| `per_token/04_fp32_in_fp4_out` | 6,160 | 4,784 | — | **0.78x** | — |
+| `per_token/04_fp32_in_fp4_out` | 6,160 | 4,784 | 613,632 | **0.78x** | 99.62x |
+| `per_token/05_col_major_sf` | 5,477 | 5,448 | 75,281 | 0.99x | 13.74x |
+| `per_token/06_split_requant` | 6,864 | 4,576 | 71,606 | **0.67x** | 10.43x |
+| `per_token/07_bf16_fast_compose` | 4,864 | 5,136 | 72,490 | 1.06x | 14.90x |
 
 ASC is the 1.00 baseline. A ratio below 0.98x — shown in
 bold — means that tier used **fewer** simulated cycles than ASC.
 Ratios between that and 1.00x are draws: these are simulated cycles
 on a single shape, and a fraction of a percent is not a result.
 
-**PTO vs ASC**, over 10 variants: 0.74x (`per_token/01_raw_fp32sf`) to 1.13x (`cast_back/05_fp4_e2m1`), mean 0.99x.
+**PTO vs ASC**, over 22 variants: 0.64x (`per_block/03_fp4_e2m1`) to 1.13x (`cast_back/05_fp4_e2m1`), mean 0.92x.
 
-**SIMT vs ASC**, over 9 variants: 3.20x (`cast_back/02_packed_ue8m0`) to 16.09x (`per_token/03_packed_ue8m0`), mean 7.21x.
+**SIMT vs ASC**, over 22 variants: 3.20x (`cast_back/02_packed_ue8m0`) to 99.62x (`per_token/04_fp32_in_fp4_out`), mean 14.50x.
 
 ## PTO is faster than ASC on some variants
 
-Reported as measured. 2 of 10 variants come out below 0.98x: `per_token/01_raw_fp32sf`, `per_token/04_fp32_in_fp4_out`.
+Reported as measured. 9 of 22 variants come out below 0.98x: `per_block/01_raw_32x32`, `per_block/03_fp4_e2m1`, `per_block/04_col_major_tma`, `per_channel/01_raw_32tokens`, `per_channel/02_round_packed_m`, `per_channel/03_requant_bf16`, `per_token/01_raw_fp32sf`, `per_token/04_fp32_in_fp4_out`, `per_token/06_split_requant`.
 
 The expected story going in was that ASC — the most verbose tier,
 naming the physical operation — would also be the fastest. On this
@@ -56,7 +68,7 @@ comparison is like-for-like.
 
 ## Reading the SIMT column
 
-SIMT is slower everywhere here, by between 3.2x (`cast_back/02_packed_ue8m0`) and 16.1x (`per_token/03_packed_ue8m0`). Two things are worth
+SIMT is slower everywhere here, by between 3.2x (`cast_back/02_packed_ue8m0`) and 99.6x (`per_token/04_fp32_in_fp4_out`). Two things are worth
 separating out.
 
 **The cost is not the arithmetic.** Scalar bit manipulation is
@@ -108,7 +120,44 @@ story in `tiers/simt.md` is written not to make one.
 with a mismatched `call_count` is a different kernel, not a faster one.*
 Every row above was checked against it.
 
-**All 9 comparable variants issue the same number of VF launches in every tier**, so no ratio here is explained by one tier simply doing less work.
+1 variant(s) differ, and each needs a reason before its ratio means anything:
+
+| variant | ASC | PTO | SIMT |
+|---|---:|---:|---:|
+| `per_token/05_col_major_sf` | 34 | 34 | 32 |
+
+A SIMT kernel issuing *fewer* launches than the SIMD tiers is the
+expected direction where the SIMD tiers set up index vectors that
+the thread model does not need — a transposed store is the clearest
+case. A SIMT kernel issuing more would want explaining.
+
+## Two variants are measured differently, and why
+
+`per_block/05_split_compose`, `per_token/06_split_requant` are measured through `tools/vf_drive.py` rather
+than through `python -m harness.check`, at `mode="full"`.
+
+`msprof op simulator` profiles a **single operator** -- in practice the
+first one the process launches. Both of these variants take an input
+scale tensor that their unused modes never read, and their `launch()`
+allocates a placeholder for it with `torch.zeros(..., device=...)`,
+which on the NPU is a fill *kernel*. That fill ran first, so the
+ordinary path measured it instead of the variant.
+
+It was caught because all three tiers reported **exactly the same**
+cycle count, and three different implementations cannot cost the same.
+`tools/vf_cycles.py` now checks for that tie on every variant, so this
+particular mistake cannot come back silently.
+
+The driver builds every tensor on the host, moves them with a plain
+copy, and calls `compile_kernel` directly once, which makes the
+variant's own kernel the first operator. Two independent signs that
+the replacement numbers are right: the launch counts now match the
+other tiers', and for PTO and SIMT the `per_token/06` figures come out
+*identical* to `per_token/01` -- which is what trace-time mode
+selection should produce, since `full` mode emits variant 01's kernel.
+ASC's does not, and does not claim to: its four-mode body is
+restructured (3 barriers against 2, 11 vector loads against 9), and it
+costs about 11% more.
 
 Per-variant commentary on *why* each row looks the way it does is on the
 variant pages under `doc/quant/`; [`tiers/simt.md`](tiers/simt.md)

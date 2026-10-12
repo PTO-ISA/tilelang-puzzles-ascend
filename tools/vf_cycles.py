@@ -46,6 +46,17 @@ SIMD_NAMES = {"vf", "vf_simd"}
 
 VECTOR_TIERS = ("asc", "pto", "simt")
 
+# Variants whose launch() runs a device op (a torch.zeros fill for an input the
+# unused modes never read) BEFORE their own kernel. msprof op simulator profiles
+# only the first operator, so for these the ordinary path measures that fill --
+# identically in all three tiers, which is how it was caught. They are measured
+# through tools/vf_drive.py instead, which makes the kernel the first op and
+# names the mode. Value is the mode driven.
+DRIVEN = {
+    "per_token/06_split_requant": "full",
+    "per_block/05_split_compose": "full",
+}
+
 OUT_RE = re.compile(r"^\[sim\] out=(.+)$", re.M)
 STATUS_RE = re.compile(r"^\[status\] variant=(\S+) result=(\w+)", re.M)
 SOC_RE = re.compile(r"soc=(\S+?)[,)\s]", re.M)
@@ -113,6 +124,46 @@ def sum_vf_cycles(out_dir: Path) -> dict:
 # running one variant
 # ---------------------------------------------------------------------------
 
+def measure_driven(vid: str, mode: str, prior: dict | None) -> dict:
+    """Measure one variant through tools/vf_drive.py, keeping its harness verdict.
+
+    The driver does not check numerics -- only ``python -m harness.check`` is
+    allowed to say a variant is correct -- so this refuses to report cycles
+    unless a prior harness run of the same id PASSed.
+    """
+    tier, kernel, stem = vid.split("/")
+    short = f"{tier}/{kernel}/{stem.split('_')[0]}"
+    env = dict(os.environ, TLP_KEEP_SIM_OUT="1")
+    proc = subprocess.run([sys.executable, "-B", str(ROOT / "tools/vf_drive.py"),
+                           short, mode],
+                          cwd=str(ROOT), env=env, text=True,
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    rec = {"id": vid, "method": "driver", "mode": mode,
+           "result": (prior or {}).get("result"), "cycles": None, "note": ""}
+    if rec["result"] != "PASS":
+        rec["note"] = ("no PASS from `python -m harness.check` for this id, so "
+                       "driven cycles are withheld")
+        return rec
+    om = OUT_RE.search(proc.stdout)
+    if not om:
+        rec["note"] = "driver produced no [sim] out= line"
+        return rec
+    got = sum_vf_cycles(Path(om.group(1).strip()))
+    rec.update({k: got[k] for k in ("csv", "kind", "instr", "rows",
+                                    "call_count", "cycles", "us")})
+    soc = SOC_RE.search(proc.stdout)
+    rec["soc"] = soc.group(1) if soc else (prior or {}).get("soc")
+    rec["shape"] = (prior or {}).get("shape")
+    if got["cycles"] is None:
+        rec["note"] = ("no VF launch row; instr values present: "
+                       + ", ".join(got["seen"][:16]))
+    else:
+        rec["note"] = (f"measured through tools/vf_drive.py at mode={mode}; "
+                       f"the harness path profiles this variant's placeholder "
+                       f"torch.zeros fill instead of its kernel")
+    return rec
+
+
 def measure(vid: str) -> dict:
     """Run one variant under the simulator and sum its VF launch rows."""
     env = dict(os.environ, TLP_KEEP_SIM_OUT="1")
@@ -152,6 +203,23 @@ def measure(vid: str) -> dict:
 # the table
 # ---------------------------------------------------------------------------
 
+def suspect_identical(by_variant: dict) -> list[str]:
+    """Variants whose tiers report the SAME cycle count.
+
+    Three different implementations cannot cost exactly the same, so an exact
+    tie across tiers means the profiler captured something that is not the
+    kernel. This is a guard against repeating a mistake already made once.
+    """
+    out = []
+    for name, row in by_variant.items():
+        vals = [r["cycles"] for t, r in row.items()
+                if t in VECTOR_TIERS and r.get("result") == "PASS"
+                and r.get("cycles") is not None]
+        if len(vals) >= 2 and len(set(vals)) == 1:
+            out.append(name)
+    return sorted(out)
+
+
 def build_table(records: dict) -> str:
     """ASC : PTO : SIMT per variant, with ASC as the 1.00 baseline."""
     by_variant: dict[str, dict[str, dict]] = defaultdict(dict)
@@ -185,6 +253,10 @@ def build_table(records: dict) -> str:
         lines.append(f"{name:34} {f(a):>8} {f(p):>8} {f(s):>9}   {rp:>8} {rs:>9}")
 
     lines.append("-" * 92)
+    bad = suspect_identical(by_variant)
+    if bad:
+        lines.append("!! identical cycles across tiers (NOT a real measurement): "
+                     + ", ".join(bad))
     for tier in ("pto", "simt"):
         v = ratios[tier]
         if v:
@@ -422,6 +494,40 @@ def write_report(records: dict) -> None:
             "case. A SIMT kernel issuing more would want explaining.",
             "",
         ]
+    driven = sorted(f"`{'/'.join(v.split('/')[1:])}`" for v in records
+                    if records[v].get("method") == "driver")
+    if driven:
+        uniq = sorted(set(driven))
+        lines += [
+            "## Two variants are measured differently, and why",
+            "",
+            f"{', '.join(uniq)} are measured through `tools/vf_drive.py` rather",
+            "than through `python -m harness.check`, at `mode=\"full\"`.",
+            "",
+            "`msprof op simulator` profiles a **single operator** -- in practice the",
+            "first one the process launches. Both of these variants take an input",
+            "scale tensor that their unused modes never read, and their `launch()`",
+            "allocates a placeholder for it with `torch.zeros(..., device=...)`,",
+            "which on the NPU is a fill *kernel*. That fill ran first, so the",
+            "ordinary path measured it instead of the variant.",
+            "",
+            "It was caught because all three tiers reported **exactly the same**",
+            "cycle count, and three different implementations cannot cost the same.",
+            "`tools/vf_cycles.py` now checks for that tie on every variant, so this",
+            "particular mistake cannot come back silently.",
+            "",
+            "The driver builds every tensor on the host, moves them with a plain",
+            "copy, and calls `compile_kernel` directly once, which makes the",
+            "variant's own kernel the first operator. Two independent signs that",
+            "the replacement numbers are right: the launch counts now match the",
+            "other tiers', and for PTO and SIMT the `per_token/06` figures come out",
+            "*identical* to `per_token/01` -- which is what trace-time mode",
+            "selection should produce, since `full` mode emits variant 01's kernel.",
+            "ASC's does not, and does not claim to: its four-mode body is",
+            "restructured (3 barriers against 2, 11 vector loads against 9), and it",
+            "costs about 11% more.",
+            "",
+        ]
     lines += [
         "Per-variant commentary on *why* each row looks the way it does is on the",
         "variant pages under `doc/quant/`; [`tiers/simt.md`](tiers/simt.md)",
@@ -437,6 +543,8 @@ def main() -> int:
     ap.add_argument("query", nargs="*", help="variant ids or selectors")
     ap.add_argument("--all", action="store_true", help="every vector-tier variant")
     ap.add_argument("--table", action="store_true", help="print the cached table only")
+    ap.add_argument("--drive", action="store_true",
+                    help="re-measure the DRIVEN variants through tools/vf_drive.py")
     ap.add_argument("--report", action="store_true",
                     help="write perf/quant_vf_cycles.json and the markdown summary")
     args = ap.parse_args()
@@ -444,6 +552,27 @@ def main() -> int:
     records: dict = json.loads(CACHE.read_text()) if CACHE.exists() else {}
 
     if args.table:
+        print(build_table(records))
+        if args.report:
+            write_report(records)
+        return 0
+
+    if args.drive:
+        todo = [vid for vid in records
+                if "/".join(vid.split("/")[1:]) in DRIVEN]
+        if not todo:
+            print("nothing to drive; run --all first so the harness verdicts exist")
+            return 1
+        print(f"re-measuring {len(todo)} variant(s) through tools/vf_drive.py\n")
+        for vid in sorted(todo):
+            mode = DRIVEN["/".join(vid.split("/")[1:])]
+            rec = measure_driven(vid, mode, records.get(vid))
+            records[vid] = rec
+            cyc = "-" if rec.get("cycles") is None else f"{rec['cycles']:,.0f}"
+            print(f"  {vid:34} {str(rec['result']):>8} {cyc:>10} cycles  "
+                  f"calls={rec.get('call_count', 0)}  mode={mode}")
+            CACHE.write_text(json.dumps(records, indent=1, sort_keys=True))
+        print()
         print(build_table(records))
         if args.report:
             write_report(records)

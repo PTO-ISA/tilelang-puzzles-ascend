@@ -46,8 +46,8 @@ So the interesting question is not whether the thread model exists on this chip
 but what it costs, and there is a measurement rather than an opinion:
 
 - **53% of ASC's source lines** across all 22 variants, inside the VF region.
-- **Several times ASC's simulated VF cycles**, and an order of magnitude on the
-  small-group reductions — see
+- **3.20x to 99.62x ASC's simulated VF cycles, mean 14.50x** — an order of
+  magnitude on the small-group reductions — see
   [`quant_vf_cycle_comparison.md`](quant_vf_cycle_comparison.md).
 
 Two specifics are worth carrying back to the GPU comparison.
@@ -59,10 +59,10 @@ lets any element go anywhere", the SIMT tier confirms it on this chip:
 `S.vgather2`, PTO nearly as much, and SIMT one subscript. The cost was never
 the chip; it was the choice to program the vector registers directly.
 
-**But the GPU-style spelling leaves the vector unit idle.** `per_token/05` is also
-the worst SIMT cycle ratio in the ladder. With `group_size = 32`, a kernel that
-puts one thread on each quant group uses 4 threads out of 128. On a GPU the
-hardware scheduler hides a lot of that; here the cost is visible and large.
+**But the GPU-style spelling leaves the vector unit idle.** `per_token/05` also
+costs 13.74x ASC's cycles. With `group_size = 32`, a kernel that puts one thread
+on each quant group uses 4 threads out of 128. On a GPU the hardware scheduler
+hides a lot of that; here the cost is visible and large.
 
 The useful conclusion is not that one model wins. It is that **ease of expression
 and lane occupancy are separate axes**, and the NPU exposes the trade where the

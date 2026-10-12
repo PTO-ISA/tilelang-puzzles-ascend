@@ -129,11 +129,16 @@ permuted — `sf_out_ub` is already `(num_groups, token_block)`, so the per-bloc
 store is one contiguous `T.copy`. 15 lines against ASC's 54 and PTO's 48, the
 largest source-length gap in the ladder.
 
-And it is simultaneously **the worst SIMT cycle ratio measured here** — see
-[the cycle comparison](../../quant_vf_cycle_comparison.md). That coincidence is
-the most useful thing in this tier: the variant where SIMT's source is simplest
-is the variant where its cycles are worst, so "easiest to write" and "fastest" are
-not two readings of one axis. The ladder's four tiers are a trade, not a ranking.
+And it costs **13.74x ASC's simulated VF cycles** — see
+[the cycle comparison](../../quant_vf_cycle_comparison.md). That pairing is the
+most useful thing in this tier: the variant where SIMT's source is simplest,
+by the widest margin in the ladder, is also one of the most expensive to run.
+"Easiest to write" and "fastest" are not two readings of one axis, and the four
+tiers are a trade rather than a ranking.
+
+(The worst ratio in the ladder is not here but at
+[`per_token/04`](04_fp32_in_fp4_out.md), at 99.62x, for a completely different
+reason: a hand-written encoder standing in for a hardware instruction.)
 
 A measurement detail that confirms the two kernels are doing the same work: ASC
 and PTO issue 34 VF launches here against SIMT's 32, and the two extra are the

@@ -152,10 +152,10 @@ for i in T.Parallel(hidden):
 15 lines against ASC's 37 and PTO's 24. But read the cycle column before
 concluding anything: with `group_size = 32` this puts one thread on each quant
 group, so the reduction runs 4 threads out of 128, and the measured cost is an
-order of magnitude more simulated VF cycles than ASC — among the worst ratios in
-the ladder; see [the cycle comparison](../../quant_vf_cycle_comparison.md) for
-where it actually lands. Short source, slow kernel, and the two facts have the
-same cause.
+**11.59x** ASC's simulated VF cycles — an order of magnitude, and close to the
+ladder's 14.50x mean; see
+[the cycle comparison](../../quant_vf_cycle_comparison.md). Short source, slow
+kernel, and the two facts have the same cause.
 
 ### Two traps this variant taught
 

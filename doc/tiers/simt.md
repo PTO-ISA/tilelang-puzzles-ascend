@@ -118,9 +118,11 @@ python tools/vf_cycles.py --all # measured: simulated VF cycles per tier
 ```
 
 Across all 22 variants SIMT is **53% of ASC's source lines** inside the VF
-region, and it costs **several times ASC's simulated VF cycles** — an order of
-magnitude on the small-group reductions. The full per-variant table, with
-absolute cycle counts and the method, is in
+region, and it costs **3.20x to 99.62x ASC's simulated VF cycles, mean 14.50x**
+— an order of magnitude on the small-group reductions, and nearly a hundredfold
+on the one variant that has to hand-write a hardware conversion
+(`per_token/04`). The full per-variant table, with absolute cycle counts and the
+method, is in
 [`quant_vf_cycle_comparison.md`](../quant_vf_cycle_comparison.md).
 
 Two caveats on the line count, both of which make SIMT look better than it is.
