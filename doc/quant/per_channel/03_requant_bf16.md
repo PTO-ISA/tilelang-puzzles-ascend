@@ -85,6 +85,46 @@ elementwise reduction.**
 
 Measured: 23 ASC operations against 19.
 
+## SIMT — both scale layouts become subscripts
+
+This page's sharpest observation is that one kernel contains both cases: the
+**input** scale varies along K, so it needs a broadcast (two loads and a select
+on ASC, one `dist_mode="brc"` load on PTO), while the **output** scale varies
+along M, so it needs nothing. That is why PTO wins the first half of the kernel
+and draws the second.
+
+In SIMT both halves are a subscript, and the difference between them is a
+division:
+
+```python
+for row, c in T.Parallel(group_tokens, hidden):           # input scale: along K
+    val_ub[row, c] = (T.Cast("float32", q_in_ub[row, c])
+                      * sf_in_ub[row, c // in_group])
+
+for c in T.Parallel(hidden):                              # output scale: along M
+    ...
+    sf_ub[c] = amax / E4M3_MAX
+```
+
+14 lines against ASC's 29 and PTO's 35. Most of that saving is the first stage,
+which is the same win as [cast_back/01](../cast_back/01_e4m3_fp32sf.md).
+
+Two implementation notes. The dequantized values live in a **shared** float32
+scratch because the three stages index them differently, and only shared buffers
+allow more than one index pattern. And the input scales are staged with a single
+2-D `T.copy(Sf_in[mg * group_tokens, 0], sf_in_ub)` — here the 2-D region really
+is what is wanted, 32 tokens by `num_in_groups` scales, which is the opposite of
+the trap [per_token/01](../per_token/01_raw_fp32sf.md) describes.
+
+### The non-bit-exact result carries over unchanged
+
+This is the one variant whose FP8 output is deliberately not bit-exact: requantizing
+input that already sits on the FP8 grid produces **exact ties**, which different
+implementations break differently. The harness does not loosen a tolerance for it —
+it asserts that no difference exceeds one code *and* that every differing position
+is a genuine midpoint. The SIMT arm satisfies both, so the tie count is a property
+of the arithmetic rather than of any one tier's rounding.
+
 ## What the harness checks
 
 - scales **bit-exact** against the torch oracle;

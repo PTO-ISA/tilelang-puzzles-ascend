@@ -101,6 +101,28 @@ buffers are the same allocation, and two further scale-decode strategies
 (`use_e2b_scale` for a one-load-fans-256-lanes fast path, and a separate route for
 per-channel scales packed along M). None of them changes the arithmetic here.
 
+## SIMT — composition is free, and the transposed read is an index
+
+Two things compose here: the FP4 decode of variant 05 and a column-major scale
+block. Both port without incident.
+
+The decode is variant 05's, copied. The transposed scale read is the interesting
+half, and it confirms what [per_block/04](../per_block/04_col_major_tma.md) says
+about layout: *consuming* a transposed layout is free everywhere, because a load
+does not care about stride. SIMT reads `sfcm_ub[g // PACK_FACTOR, sub]` where the
+row-major variant read `sf_ub[g // PACK_FACTOR]` — one extra subscript.
+
+```python
+g     = i // group_size
+word  = T.Cast("int32", sfcm_ub[g // PACK_FACTOR, sub])
+ebyte = (word >> (8 * (g % PACK_FACTOR))) & 0xFF
+o_l[i] = val * T.reinterpret("float32", ebyte << 23)
+```
+
+16 lines against ASC's 21 and PTO's 22 — and the 16 are mostly the hand-written
+FP4 decode carried over from variant 05, not the transpose. The transpose costs
+one subscript in all three tiers.
+
 ## What the harness checks
 
 - `M` must be a multiple of 32 (the scale tile is 32 tokens wide);
