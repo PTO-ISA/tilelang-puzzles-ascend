@@ -1,0 +1,74 @@
+{
+ "asc/cast_back/01_e4m3_fp32sf": {
+  "call_count": 32,
+  "cycles": 2105.0,
+  "instr": "VF",
+  "kind": "SIMD",
+  "result": "PASS",
+  "us": 1.17
+ },
+ "asc/per_token/01_raw_fp32sf": {
+  "call_count": 32,
+  "cycles": 6176.0,
+  "instr": "VF",
+  "kind": "SIMD",
+  "result": "PASS",
+  "us": 3.43
+ },
+ "asc/per_token/05_col_major_sf": {
+  "call_count": 34,
+  "cycles": 5477.0,
+  "instr": "VF",
+  "kind": "SIMD",
+  "result": "PASS",
+  "us": 3.04
+ },
+ "pto/cast_back/01_e4m3_fp32sf": {
+  "call_count": 32,
+  "cycles": 2201.0,
+  "instr": "VF",
+  "kind": "SIMD",
+  "result": "PASS",
+  "us": 1.22
+ },
+ "pto/per_token/01_raw_fp32sf": {
+  "call_count": 32,
+  "cycles": 4576.0,
+  "instr": "VF",
+  "kind": "SIMD",
+  "result": "PASS",
+  "us": 2.54
+ },
+ "pto/per_token/05_col_major_sf": {
+  "call_count": 34,
+  "cycles": 5448.0,
+  "instr": "VF",
+  "kind": "SIMD",
+  "result": "PASS",
+  "us": 3.0200000000000005
+ },
+ "simt/cast_back/01_e4m3_fp32sf": {
+  "call_count": 32,
+  "cycles": 6908.0,
+  "instr": "VF_SIMT",
+  "kind": "SIMT",
+  "result": "PASS",
+  "us": 3.84
+ },
+ "simt/per_token/01_raw_fp32sf": {
+  "call_count": 32,
+  "cycles": 71606.0,
+  "instr": "VF_SIMT",
+  "kind": "SIMT",
+  "result": "PASS",
+  "us": 39.779999
+ },
+ "simt/per_token/05_col_major_sf": {
+  "call_count": 32,
+  "cycles": 75281.0,
+  "instr": "VF_SIMT",
+  "kind": "SIMT",
+  "result": "PASS",
+  "us": 41.819998
+ }
+}

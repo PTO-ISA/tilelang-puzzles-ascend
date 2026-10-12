@@ -166,10 +166,13 @@ correct and the rest are other tokens' data, which looks exactly like a broken
 reduction. Keep UB buffers **flat** and put the group structure in the index;
 shared buffers accept any index arithmetic.
 
-**`T.reduce_max(dim=1)` needs an explicit layout.** On a
-`(num_groups, group_size)` fragment it silently writes only lane 0 of the result
-unless the fragment carries a `T.annotate_layout`. The one-thread-per-group
-serial scan above needs no annotation and is also the more honest GPU spelling.
+**Why a serial scan rather than `T.reduce_max`?** Not because the library call
+fails — `T.reduce_max(dim=1)` on a `(num_groups, group_size)` fragment compiles
+and gives the right answer, and `harness/probe/simt_limits.py` checks that it
+still does. The scan is used because the accumulator can be **seeded** with
+`E4M3_CLAMP_MIN`, which makes the clamp free, and because every later variant
+needs somewhere to put the exponent arithmetic that follows the maximum. Writing
+it the same way throughout the tier is worth more than one shorter line here.
 
 ### The rule that shapes every SIMT kernel here
 

@@ -1,6 +1,6 @@
 """cast_back variant checks.
 
-One body per variant, shared by all three tiers. The body builds the inputs,
+One body per variant, shared by all four tiers. The body builds the inputs,
 calls the tier's entry point through ``ctx``, and asserts against
 ``harness.oracle`` -- which the torch tier's answers define.
 
@@ -17,7 +17,7 @@ from harness.asserts import assert_bf16_near, assert_fp32_ulps
 from harness.consts import BLOCK_K, BLOCK_MN, CANONICAL_G
 from harness.math_ops import pack_ue8m0_row_major
 
-from harness.spec import WITH_SIMT, Ctx, Shape, Variant, register
+from harness.spec import Ctx, Shape, Variant, register
 
 G = CANONICAL_G
 
@@ -137,17 +137,17 @@ def _v06(ctx: Ctx) -> None:
 
 register(
     Variant("cast_back", "01_e4m3_fp32sf", _v01, torch_fn="torch_cast_back",
-            torch_shapes=((32, 128), (8, 64), (64, 256)), tiers=WITH_SIMT),
+            torch_shapes=((32, 128), (8, 64), (64, 256))),
     Variant("cast_back", "02_packed_ue8m0", _v02, torch_fn="torch_cast_back_packed",
-            torch_shapes=((32, 128), (8, 128)), tiers=WITH_SIMT),
+            torch_shapes=((32, 128), (8, 128))),
     Variant("cast_back", "03_block_sf", _v03, torch_fn="torch_cast_back_block",
-            torch_shapes=((32, 128), (64, 64)), tiers=WITH_SIMT),
+            torch_shapes=((32, 128), (64, 64))),
     Variant("cast_back", "04_per_channel_sf", _v04,
             torch_fn="torch_cast_back_per_channel",
-            torch_shapes=((32, 128), (64, 64)), tiers=WITH_SIMT),
+            torch_shapes=((32, 128), (64, 64))),
     Variant("cast_back", "05_fp4_e2m1", _v05, torch_fn="torch_cast_back_fp4",
-            torch_shapes=((32, 128), (8, 64)), tiers=WITH_SIMT),
+            torch_shapes=((32, 128), (8, 64))),
     Variant("cast_back", "06_col_major_compose", _v06,
             torch_fn="torch_cast_back_compose",
-            torch_shapes=((32, 128), (64, 256)), tiers=WITH_SIMT),
+            torch_shapes=((32, 128), (64, 256))),
 )

@@ -47,14 +47,18 @@ def compile_kernel(hidden: int, group_size: int = CANONICAL_G):
                 #       with one thread per group -- T.Parallel(num_groups) with
                 #       an inner T.serial(group_size) accumulating into amax_l[g],
                 #       seeded at E4M3_CLAMP_MIN so the clamp is free -- and form
-                #       sf and its reciprocal in the same body. Do NOT use
-                #       T.reduce_max(dim=1) here: a cross-thread reduction needs
-                #       an explicit T.annotate_layout for this fragment shape, and
-                #       without it only lane 0 of the result is written. Then one
-                #       T.Parallel(num_groups, group_size) applying inv_l[g] to
-                #       x_l[g, j]; indexing a (num_groups,) fragment by [g] inside
-                #       a 2-D Parallel is fine, since the one-pattern rule is per
-                #       buffer. T.copy the fragments out to shared.
+                #       sf and its reciprocal in the same body.
+                #       T.reduce_max(dim=1) on a (num_groups, group_size) fragment
+                #       also works here -- harness/probe/simt_limits.py confirms
+                #       it -- but the explicit scan is what the rest of the tier
+                #       is written against: it lets the accumulator be SEEDED with
+                #       the clamp instead of clamping afterwards, and it is the
+                #       same spelling the later variants need once the scale math
+                #       grows. Then one T.Parallel(num_groups, group_size)
+                #       applying inv_l[g] to x_l[g, j]; indexing a (num_groups,)
+                #       fragment by [g] inside a 2-D Parallel is fine, since the
+                #       one-pattern rule is per buffer. T.copy the fragments out
+                #       to shared.
                 raise NotImplementedError("simt/per_token/01_raw_fp32sf: implement per_token_cast")
 
                 T.copy(q_ub, Q[token, 0])

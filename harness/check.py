@@ -4,7 +4,7 @@
     python -m harness.check asc                  # one tier
     python -m harness.check asc/per_token        # one kernel in one tier
     python -m harness.check asc/per_token/05     # one variant
-    python -m harness.check per_token/05         # that variant in all three tiers
+    python -m harness.check per_token/05         # that variant in all four tiers
     python -m harness.check pto_05               # tier + number, across kernels
     python -m harness.check --role puzzle asc    # check the unsolved puzzles
     python -m harness.check --list               # print every id

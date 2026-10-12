@@ -1,16 +1,17 @@
 # tilelang Ascend quantization puzzles
 
 A guided ladder for four NPU quantization kernels — `cast_back`, `per_token_cast`,
-`per_block_cast`, `per_channel_cast` — built three times over:
+`per_block_cast`, `per_channel_cast` — built four times over:
 
 ```
 puzzles/torch/quant/   plain PyTorch, on the CPU      <- the prerequisite
 puzzles/asc/quant/     Ascend SIMD  (T.simd, "S")     <- the hardware
 puzzles/pto/quant/     PTO VMI      (T.vmi,  "V")     <- the comparison
+puzzles/simt/quant/    SIMT threads (T.SimtVF)        <- the thread model
 ```
 
 **22 variants per tier, same numbering throughout**, so `per_token/03` is the same
-feature in all three and the files are directly diffable. Each variant adds exactly
+feature in all four and the files are directly diffable. Each variant adds exactly
 one production config.
 
 Every kernel runs on the device and is checked against the torch tier. Nothing
@@ -29,6 +30,9 @@ python -m harness.check asc/cast_back/01
 
 # 3. the same kernel in VMI
 python -m harness.check pto/cast_back/01
+
+# 4. the same kernel as a GPU programmer would write it
+python -m harness.check simt/cast_back/01
 ```
 
 Then work the puzzle versions, which are the answer files with the implementation
@@ -48,11 +52,11 @@ telling you the command to use instead.
 An id is `tier/kernel/NN`, and any prefix of it selects a group:
 
 ```bash
-python -m harness.check                      # all 66
+python -m harness.check                      # all 88
 python -m harness.check asc                  # one tier (22)
 python -m harness.check asc/per_token        # one kernel on one tier (7)
 python -m harness.check asc/per_token/05     # exactly one variant
-python -m harness.check per_token/05         # that variant on all three tiers (3)
+python -m harness.check per_token/05         # that variant on all four tiers (4)
 python -m harness.check pto_05               # tier + number, across kernels (3)
 python -m harness.check --list               # every id, without running anything
 python -m harness.check pto_05 --list        # what would that selector run?
@@ -69,14 +73,15 @@ write in what order, and what actually depends on what. The short version is tha
 the torch tier comes first (same algorithms, no hardware) and then **ASC and PTO
 can be done in either order** — they are two instruction sets over the same chip at
 different levels of abstraction, neither built on the other, so starting with PTO is
-a legitimate path and skips no prerequisite.
+a legitimate path and skips no prerequisite. The SIMT tier is independent of both,
+and is the easiest of the three to write first.
 
-For the prose: `doc/tiers/torch.md`, then either NPU tier; `doc/quant/README.md`
+For the prose: `doc/tiers/torch.md`, then any NPU tier; `doc/quant/README.md`
 for the maths all four kernels share; then each kernel's
 `doc/quant/<kernel>/README.md` and its variant pages. Every variant page carries
 the algorithm, a worked example, the ASC and PTO code with a `PTO vs ASC` section,
-and what the harness checks -- so the prose sits next to the comparison it is
-making rather than inside a docstring.
+a `SIMT` section, and what the harness checks -- so the prose sits next to the
+comparison it is making rather than inside a docstring.
 
 ## The ladder
 
@@ -113,10 +118,10 @@ re-launches itself under `msprof op simulator` (SoC `Ascend950PR_9599`), a
 cycle-accurate CPU model.
 
 ```bash
-python -m harness.check                  # all 66 variants
+python -m harness.check                  # all 88 variants
 python -m harness.check torch            # one tier, ~1 min
 python -m harness.check asc              # ~11 min
-python -m harness.check per_token        # one kernel, all three tiers
+python -m harness.check per_token        # one kernel, all four tiers
 python -m harness.check asc/per_token/05 # one variant, streaming
 python -m harness.check pto_05           # shorthand: tier + variant number
 python -m harness.check --role puzzle    # check the unsolved puzzles
@@ -247,26 +252,45 @@ wider vectors running fewer loop iterations do not show up; and source *lines* r
 about 90% where operations run 74%, which is the ergonomic price of VMI's
 explicitness.
 
+### And the fourth tier
+
+`puzzles/simt/` writes the same 22 variants with `T.SimtVF` and `T.Parallel` —
+threads, not lanes. It comes to **53% of ASC's source lines** inside the VF region,
+and costs **several times ASC's simulated VF cycles**. Those are two different
+axes, not two readings of one: `per_token/05` is simultaneously the largest
+source-length win and the worst cycle ratio.
+
+SIMT pays off where the SIMD tiers had to move data *between lanes* — a group
+broadcast, an in-register transpose, an interleave. It buys nothing where the data
+already lines up with the lanes (`per_channel/01`, `per_block/01`), and it loses
+outright where the hardware has a conversion it cannot reach: the two FP4 output
+variants hand-write an 18-line e2m1 encoder against PTO's four operations.
+
+`doc/tiers/simt.md` has the full account, and
+`doc/quant_vf_cycle_comparison.md` the measured table.
+
 ## Layout
 
 ```
 README.md
 doc/                            all prose lives here, as rendered markdown
-  tiers/{torch,asc,pto}.md      what each tier is for, and how to read it
+  tiers/{torch,asc,pto,simt}.md what each tier is for, and how to read it
   quant/<kernel>/README.md      the kernel: maths, variant index, GPU vs NPU
-  quant/<kernel>/NN_name.md     one page per variant, shared by all three tiers
+  quant/<kernel>/NN_name.md     one page per variant, shared by all four tiers
   gpu-vs-npu.md                 the GPU comparison, consolidated
   pto-vs-asc.md                 the ASC/VMI comparison, with measurements
   vf-lane-widths-and-limits.md  register geometry; why 32 is not a legal width
   known-issues.md               toolchain limits, each with a repro script
   ladder-audit.md               does each variant make a meaningful change? measured
   vf_cycles_from_msprof_simulator.md  how the VF-cycle numbers are obtained
+  quant_vf_cycle_comparison.md  the measured ASC : PTO : SIMT cycle table
+perf/quant_vf_cycles.json       the raw cycle data behind that table, tracked
 puzzles/<tier>/quant/           code only -- no prose, no tests, no main
   answer/<kernel>/NN_name.py    the kernel body and its host-side launch
   puzzle/<kernel>/NN_name.py    generated from the answer; implementation removed
 harness/                        everything that is not a kernel
   check.py                      sweep a tier, kernel or variant; print a status table
-  spec.py                       one Variant record per variant, all three tiers
+  spec.py                       one Variant record per variant, all four tiers
   variants/<kernel>.py          the per-variant checks
   doc_examples.py               re-verifies the numbers published in doc/quant/
   oracle.py                     the torch reference every tier is compared against

@@ -10,6 +10,8 @@ removed.
 ```bash
 python harness/probe/vf_lane_limits.py          # compile-only, ~10 s
 python harness/probe/fp8_out_idx.py             # needs the simulator
+python harness/probe/simt_limits.py             # compile-only, ~1 min
+python harness/probe/simt_limits.py --run       # + numerical check, under the simulator
 ```
 
 ## Hard limits (worked around in this repo)
@@ -75,6 +77,46 @@ Not a bug — there is no such instruction. FP4 output must go
 float32 → bfloat16 → e2m1, and the intermediate must be **rounded to odd** or
 double rounding biases the result. See `per_token/04`.
 
+### No FP4 store from a `T.SimtVF` region
+
+```
+InternalError: Check failed: index_lanes * buffer_lanes == value_dtype_lanes
+(2 vs. 1) : Cannot store value with 1, expected value with 2
+(1 index lanes * 2 buffer elements)
+```
+
+The entry above is about the *conversion*; this is about the *store*. An FP4
+buffer holds two elements per byte, so a scalar store cannot address one, and the
+packed-FP4 convert the SIMD tiers reach through `vcvt` is not on the SIMT
+surface at all.
+
+**Workaround:** declare the output `uint8` and encode the nibbles by hand, one
+output **byte** per thread so the pack needs no exchange between threads. The
+result is bit-exact against the torch packer. It costs 18 lines against PTO's
+4-operation round-to-odd, which is the honest price of the thread model here —
+see `per_token/04` and `per_block/03`, and `doc/tiers/simt.md`.
+
+### bfloat16 does not compute inside a `T.SimtVF` region
+
+```
+with T.abs:    InternalError: Unresolved call ir.Op(... name="tirx.fabs" ...)
+without:       RuntimeError: Ascend device compilation failed.
+```
+
+Both spellings of a bfloat16 accumulator fail, and `T.abs` on **float32** in the
+same position compiles and is correct — so this is bfloat16, not `T.abs`.
+
+**Workaround:** let `T.copy` widen bfloat16 to float32 on the way into the
+fragment, compute in float32, and convert on the way out. For the quantization
+kernels this costs no accuracy at all: the scale is a power of two, so scaling a
+bfloat16 value by it is exact in either precision, and the scale depends only on
+the *exponent* of the maximum, which bfloat16 represents exactly. The harness
+asserts that second point directly (`per_token/07`, `per_channel/04`).
+
+It does mean those two variants lose their *lesson* rather than their
+correctness: both exist to show bfloat16 doubling the vector lane count, and the
+thread model has no lane count to double.
+
 ### `cannsim` hangs on `vshr` / `vshl`
 
 Every variant from `per_token/02` onwards uses the ceil-log2 exponent trick, which
@@ -139,6 +181,45 @@ scale row therefore reads 128 bytes past its end. `per_channel/02` pads its scal
 rows for exactly this reason; without the padding, 75 of 256 output bytes were
 wrong — again, mostly right.
 
+### One fragment, one index pattern per `T.Parallel` body
+
+```
+InternalError: Check failed: (StructuralEqual()(it->second.indices, indices))
+is false: v: (p * 2 + 1,) and (p * 2,)
+```
+
+Inside a single `T.Parallel` body a **fragment** may be touched with exactly one
+structurally identical index expression (`RecordBufferAccess` in
+`src/op/parallel.cc`). Reading `v[2 * p]` and `v[2 * p + 1]` in the same body is
+rejected. **Shared and UB buffers are exempt**, and the probe checks both halves
+of that.
+
+This is the single rule that decides what SIMT code in this repo looks like:
+irregular, packed or data-dependent index math lives on `alloc_shared`, and
+fragments carry only the clean subscripts of the `Parallel` variables. Where a
+SIMT kernel here stages intermediates in a shared scratch buffer —
+`per_token/06`, `per_channel/03`, `per_block`'s partials — this is why.
+
+### `T.copy` into a 2-D buffer copies a 2-D region
+
+Not a bug, and the most expensive confusion in building the SIMT tier, because it
+is silent. With `ub` of shape `(4, 32)`:
+
+```python
+T.copy(X[token, 0], ub)      # NOT X[token, 0:128] reshaped
+                             # it is the region X[token:token+4, 0:32]
+```
+
+On numbered input the probe prints `got[0][:4] = [128.0, 129.0, 130.0, 131.0]`,
+which is `X[1, 0:4]` — so the first group is correct and the rest hold *other
+tokens'* data. In a per-token reduction that reads exactly like a broken
+reduction, and it cost two wrong diagnoses before the numbers were dumped.
+
+**Workaround:** keep UB staging buffers **flat** and put the group structure in
+the index arithmetic, which shared buffers allow freely. A 2-D UB tile is right
+when the tile really is 2-D — `per_block` (32 tokens by 32 channels) and
+`per_channel/03`'s scale block both want exactly the region semantics.
+
 ### Widths must match exactly in VMI
 
 `V.vsub(a, b)` with `a` at 1 lane and `b` at 128 raises
@@ -149,7 +230,7 @@ constants for its single-scale arithmetic.
 ## What this list does *not* contain
 
 No variant in this repo falls back to computing its result on the host. Every one
-of the 66 kernels runs on the device and is checked against the torch tier;
+of the 88 kernels runs on the device and is checked against the torch tier;
 `harness/status.py` asserts that outputs come back from `npu`, so a host fallback
 cannot hide behind a `PASS`.
 
