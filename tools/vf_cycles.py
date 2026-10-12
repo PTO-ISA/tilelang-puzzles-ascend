@@ -377,16 +377,52 @@ def write_report(records: dict) -> None:
             "",
         ]
 
+    # Derive the call_count audit rather than asserting it: the method doc's
+    # guard is only worth anything if it is actually applied to every row.
+    mismatch = []
+    for name in sorted(by_variant):
+        row = by_variant[name]
+        counts = {t: row[t].get("call_count") for t in ("asc", "pto", "simt")
+                  if t in row and row[t].get("result") == "PASS"
+                  and row[t].get("call_count")}
+        if len(set(counts.values())) > 1:
+            mismatch.append((name, counts))
+
     lines += [
         "## Checking a comparison is like-for-like",
         "",
         "`call_count` is the guard the method doc insists on: *a large speed-up",
         "with a mismatched `call_count` is a different kernel, not a faster one.*",
-        "Where the counts differ here, the reason is in the data file — at",
-        "`per_token/05`, ASC and PTO issue 34 VF launches against SIMT's 32,",
-        "and the two extra are the one-time gather-index setup that SIMT does",
-        "not need.",
+        "Every row above was checked against it.",
         "",
+    ]
+    if not mismatch:
+        lines += [
+            f"**All {len(ratios['simt']) or len(by_variant)} comparable variants "
+            f"issue the same number of VF launches in every tier**, so no ratio "
+            f"here is explained by one tier simply doing less work.",
+            "",
+        ]
+    else:
+        lines += [
+            f"{len(mismatch)} variant(s) differ, and each needs a reason before "
+            f"its ratio means anything:",
+            "",
+            "| variant | ASC | PTO | SIMT |",
+            "|---|---:|---:|---:|",
+        ]
+        for name, counts in mismatch:
+            lines.append(f"| `{name}` | " + " | ".join(
+                str(counts.get(t, "—")) for t in ("asc", "pto", "simt")) + " |")
+        lines += [
+            "",
+            "A SIMT kernel issuing *fewer* launches than the SIMD tiers is the",
+            "expected direction where the SIMD tiers set up index vectors that",
+            "the thread model does not need — a transposed store is the clearest",
+            "case. A SIMT kernel issuing more would want explaining.",
+            "",
+        ]
+    lines += [
         "Per-variant commentary on *why* each row looks the way it does is on the",
         "variant pages under `doc/quant/`; [`tiers/simt.md`](tiers/simt.md)",
         "summarises where the thread model wins and where it does not.",
