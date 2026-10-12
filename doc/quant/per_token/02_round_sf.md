@@ -141,8 +141,11 @@ precisely why its version has to become a `@T.macro` to be reusable at all — t
 factoring this page describes as structural exists to carry a width argument that
 SIMT does not have.
 
-17 lines against ASC's 43 and PTO's 20. The gap over ASC is the widest in
-`per_token` on source length, and it is all width plumbing.
+17 lines against ASC's 43 and PTO's 20 — a 26-line saving, third largest in the
+ladder behind [`per_token/05`](05_col_major_sf.md) and
+[`per_channel/04`](../per_channel/04_compose.md), and unlike either of those it
+is *all* width plumbing: the same arithmetic, with nothing in SIMT's favour
+except not having to say how wide it is.
 
 A detail worth noticing: the SIMD tiers need an explicit `V.vmax` against
 `E4M3_CLAMP_MIN`, while the SIMT body gets the clamp for free by seeding the

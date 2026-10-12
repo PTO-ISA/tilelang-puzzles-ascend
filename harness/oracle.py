@@ -1,6 +1,6 @@
 """Torch oracles: the single definition of numerical truth for this repo.
 
-Every ASC and PTO kernel variant is checked against the function here that
+Every ASC, PTO and SIMT kernel variant is checked against the function here that
 carries the same config. The torch tier of the ladder is where a student
 implements these by hand first; these versions are the reference answers.
 
