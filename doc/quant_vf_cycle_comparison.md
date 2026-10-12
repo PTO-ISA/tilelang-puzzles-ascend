@@ -78,13 +78,48 @@ comparison is like-for-like.
 SIMT is slower on every variant here, by between 3.20x (`cast_back/02_packed_ue8m0`) and 99.62x (`per_token/04_fp32_in_fp4_out`). Three things are
 worth separating out.
 
-**The top of that range is one variant, and it is a special case.**
+**The top of that range is one variant, and it decomposes.**
 `per_token/04_fp32_in_fp4_out` at 100x is the FP4 output: no FP4 store is reachable
 from a `SimtVF` region, so an 18-line hand-written e2m1 encoder stands
 in for a hardware conversion the SIMD tiers simply name. Dropping that
 one row, the range is 3.20x to 21.18x with a mean
 of 10.44x (median 11.59x).
 Read the headline mean with that in mind.
+
+That row was worth taking apart rather than filing as "encoders are
+expensive", and it splits into two independent factors:
+
+| factor | measured |
+|---|---|
+| more instructions than its sibling SIMT variants | 124,294 against ~37,000 |
+| worse cycles per instruction | 4.94 against 1.90-2.01 |
+
+The second factor is **branch divergence**, and it is not inherent.
+`simt/per_token/04` is the only variant in the ladder carrying a large
+number of `SIMT_START_DVG` / `SIMT_END_DVG` markers, because
+`T.if_then_else` on a data-dependent per-element condition lowers to a
+real branch rather than a predicated select.
+`harness/probe/simt_divergence.py` rewrites the encoder's three
+conditionals as mask arithmetic, changes nothing else, and both arms
+stay bit-exact against the torch packer:
+
+| spelling | cycles | instructions | cycles/instr | divergence |
+|---|---:|---:|---:|---:|
+| `T.if_then_else` (shipped) | 615,170 | 124,294 | 4.95 | 5,864 |
+| mask arithmetic | **351,956** | 179,908 | **1.96** | **0** |
+
+So the branch-free spelling issues 45% **more** instructions and runs
+**1.75x fewer cycles**, landing at 57x ASC rather than 100x. Its 1.96
+cycles per instruction is exactly the rest of the tier's.
+
+Two conclusions, and they pull in opposite directions, which is why
+both are stated. The 99.62x is a true measurement of the kernel as
+written, and it is not a measurement artefact -- the trace audit
+confirms the right kernel with the right launch count. But roughly a
+1.75x slice of it is a **codegen gap** rather than a cost of the thread
+model: on a GPU that conditional would be predicated into a select and
+cost nothing. The kernel keeps the natural spelling deliberately, since
+the comparison asked for was the one a GPU programmer writes first.
 
 **The cost is not the arithmetic.** Scalar bit manipulation is
 essentially free; what SIMT gives up is lane occupancy. The small-group

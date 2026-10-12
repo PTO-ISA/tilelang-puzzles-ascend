@@ -161,6 +161,47 @@ for p in T.Parallel(hidden // 2):
 Indexing the shared `x_ub` twice in one body is allowed; a fragment would reject
 the second pattern.
 
+### Where the 99.62x actually goes
+
+This variant measures **99.62x** ASC's simulated VF cycles, which is far outside
+the rest of the SIMT tier (3.20x to 21.18x) and worth taking apart rather than
+filing under "encoders are expensive". It splits into two independent factors:
+
+| factor | measured |
+|---|---|
+| more instructions than its sibling SIMT variants | 124,294 against ~37,000 |
+| worse cycles per instruction | 4.94 against 1.90-2.01 |
+
+The first factor is the encoder, and it is irreducible: the work above has to
+happen somewhere, and on ASC and PTO it happens inside one hardware instruction.
+
+**The second factor is branch divergence, and it is not inherent.** This is the
+only variant in the ladder whose trace carries a large number of
+`SIMT_START_DVG` / `SIMT_END_DVG` markers, because `T.if_then_else` on a
+data-dependent per-element condition lowers to a *real branch* rather than a
+predicated select. `harness/probe/simt_divergence.py` rewrites the three
+conditionals as mask arithmetic — `m = -T.Cast("int32", cond)`, then
+`(a & m) | (b & ~m)` — changes nothing else, and keeps both arms bit-exact:
+
+| spelling | cycles | instructions | cycles/instr | divergence |
+|---|---:|---:|---:|---:|
+| `T.if_then_else` (shipped) | 615,170 | 124,294 | 4.95 | 5,864 |
+| mask arithmetic | **351,956** | 179,908 | **1.96** | **0** |
+
+The branch-free form issues **45% more instructions and runs 1.75x fewer
+cycles** — 57x ASC rather than 100x — and its cycles-per-instruction is exactly
+the rest of the tier's.
+
+On a GPU this would not arise: `cond ? a : b` over cheap arithmetic gets
+predicated into a select, so the natural conditional costs nothing. So about a
+1.75x slice of this variant's gap is a **codegen gap, not a cost of the thread
+model**, and `doc/known-issues.md` records it as such.
+
+The kernel above keeps `T.if_then_else` on purpose. This ladder wants the
+spelling a GPU programmer reaches for first, and the measurement is more useful
+when it says what that spelling costs than when it reports a tuned number. If
+you need the cycles, the probe has the faster form.
+
 ### Why the line table understates this
 
 `tools/vf_lines.py` counts only what is inside the VF region, in every tier. PTO's
