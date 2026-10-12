@@ -238,9 +238,9 @@ explicitness.
 
 `puzzles/simt/` writes the same 22 variants with `T.SimtVF` and `T.Parallel` —
 threads, not lanes. It comes to **53% of ASC's source lines** inside the VF region,
-and costs **several times ASC's simulated VF cycles**. Those are two different
-axes, not two readings of one: `per_token/05` is simultaneously the largest
-source-length win and the worst cycle ratio.
+and costs **3.20x to 99.62x ASC's simulated VF cycles, mean 14.50x**. Those are
+two different axes, not two readings of one: `per_token/05` is the largest
+source-length win in the ladder *and* costs 13.74x the cycles.
 
 SIMT pays off where the SIMD tiers had to move data *between lanes* — a group
 broadcast, an in-register transpose, an interleave. It buys nothing where the data
