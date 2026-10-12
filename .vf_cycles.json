@@ -179,7 +179,7 @@
   "note": "",
   "result": "PASS",
   "rows": 3,
-  "shape": "32x128",
+  "shape": "64x128",
   "soc": "Ascend950PR_9599",
   "us": 0.47
  },
@@ -207,7 +207,7 @@
   "note": "",
   "result": "PASS",
   "rows": 3,
-  "shape": "32x128",
+  "shape": "64x128",
   "soc": "Ascend950PR_9599",
   "us": 0.41
  },
@@ -307,7 +307,7 @@
   "note": "",
   "result": "PASS",
   "rows": 1,
-  "shape": "32x128",
+  "shape": "32x256",
   "soc": "Ascend950PR_9599",
   "us": 2.7
  },
@@ -491,7 +491,7 @@
   "note": "",
   "result": "PASS",
   "rows": 2,
-  "shape": "32x128",
+  "shape": "64x128",
   "soc": "Ascend950PR_9599",
   "us": 0.45
  },
@@ -519,7 +519,7 @@
   "note": "",
   "result": "PASS",
   "rows": 2,
-  "shape": "32x128",
+  "shape": "64x128",
   "soc": "Ascend950PR_9599",
   "us": 0.41
  },
@@ -619,7 +619,7 @@
   "note": "",
   "result": "PASS",
   "rows": 1,
-  "shape": "32x128",
+  "shape": "32x256",
   "soc": "Ascend950PR_9599",
   "us": 2.85
  },
@@ -803,7 +803,7 @@
   "note": "",
   "result": "PASS",
   "rows": 3,
-  "shape": "32x128",
+  "shape": "64x128",
   "soc": "Ascend950PR_9599",
   "us": 3.31
  },
@@ -831,7 +831,7 @@
   "note": "",
   "result": "PASS",
   "rows": 3,
-  "shape": "32x128",
+  "shape": "64x128",
   "soc": "Ascend950PR_9599",
   "us": 3.31
  },
@@ -931,7 +931,7 @@
   "note": "",
   "result": "PASS",
   "rows": 1,
-  "shape": "32x128",
+  "shape": "32x256",
   "soc": "Ascend950PR_9599",
   "us": 40.27
  }

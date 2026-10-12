@@ -12,7 +12,12 @@ launch — `VF_SIMT` for a SIMT kernel, `VF` for a SIMD one. `cycles` is
 already the total for its row and is never scaled by `call_count`. No
 silicon-fidelity claim is made.
 
-SoC `Ascend950PR_9599`; core `core0.veccore0`; shapes `32x128` (M x K).
+SoC `Ascend950PR_9599`; core `core0.veccore0`.
+
+**Each row's three tiers run at the same shape**, so the ratios are
+within-variant and valid; cycle counts are *not* comparable between rows,
+which run at different shapes and do different amounts of work. Shapes in
+use: `32x128`, `32x256`, `64x128` (M x K).
 
 Every row below passed the same correctness check as its ASC and PTO
 twin — the same oracle comparison, the same `assert_on_device` proof that
@@ -45,10 +50,12 @@ wrong answer is worse than no number.
 | `per_token/06_split_requant` | 6,864 | 4,576 | 71,606 | **0.67x** | 10.43x |
 | `per_token/07_bf16_fast_compose` | 4,864 | 5,136 | 72,490 | 1.06x | 14.90x |
 
+Variants that do not run at the default `32x128`: `per_channel/02_round_packed_m` at `64x128`, `per_channel/04_compose` at `64x128`, `per_token/07_bf16_fast_compose` at `32x256`.
+
 ASC is the 1.00 baseline. A ratio below 0.98x — shown in
 bold — means that tier used **fewer** simulated cycles than ASC.
 Ratios between that and 1.00x are draws: these are simulated cycles
-on a single shape, and a fraction of a percent is not a result.
+on one shape per variant, and a fraction of a percent is not a result.
 
 **PTO vs ASC**, over 22 variants: 0.64x (`per_block/03_fp4_e2m1`) to 1.13x (`cast_back/05_fp4_e2m1`), mean 0.92x.
 
