@@ -151,6 +151,21 @@ The measurements do not support reading it as one line.
 - **Short source and fast kernel are not two readings of one axis.** They are two
   axes, and the four tiers are a trade rather than a ranking.
 
+### And do not over-read the cycle column either
+
+Every variant here has SIMT slower, and the symmetry of that is suspicious
+enough to state its limits. These are 22 single-config kernels at one shape,
+whose reductions all use `group_size = 32` — the case that leaves the most
+threads idle. A separate SIMT-versus-SIMD suite on the same simulator, sweeping
+several SIMT strategies per kernel, found ratios from **0.33x to 53x**: SIMT
+winning outright on some grouped reductions. And these kernels are deliberately
+untuned, which was the comparison asked for; in that suite the strategy choice
+alone moved one identical kernel by a factor of two.
+
+So the claim this tier supports is narrow and worth stating precisely: *written
+the obvious way, on these kernels, at this shape, the thread model trades cycles
+for ease.* Not that SIMT is slow.
+
 What survives as general guidance: SIMT is the fastest way to get a correct
 kernel, and a reasonable place to start one. Where it is also fast enough,
 stopping there is a real option. Where it is not, the variant pages say which
