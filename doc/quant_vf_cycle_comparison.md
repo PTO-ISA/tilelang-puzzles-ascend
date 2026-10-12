@@ -17,8 +17,7 @@ SoC `Ascend950PR_9599`; core `core0.veccore0`.
 **Each row's three tiers run at the same shape**, so the ratios are
 within-variant and valid; cycle counts are *not* comparable between rows,
 which do different amounts of work and in three cases run at a different
-shape. Shapes in
-use: `32x128`, `32x256`, `64x128` (M x K).
+shape. Shapes in use: `32x128`, `32x256`, `64x128` (M x K).
 
 Every row below passed the same correctness check as its ASC and PTO
 twin — the same oracle comparison, the same `assert_on_device` proof that
