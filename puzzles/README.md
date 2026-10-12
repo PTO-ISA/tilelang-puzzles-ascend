@@ -6,20 +6,25 @@ what order, and what actually depends on what.
 
 ```
 puzzles/torch/quant/   plain PyTorch, CPU, instant     <- start here
-puzzles/asc/quant/     Ascend SIMD   (T.simd, "S")     ) either order,
-puzzles/pto/quant/     PTO VMI       (T.vmi,  "V")     ) independent
+puzzles/asc/quant/     Ascend SIMD   (T.simd, "S")     ) any order,
+puzzles/pto/quant/     PTO VMI       (T.vmi,  "V")     ) mutually
+puzzles/simt/quant/    SIMT threads  (T.SimtVF)        ) independent
 ```
 
 ## What depends on what
 
 ```
-            ┌─> asc/   (22 variants)
-torch/ ─────┤
-            └─> pto/   (22 variants)
+            ┌─> asc/    (22 variants)
+torch/ ─────┼─> pto/    (22 variants)
+            └─> simt/   (22 variants)
 
-torch -> NPU : recommended, not required
-asc <-> pto  : no dependency in either direction
+torch -> NPU          : recommended, not required
+asc / pto / simt      : no dependency in any direction
 ```
+
+Of the three NPU tiers, **`simt` is the easiest to write**, so it is a reasonable
+first one. It is also the slowest to run — see
+[`doc/tiers/simt.md`](../doc/tiers/simt.md) — which is the point of having it.
 
 **Torch first** is a recommendation about learning, not a technical constraint.
 Each torch exercise is the same arithmetic as its NPU counterpart with none of the
@@ -34,9 +39,10 @@ math you already know. An NPU kernel is then a translation of arithmetic you hav
 written yourself, not a derivation from scratch. See
 [Explicit by design](../doc/tiers/torch.md#explicit-by-design).
 
-**ASC and PTO do not depend on each other.** They are two instruction sets over
-the same hardware at different levels of abstraction — ASC names the physical
-operation, VMI names the intent — and neither is built on the other. The puzzle
+**The three NPU tiers do not depend on each other.** ASC and PTO are two
+instruction sets over the same vector unit at different levels of abstraction —
+ASC names the physical operation, VMI names the intent — and SIMT is a different
+model again: threads rather than lanes. None is built on another. The puzzle
 hints are self-contained in both directions: no ASC hint mentions VMI, and 22 of
 23 PTO hints are pure VMI. The exception is `pto/per_token/03`, which names an ASC
 store mode (`PK4_B32`) only to say you do **not** need one — nothing to act on if
@@ -56,7 +62,7 @@ argument, not the kernel.
 
 ### What the checks compare against
 
-All three tiers are checked against the same oracle,
+All four tiers are checked against the same oracle,
 [`harness/oracle.py`](../harness/oracle.py), which is a standalone PyTorch
 reference — it does **not** import anything from this directory. That is why the
 tier order is free: an ASC variant is verified whether or not you ever wrote the
@@ -75,7 +81,7 @@ machinery. Then:
 | order | kernel | what it is for | variants |
 |---|---|---|---|
 | 1 | [`cast_back`](../doc/quant/cast_back/README.md) | the data path, no reduction | 6 |
-| 2 | [`per_token`](../doc/quant/per_token/README.md) | segmented reduction along the fast axis | 6 |
+| 2 | [`per_token`](../doc/quant/per_token/README.md) | segmented reduction along the fast axis | 7 |
 | 3 | [`per_block`](../doc/quant/per_block/README.md) | 2-D reduction, and the lane-width rule | 5 |
 | 4 | [`per_channel`](../doc/quant/per_channel/README.md) | reduction along the slow axis | 4 |
 
@@ -125,11 +131,11 @@ Once it is right, `--role puzzle` and the answer give the same verdict:
 
 ```bash
 python -m harness.check asc/per_token/02                # the reference
-python -m harness.check per_token/02                    # all three tiers
+python -m harness.check per_token/02                    # all four tiers
 python -m harness.check per_token/02 --list             # what that would run
 ```
 
-## Reading the same variant three ways
+## Reading the same variant four ways
 
 The numbering is identical across tiers, so the same variant is directly
 diffable — this is the comparison the repo is built for:
@@ -139,13 +145,19 @@ diff puzzles/asc/quant/answer/per_token/02_round_sf.py \
      puzzles/pto/quant/answer/per_token/02_round_sf.py
 ```
 
-`tools/vf_lines.py` counts operations and lines for every such pair, and the
-`PTO vs ASC` section of each variant page explains the measured difference. It is
-not uniform — VMI collapses segmented reduce-and-broadcast and width changes, and
-gains nothing at all on gathers or whole-vector reductions. `per_token/02` is the
-widest gap in the ladder (45 operations against 14), while
-[`per_channel/01`](../doc/quant/per_channel/01_raw_32tokens.md) comes out level:
-17 operations against 16, and 21 source lines each.
+`tools/vf_lines.py` counts operations and lines for all three vector tiers, and
+each variant page's `PTO vs ASC` and `SIMT` sections explain the measured
+difference. It is not uniform — VMI collapses segmented reduce-and-broadcast and
+width changes, and gains nothing at all on gathers or whole-vector reductions.
+`per_token/02` is the widest ASC-to-PTO gap in the ladder (45 operations against
+14), while [`per_channel/01`](../doc/quant/per_channel/01_raw_32tokens.md) comes
+out level: 17 operations against 16, and 21 source lines each.
+
+The SIMT column is a different comparison, and worth reading with the cycle
+table ([`doc/quant_vf_cycle_comparison.md`](../doc/quant_vf_cycle_comparison.md))
+open beside it: SIMT is 53% of ASC's source lines overall and several times its
+simulated cycles, so the two numbers disagree about which tier is "better" and
+both are right about their own axis.
 
 ## Time budget
 

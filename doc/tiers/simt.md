@@ -68,10 +68,17 @@ each of several **tokens** — not the token's contiguous channels. Group 0 come
 out right and the rest are other tokens' data, which looks exactly like a broken
 reduction. Keep UB buffers flat and put the structure in the index.
 
-**`T.reduce_max(dim=1)` needs an explicit `T.annotate_layout`** on a
-`(num_groups, group_size)` fragment; without one only lane 0 of the result is
-written. The kernels here use one thread per group with an inner `T.serial` scan,
-which needs no annotation and is also the more honest GPU spelling.
+**A `T.Parallel` body may not touch one fragment two ways.** The error is
+`Check failed: StructuralEqual()(it->second.indices, indices)`, naming the two
+expressions — `(p * 2 + 1,)` and `(p * 2,)` — which is clear once you have seen
+it and baffling the first time. Shared buffers are exempt, so staging there is
+the fix.
+
+**`T.abs` does not lower on bfloat16, and nor does a bfloat16 accumulator.**
+`tirx.fabs` is unresolved with the abs, and without it the Ascend device
+compile fails outright. Reduce in float32 and convert after; this is why
+`per_token/07` and `per_channel/04`, the two variants whose whole point is
+bfloat16 lane width, have float32 SIMT bodies.
 
 ## Where SIMT wins
 

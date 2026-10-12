@@ -38,7 +38,6 @@ def compile_kernel(hidden: int, group_size: int = CANONICAL_G):
             for token in T.serial(num_tokens):
                 T.copy(X[token, 0], x_ub)
 
-                # --- BEGIN SOLUTION hint="variant 01's two passes, with the division replaced by the exponent trick. Per group: reduce amax as before, then bits = T.reinterpret('int32', amax / E4M3_MAX); biased = ((bits - 1) >> 23) + 1 is ceil(log2(amax/448)) + 127; sf = T.reinterpret('float32', biased << 23) rebuilds the power of two by writing an exponent back, and inv = T.reinterpret('float32', (254 - biased) << 23) is its reciprocal, since 254 - biased negates the unbiased exponent. No lane count and no broadcast of constants -- compare the ASC file's six vector ops, or PTO's compute_scale macro, which only has to be a macro because `size=` has to be threaded through it."
                 with T.SimtVF(threads=THREADS):
                     q_l = T.alloc_fragment((hidden,), T.float32)
                     inv_l = T.alloc_fragment((num_groups,), T.float32)
@@ -51,17 +50,18 @@ def compile_kernel(hidden: int, group_size: int = CANONICAL_G):
                             v = T.Cast("float32", x_ub[g * group_size + j])
                             amax = T.max(amax, T.abs(v))
 
+                        # --- BEGIN SOLUTION hint="everything else here is variant 01. The new idea is the four lines that replace its two divisions: ceil(log2(amax/448)) read straight out of the float32 exponent field. bits = T.reinterpret('int32', amax / E4M3_MAX); biased = ((bits - 1) >> 23) + 1 is that exponent, still biased by 127; then rebuild each scale by writing an exponent back -- T.reinterpret('float32', biased << 23) for sf, and T.reinterpret('float32', (254 - biased) << 23) for its reciprocal, since 254 - biased negates the unbiased exponent. No lane count and no broadcast of constants: compare the ASC file's six vector ops, or PTO's compute_scale macro, which only has to BE a macro so that `size=` can be threaded through it."
                         bits = T.reinterpret("int32", amax / E4M3_MAX)
                         biased = ((bits - 1) >> 23) + 1
                         sf_l[g] = T.reinterpret("float32", biased << 23)
                         inv_l[g] = T.reinterpret("float32", (254 - biased) << 23)
+                        # --- END SOLUTION
 
                     for i in T.Parallel(hidden):
                         q_l[i] = T.Cast("float32", x_ub[i]) * inv_l[i // group_size]
 
                     T.copy(q_l, q_ub)
                     T.copy(sf_l, sf_ub)
-                # --- END SOLUTION
 
                 T.copy(q_ub, Q[token, 0])
                 T.copy(sf_ub, Sf[token, 0])

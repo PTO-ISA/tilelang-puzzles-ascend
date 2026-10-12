@@ -4,7 +4,7 @@ Three columns, one per vector tier, plus the measured cycle counts when
 ``tools/vf_cycles.py`` has been run.
 
 **lines** counts non-comment source lines inside the VF region. This is the one
-number that means the same thing in all three tiers, so it carries the
+number that means the same thing in all three vector tiers, so it carries the
 "how much is there to write" comparison.
 
 **ops** counts calls to the vector intrinsics (``S.*`` / ``V.*``) -- how many

@@ -100,3 +100,7 @@ README's References table. Nothing in this repo needs a sibling checkout.
 
 `doc/tiers/pto.md` — the same 22 variants in logical VMI, and
 `doc/pto-vs-asc.md` for what that changes.
+
+`doc/tiers/simt.md` — the same 22 variants again with threads instead of lanes,
+and the measured cost of that convenience in
+`doc/quant_vf_cycle_comparison.md`.

@@ -58,38 +58,24 @@ def compile_kernel(hidden: int, group_tokens: int = BLOCK_MN):
                 for sub in T.serial(PACK_FACTOR):
                     mg = pair * PACK_FACTOR + sub
                     T.copy(X[mg * group_tokens, 0], x_ub)
-                    with T.SimtVF(threads=THREADS):
-                        q_l = T.alloc_fragment((group_tokens, hidden), T.float32)
-
-                        for c in T.Parallel(hidden):
-                            amax = T.alloc_var(T.float32)
-                            amax = E4M3_CLAMP_MIN
-                            for row in T.serial(group_tokens):
-                                amax = T.max(amax,
-                                             T.abs(T.Cast("float32", x_ub[row, c])))
-                            bits = T.reinterpret("int32", amax / E4M3_MAX)
-                            biased = ((bits - 1) >> 23) + 1
-                            # this m-group's byte row; `sub` is a trace-time index
-                            sf_rows_ub[sub, c] = T.Cast("uint8", biased)
-                            inv_ub[c] = T.reinterpret("float32", (254 - biased) << 23)
-
-                        for row, c in T.Parallel(group_tokens, hidden):
-                            q_l[row, c] = T.Cast("float32", x_ub[row, c]) * inv_ub[c]
-
-                        T.copy(q_l, q_ub)
-                    T.copy(q_ub, Q[mg * group_tokens, 0])
-
-                # TODO: the same two-byte-per-channel pack as variant 02:
-                #       T.Parallel(hidden) writing packed_ub[PACK_FACTOR*c] and
-                #       packed_ub[PACK_FACTOR*c + 1] from the pair's two byte
-                #       rows. The composition is free. Read the docstring for the
-                #       one thing that is NOT free: the SIMD tiers reduce in
-                #       bfloat16 on the integer unit to double their lane count,
-                #       and SIMT has no lane count to double, so the reduction
-                #       above stays float32 -- identical results, since only the
-                #       exponent of the maximum is used and bfloat16 keeps
-                #       exponents exactly.
-                raise NotImplementedError("simt/per_channel/04_compose: implement per_channel_cast")
+                    # TODO: compose variant 01's per-channel reduction with
+                    #       variant 02's power-of-two scale and M-packing: one
+                    #       thread per channel down the 32 rows, the exponent
+                    #       trick, the byte into sf_rows_ub[sub, c], the inverse
+                    #       into inv_ub[c], then the apply over
+                    #       T.Parallel(group_tokens, hidden). Finish with the
+                    #       two-bytes-per-channel pack from variant 02 --
+                    #       T.Parallel(hidden) writing packed_ub[PACK_FACTOR*c]
+                    #       and packed_ub[PACK_FACTOR*c + 1] -- which is where
+                    #       SIMT wins outright, since the SIMD tiers need V.vintlv
+                    #       plus a padded scratch row. Read the docstring for the
+                    #       one thing that does NOT port: the SIMD tiers reduce in
+                    #       bfloat16 on the integer unit to double their lane
+                    #       count, and SIMT has no lane count to double, so the
+                    #       reduction stays float32 -- identical results, since
+                    #       only the exponent of the maximum is used and bfloat16
+                    #       keeps exponents exactly.
+                    raise NotImplementedError("simt/per_channel/04_compose: implement per_channel_cast")
                 T.copy(packed_ub, Sf[pair, 0])
 
     return per_channel_cast
