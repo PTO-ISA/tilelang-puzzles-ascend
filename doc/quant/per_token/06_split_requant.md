@@ -118,10 +118,12 @@ One line, which is [cast_back/01](../cast_back/01_e4m3_fp32sf.md) inlined. ASC
 needs four broadcast loads and two selects; PTO needs one `vload` with
 `dist_mode="brc"`.
 
-32 lines against ASC's 57 and PTO's 44 — the largest absolute saving in the
-ladder, for the reason this page gives for PTO beating ASC: the broadcast
-machinery is spelled once per *branch*, so a multi-mode kernel multiplies
-whatever each tier pays for it.
+32 lines against ASC's 57 and PTO's 44. That is a 25-line saving — fourth
+largest in the ladder rather than the largest, and the shape of it is the reason
+this page gives for PTO beating ASC: the broadcast machinery is spelled once per
+*branch*, so a multi-mode kernel multiplies whatever each tier pays for it. It is
+also the **longest SIMT region** of the 22, because the four modes are four
+bodies however you spell them.
 
 One design note. The dequantized values live in a **shared** scratch buffer, not
 a fragment, because the reduction stage and the apply stage index them
