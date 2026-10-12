@@ -66,3 +66,28 @@ broken reduction. Keep UB buffers flat and put the structure in the index.
 said that shape needs an explicit `T.annotate_layout` and writes only lane 0
 without one. It does not; the probe is the regression test for the retraction, and
 the wrong numbers that prompted the claim came from the row above it.
+
+## A performance cliff, not a limit: `T.if_then_else` diverges
+
+```bash
+python harness/probe/simt_divergence.py          # both arms, ~16 min
+```
+
+Measured 2026-10-12, same pin, `Ascend950PR_9599`, M=32 K=128. The same e2m1
+encoder, with only its three conditionals respelled; both arms bit-exact against
+the torch packer:
+
+| spelling | cycles | instructions | cycles/instr | divergence markers |
+|---|---:|---:|---:|---:|
+| `T.if_then_else` (shipped) | 615,170 | 124,294 | 4.95 | 5,864 |
+| mask arithmetic | **351,956** | 179,908 | **1.96** | **0** |
+
+The branch-free form issues 45% **more** instructions and runs **1.75x fewer
+cycles**, because `T.if_then_else` on a data-dependent per-element condition
+lowers to a real branch instead of a predicated select. 1.96 cycles per
+instruction is what every other SIMT `per_token` variant achieves.
+
+This is why `simt/per_token/04` measures 99.6x ASC while the rest of the SIMT
+tier sits between 3.2x and 21.2x — and why roughly a 1.75x slice of that gap is
+a codegen gap rather than a cost of the thread model. See
+`doc/known-issues.md`.

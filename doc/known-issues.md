@@ -12,6 +12,7 @@ python harness/probe/vf_lane_limits.py          # compile-only, ~10 s
 python harness/probe/fp8_out_idx.py             # needs the simulator
 python harness/probe/simt_limits.py             # compile-only, ~1 min
 python harness/probe/simt_limits.py --run       # + numerical check, under the simulator
+python harness/probe/simt_divergence.py         # a performance cliff, ~16 min
 ```
 
 ## Resolved on this pin
@@ -114,6 +115,56 @@ needs vector shifts. Under `cannsim` / `npusim` those hang indefinitely.
 `TLP_SIMULATOR=cannsim` still selects the old runner, but it cannot run most of
 the ladder. This is not a regression to fix in the kernels — it is why the default
 is what it is.
+
+## Performance cliffs (correct, but much slower than they look)
+
+### `T.if_then_else` lowers to a divergent branch, not a select
+
+This one costs **1.75x** on `simt/per_token/04`, and it is the reason that
+variant measures 99.6x ASC's simulated VF cycles while the rest of the SIMT
+tier sits between 3.2x and 21.2x.
+
+`harness/probe/simt_divergence.py` runs the same e2m1 encoder twice, changing
+only how three conditionals are spelled. Both arms are bit-exact against the
+torch packer:
+
+| spelling | cycles | instructions | cycles/instr | divergence markers |
+|---|---:|---:|---:|---:|
+| `T.if_then_else(c, a, b)` | 615,170 | 124,294 | 4.95 | 5,864 |
+| `(a & m) \| (b & ~m)`, `m = -T.Cast("int32", c)` | **351,956** | 179,908 | **1.96** | **0** |
+
+The branch-free form issues **45% more instructions and runs 1.75x fewer
+cycles**. Its 1.96 cycles per instruction is exactly what every other SIMT
+`per_token` variant achieves (1.90-2.01); the conditional form's 4.95 is the
+divergence penalty.
+
+The trace names the mechanism directly: `SIMT_START_DVG` / `SIMT_END_DVG`
+markers appear only where `T.if_then_else` is used on a data-dependent
+per-element condition, and `simt/per_token/04` is the only variant in the ladder
+with a large number of them.
+
+**This is a codegen gap, not a property of the thread model.** On a GPU,
+`cond ? a : b` over cheap arithmetic is predicated into a select by the
+compiler, so the natural conditional costs nothing; here it is a real branch.
+
+**Workaround, if you need the cycles:** build a mask with
+`m = -T.Cast("int32", cond)` — 0 or all-ones — and select with
+`(a & m) | (b & ~m)`. Both arms must be safe to evaluate unconditionally, which
+in the FP4 encoder they are, because the shift amount is already clamped.
+
+The shipped kernel keeps `T.if_then_else` on purpose: this ladder wants the
+spelling a GPU programmer reaches for first, and the measurement is more useful
+when it reports what that spelling actually costs. `per_token/04`'s page says
+so, and the published SIMT range quotes that variant separately.
+
+### A single-thread `T.Parallel(1)` diverges too, by definition
+
+`per_block/01`, `/02`, `/04` and `/05` each show 68 divergence markers and the
+worst cycles-per-instruction in the SIMT tier (7.14). That is the level-2
+reduction, where one thread folds the per-row partials while 127 sit idle. It is
+inherent to reducing to a scalar rather than a spelling problem, and the
+absolute cost is small here (those kernels run 4 VF launches, not 32), but it is
+the same mechanism.
 
 ## Frontend rules that produce confusing errors
 
