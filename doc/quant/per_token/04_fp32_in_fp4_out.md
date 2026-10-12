@@ -133,7 +133,8 @@ tmp = (((exp_eff << 2) | m2) + inc) >> 1
 nibble = sign_nib | T.min(tmp, 7)         # saturate at the 6.0 code
 ```
 
-Eighteen lines against four, and it is the right trade only because correctness
+Eighteen lines of encoder against PTO's four operations, and it is the right
+trade only because correctness
 comes first: the result is bit-exact against the oracle packer, verified over
 several seeds before the kernel was ever run.
 
@@ -165,8 +166,9 @@ the second pattern.
 `tools/vf_lines.py` counts only what is inside the VF region, in every tier. PTO's
 round-to-odd lives in a `@T.macro` outside it and SIMT's encoder is a Python
 expression builder outside it, so **both are excluded** — which flatters SIMT
-here by eighteen lines. The 15-line SIMT figure for this variant is not
-comparable to the others.
+here by eighteen lines. Nominally this is 15 lines against ASC's 34 and PTO's
+23, but that SIMT figure is not comparable to the others — add the encoder and
+it is the longest of the three.
 
 ## What the harness checks
 
