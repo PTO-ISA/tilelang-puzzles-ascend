@@ -100,6 +100,36 @@ The slowest variant in the ladder, at about **62 s** per NPU tier, because it
 compiles and runs four kernel modes in one check. Still well inside the 180 s
 ceiling.
 
+## SIMT — composition is tilelang's property, not the vector style's
+
+The four modes are Python flags read at trace time, and they port with no thought
+at all: the same `if mode == ...` statements choose which `T.Parallel` loops get
+emitted. That is itself the observation — composability comes from tracing, not
+from the vector IR underneath, so none of the three vector tiers has an advantage
+here.
+
+What does differ is the dequantize stage, and it differs the way variant 01's
+apply pass does. `requant` has to multiply by an input scale that varies along K:
+
+```python
+for i in T.Parallel(hidden):
+    val_ub[i] = T.Cast("float32", x_ub[i]) * xsf_ub[i // group_size]
+```
+
+One line, which is [cast_back/01](../cast_back/01_e4m3_fp32sf.md) inlined. ASC
+needs four broadcast loads and two selects; PTO needs one `vload` with
+`dist_mode="brc"`.
+
+32 lines against ASC's 57 and PTO's 44 — the largest absolute saving in the
+ladder, for the reason this page gives for PTO beating ASC: the broadcast
+machinery is spelled once per *branch*, so a multi-mode kernel multiplies
+whatever each tier pays for it.
+
+One design note. The dequantized values live in a **shared** scratch buffer, not
+a fragment, because the reduction stage and the apply stage index them
+differently — `val_ub[g * group_size + j]` and `val_ub[i]` — and only shared
+buffers may be touched with more than one index pattern.
+
 ## What the harness checks
 
 Three launches, each against its own oracle:

@@ -121,6 +121,31 @@ element. Here the same decode is a vector shift-and-mask with a per-lane shift
 amount, and production carries three different strategies for it depending on the
 scale layout.
 
+## SIMT — the byte extraction is scalar arithmetic
+
+This is the variant where ASC's "decoding with no arithmetic" trick has no SIMT
+equivalent, and does not need one. ASC gets the exponent byte in front of the
+right lanes by choosing a *distribution mode* on the load, so the decode costs no
+instructions. SIMT pays for the extraction explicitly, in scalars:
+
+```python
+for i in T.Parallel(hidden):
+    g = i // group_size
+    word = T.Cast("int32", sf_ub[g // PACK_FACTOR])
+    byte = (word >> (8 * (g % PACK_FACTOR))) & 0xFF
+    o_l[i] = q_l[i] * T.reinterpret("float32", byte << 23)
+```
+
+Three lines of shift-and-mask, which is what the format actually is. Note the
+`8 * (g % 2)` shift amount: it is per-element and data-independent, so it is free
+here, whereas on a vector unit a *per-lane variable shift* is exactly the
+operation [per_token/05](../per_token/05_col_major_sf.md) records as VMI's one
+genuine regression.
+
+Honest accounting: at 9 lines against ASC's 12 and PTO's 16 this is a modest win,
+and it is a win on source length only. The byte extraction that ASC gets for free
+from a load mode is real arithmetic here.
+
 ## What the harness checks
 
 - `assert_bf16_near(..., atol=0.0)` against

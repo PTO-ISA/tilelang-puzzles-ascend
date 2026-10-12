@@ -73,6 +73,27 @@ takes a flag and returns one or the other, which is exactly the shape production
 
 Measured: 44 ASC operations against 15.
 
+## SIMT — the buffer dtype is the packing
+
+The byte store is the whole variant, and it reduces to one assignment:
+
+```python
+sf_ub[g] = T.Cast("uint8", biased)
+```
+
+`sf_ub` is a `uint8` shared buffer, so storing the biased exponent *is* the
+pack. ASC needs a reinterpret to `uint8x256` plus a matching `PK4_B32` store
+mode; PTO improves on that with a single `V.vcvt(exponent, "uint8")`. SIMT needs
+neither, for the same reason the page gives for PTO being shorter than ASC — the
+destination dtype decides the narrowing — and it gets there one step earlier
+because there is no vector to narrow.
+
+Note that this is a store to **shared**, not to a fragment. That is deliberate:
+shared buffers are exempt from the one-index-pattern rule, so writing a
+per-group byte from a thread indexed by group needs no staging.
+
+15 lines against ASC's 37 and PTO's 21.
+
 ## What the harness checks
 
 - `assert_same_bytes` on the packed int16 — byte equality, since this is a pure

@@ -132,6 +132,56 @@ this repo uses it compiles and is numerically exact.
 `harness/probe/vf_lane_limits.py` re-checks it, because which bodies lower is a
 property of the toolchain version rather than of the hardware.
 
+## SIMT — a reduction is a loop again, and two traps worth knowing
+
+This is the first variant with a reduction, and it is where SIMT's shape diverges
+most from the SIMD tiers. ASC reduces 32 of 64 lanes with four masked `vcmax`
+calls; PTO collapses those to one `vcmax(..., group=4)`. SIMT does neither: one
+thread takes one quant group and walks it serially.
+
+```python
+for g in T.Parallel(num_groups):
+    amax_l[g] = E4M3_CLAMP_MIN               # seeding makes the clamp free
+    for j in T.serial(group_size):
+        v = T.Cast("float32", x_ub[g * group_size + j])
+        amax_l[g] = T.max(amax_l[g], T.abs(v))
+    inv_l[g] = E4M3_MAX / amax_l[g]
+    sf_l[g]  = amax_l[g] / E4M3_MAX
+
+for i in T.Parallel(hidden):
+    q_l[i] = T.Cast("float32", x_ub[i]) * inv_l[i // group_size]
+```
+
+15 lines against ASC's 37 and PTO's 24. But read the cycle column before
+concluding anything: with `group_size = 32` this uses 4 threads out of 128 for
+the reduction, and the measured gap is the largest in `cast_back`/`per_token` —
+an order of magnitude. Short source, slow kernel, and the two facts have the same
+cause.
+
+### Two traps this variant taught
+
+**A 2-D UB staging buffer reads the wrong tokens.** The natural-looking
+`x_ub = T.alloc_shared((num_groups, group_size), ...)` with
+`T.copy(X[token, 0], x_ub)` does **not** copy the token's 128 contiguous
+channels. It copies the 2-D *region* `X[token:token+num_groups, 0:group_size]` —
+one group's worth from each of the next four tokens. Group 0 then comes out
+correct and the rest are other tokens' data, which looks exactly like a broken
+reduction. Keep UB buffers **flat** and put the group structure in the index;
+shared buffers accept any index arithmetic.
+
+**`T.reduce_max(dim=1)` needs an explicit layout.** On a
+`(num_groups, group_size)` fragment it silently writes only lane 0 of the result
+unless the fragment carries a `T.annotate_layout`. The one-thread-per-group
+serial scan above needs no annotation and is also the more honest GPU spelling.
+
+### The rule that shapes every SIMT kernel here
+
+Inside one `T.Parallel` body, a **fragment** may be touched with exactly one
+structurally identical index expression. Shared and UB buffers are exempt. So
+irregular, packed or data-dependent index math lives on `alloc_shared`, and
+fragments carry only the clean subscripts of the `Parallel` variables. Almost
+every design choice in the SIMT tier follows from that one constraint.
+
 ## What the harness checks
 
 - scales within 1 ULP of the oracle on the NPU tiers, **exact** on the torch tier

@@ -75,6 +75,35 @@ VMI since it names the lane count that caused the trap above.
 
 Measured: 28 ASC operations against 29.
 
+## SIMT — the clearest SIMT win in the ladder
+
+The "256-lane trap" section above is the whole argument for this variant, and the
+thread model walks straight past it.
+
+The output wants byte `2c` from m-group `2i` and byte `2c + 1` from m-group
+`2i + 1` — an **interleave** on a vector unit, so ASC and PTO load both byte rows
+and call `V.vintlv`. Worse, a `uint8` vector register is 256 lanes, so a load of
+the 128 channels being packed overruns them, and both SIMD tiers must pad
+`sf_rows_ub` by a whole 128-byte tile to stop it reading into the next row.
+
+A thread that owns channel `c` writes two bytes:
+
+```python
+for c in T.Parallel(hidden):
+    packed_ub[PACK_FACTOR * c] = sf_rows_ub[0, c]
+    packed_ub[PACK_FACTOR * c + 1] = sf_rows_ub[1, c]
+```
+
+No interleave instruction, and — the part that matters more — **no padding**,
+because a scalar store cannot overrun. The SIMT file declares
+`sf_rows_ub` as `(PACK_FACTOR, hidden)` where the SIMD tiers need
+`(PACK_FACTOR, hidden + BYTE_LANES)`.
+
+17 lines against ASC's 35 and PTO's 40. This is the variant to point at when
+asked what SIMT is for: not arithmetic, which the vector unit does well, but
+**irregular data placement**, where a vector register's fixed lane assignment is
+the thing in the way.
+
 ## What the harness checks
 
 - `M % 64 == 0`, with a message explaining that packing along $M$ needs an even
