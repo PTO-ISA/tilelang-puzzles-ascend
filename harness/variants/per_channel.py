@@ -15,7 +15,7 @@ from harness.consts import BLOCK_MN, CANONICAL_G, PACK_FACTOR
 from harness.demo import randn_with_zero_row
 from harness.math_ops import decode_packed_ue8m0_along_m
 
-from harness.spec import Ctx, Shape, Variant, register
+from harness.spec import WITH_SIMT, Ctx, Shape, Variant, register
 
 CPU = torch.device("cpu")
 G = CANONICAL_G
@@ -119,16 +119,16 @@ def _v04(ctx: Ctx) -> None:
 register(
     Variant("per_channel", "01_raw_32tokens", _v01,
             torch_fn="torch_per_channel_cast",
-            torch_shapes=((32, 128), (64, 64), (32, 256))),
+            torch_shapes=((32, 128), (64, 64), (32, 256)), tiers=WITH_SIMT),
     Variant("per_channel", "02_round_packed_m", _v02,
             torch_fn="torch_per_channel_cast_packed",
             shape=Shape(m_multiple=PACK_M),
-            torch_shapes=((64, 128), (128, 64))),
+            torch_shapes=((64, 128), (128, 64)), tiers=WITH_SIMT),
     Variant("per_channel", "03_requant_bf16", _v03,
             torch_fn="torch_per_channel_requant",
-            torch_shapes=((32, 128), (64, 128))),
+            torch_shapes=((32, 128), (64, 128)), tiers=WITH_SIMT),
     Variant("per_channel", "04_compose", _v04,
             torch_fn="torch_per_channel_compose",
             shape=Shape(m_multiple=PACK_M),
-            torch_shapes=((64, 128), (128, 256))),
+            torch_shapes=((64, 128), (128, 256)), tiers=WITH_SIMT),
 )
