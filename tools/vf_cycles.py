@@ -187,7 +187,8 @@ def measure(vid: str, shape: str | None = None) -> dict:
                           cwd=str(ROOT), env=env, text=True,
                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     out = proc.stdout
-    rec = {"id": vid, "result": None, "cycles": None, "note": ""}
+    rec = {"id": vid, "method": "harness", "result": None, "cycles": None,
+           "note": ""}
 
     m = STATUS_RE.search(out)
     rec["result"] = m.group(2) if m else "NO_STATUS"
@@ -308,7 +309,7 @@ def write_report(records: dict) -> None:
     the published numbers are reviewable in a diff.
     """
     keep = ("result", "kind", "instr", "cycles", "call_count", "us", "soc",
-            "shape", "note")
+            "shape", "method", "mode", "note")
     data = {vid: {k: rec.get(k) for k in keep if rec.get(k) not in (None, "")}
             for vid, rec in sorted(records.items())}
     DATA.parent.mkdir(exist_ok=True)
