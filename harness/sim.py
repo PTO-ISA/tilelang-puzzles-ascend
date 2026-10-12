@@ -20,6 +20,8 @@ Environment knobs:
     TLP_SIM_K       hidden size       (default consts.SIM_K)
     TLP_CPU_ONLY=1  skip the simulator entirely and stay on CPU (torch tier)
     TLP_SIM_ROOT    where msprof writes its output (default ~/.cache/tlp_sim)
+    TLP_KEEP_SIM_OUT=1  print the msprof --output path, so a caller can read the
+                    per-instruction CSV out of it (see tools/vf_cycles.py)
 """
 
 from __future__ import annotations
@@ -156,6 +158,11 @@ def run_under_msopprof(argv: list[str] | Path | str, soc: str | None = None) -> 
     out_dir = _out_dir()
     cmd = [msprof, "op", "simulator", f"--soc-version={soc}",
            f"--output={out_dir}", sys.executable, *_as_argv(argv)]
+    # The trace tree under out_dir carries the per-instruction CSV that
+    # tools/vf_cycles.py sums. Nothing else needs the path, so it is only
+    # announced on request -- a sweep of 88 variants does not want the noise.
+    if os.environ.get("TLP_KEEP_SIM_OUT") == "1":
+        print(f"[sim] out={out_dir}")
 
     start = time.time()
     # msprof refuses to run from a group/other-writable directory, and the repo
