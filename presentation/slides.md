@@ -3,6 +3,47 @@ marp: true
 theme: default
 paginate: true
 title: "Writing NPU quant kernels: SIMT vs PTO vs ASC VF code comparison"
+style: |
+  section {
+    font-size: 19px;
+    line-height: 1.35;
+    padding: 38px 52px 28px;
+    background: #ffffff;
+    color: #1a1a1a;
+  }
+  h2 {
+    font-size: 26px;
+    margin: 0 0 14px;
+    padding-bottom: 6px;
+    border-bottom: 2px solid #c8c8c8;
+  }
+  p, li { margin: 5px 0; }
+  ul { margin: 4px 0; }
+  pre {
+    font-size: 13.5px;
+    line-height: 1.32;
+    padding: 7px 10px;
+    margin: 6px 0;
+    background: #f7f7f3;
+    border: none;
+    border-left: 3px solid #b0b0b0;
+    border-radius: 0;
+  }
+  code { font-size: 0.95em; }
+  table {
+    font-size: 14.5px;
+    margin: 7px 0;
+    border-collapse: collapse;
+  }
+  th, td { padding: 2px 9px; }
+  blockquote {
+    font-size: 19px;
+    margin: 8px 0;
+    padding: 4px 0 4px 14px;
+    border-left: 4px solid #777;
+    background: none;
+  }
+  section::after { font-size: 14px; color: #999; }
 ---
 
 ## Writing NPU quant kernels: SIMT vs PTO vs ASC

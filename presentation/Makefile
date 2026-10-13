@@ -13,8 +13,19 @@ NAME    := quant_kernel_style_compare
 PANDOC  := pandoc
 LATEX   := pdflatex
 
-.PHONY: all clean check
+.PHONY: all clean check marp
 all: $(NAME).pdf
+
+# The Marp build, for comparing presentation styles. Needs node >= 18 and a
+# Chrome binary; marp-cli ships puppeteer-CORE, so it supplies no browser
+# itself. `--no-sandbox` is required running as root in a container.
+# slides.md is the same file the Beamer build uses -- its Marp front matter
+# (theme + CSS) is what tools/slides_strip_marp.py removes for pandoc.
+MARP_ENV := PATH=/opt/node/bin:$$PATH CHROME_PATH=/usr/bin/google-chrome
+marp: slides.md
+	$(MARP_ENV) marp slides.md --pdf --allow-local-files --no-sandbox \
+	    -o $(NAME)_marp.pdf
+	@echo "built $(NAME)_marp.pdf -- $$(pdfinfo $(NAME)_marp.pdf | awk '/^Pages/{print $$2}') pages"
 
 slides.md: ../tools/make_slides.py ../perf/quant_vf_cycles.json
 	@python3 ../tools/make_slides.py
@@ -45,4 +56,4 @@ check:
 	@python3 ../tools/check_report_numbers.py
 
 clean:
-	rm -rf build $(NAME).pdf
+	rm -rf build $(NAME).pdf $(NAME)_marp.pdf
