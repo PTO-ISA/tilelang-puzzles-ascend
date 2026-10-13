@@ -33,11 +33,11 @@ count.
 
 The three frontends, all targeting the same chip and the same single vector core:
 
-| frontend | what you name | the unit you think in |
+| frontend | abstraction level | smallest unit of data |
 |---|---|---|
-| **ASC** (`T.simd`, imported `S`) | the physical instruction | a 64-lane vector register |
-| **PTO/VMI** (`T.vmi`, imported `V`) | the intent; width and segment count are *arguments* | a logical vector of any width |
-| **SIMT** (`T.SimtVF` + `T.Parallel`) | one element | a thread |
+| **ASC** (`T.simd`, imported `S`) | named hardware instruction and distribution mode | one 64-lane vector register |
+| **PTO/VMI** (`T.vmi`, imported `V`) | operation with width and segment count as arguments | one logical vector, any width |
+| **SIMT** (`T.SimtVF` + `T.Parallel`) | per-element expression | one element, held by one thread |
 
 The comparison rests on 22 kernel variants across four quantization kernels
 (`cast_back`, `per_token`, `per_block`, `per_channel`), each implemented in all
@@ -47,7 +47,7 @@ chosen because each isolates one mechanism. The rest corroborate.
 
 **Out of scope**, deliberately: multi-core scheduling, double-buffered Unified
 Buffer, and cache hints. Every kernel here is single-core `T.Kernel(1)`, so the
-comparison is of the vector body and nothing else.
+comparison is of the `T.SimdVF` / `T.SimtVF` region and nothing else.
 
 ### The result that shapes the rest of this report
 
@@ -62,8 +62,9 @@ often enough to be the most important finding:
 | simulated VF cycles | **92% mean**, range 0.64x–1.13x |
 
 PTO uses fewer cycles than ASC on **9 of 22** variants — and on four of those it
-*writes more operations than ASC*. So this report is organised around two axes
-that disagree: how much you write, and what it costs. Each pattern below is
+*writes more operations than ASC*. Operations written and cycles executed
+correlate at Pearson r = -0.09 across the 22 variants, so this report reports
+both quantities for every pattern. Each pattern below is
 presented with both.
 
 ---
@@ -169,7 +170,7 @@ is a better example of PTO's advantage than the broadcast, because here the
 saving is structural rather than three operations becoming one.
 ---
 
-## 3. Where SIMT genuinely simplifies: irregular data *placement*
+## 3. Irregular data placement: where SIMT reduces source size
 
 If SIMT has a thesis, it is this section. Both cases below are ones where the
 SIMD tiers must move data **between lanes**, and a vector register's lane
@@ -192,6 +193,10 @@ a = S.vld(sf_rows_ub[0, col], dist="NORM_B8")
 b = S.vld(sf_rows_ub[1, col], dist="NORM_B8")
 # A uint8 register is 256 lanes, so `lo` already holds the
 # interleave of the first 128 elements of each input --
+# exactly the 256 output bytes for these 128 channels.
+# `hi` interleaves the padding and is discarded.
+lo, _ = S.vintlv(a, b)
+S.vsts(packed_ub[col * PACK_FACTOR], lo, dist="NORM_B8")
 ```
 
 PTO is the same shape, with the width spelled out:
@@ -204,6 +209,10 @@ a = V.vload(sf_rows_ub[0, col], size=BYTE_LANES * 2)
 b = V.vload(sf_rows_ub[1, col], size=BYTE_LANES * 2)
 # A uint8 register is 256 lanes, so `lo` already holds the
 # interleave of the first 128 elements of each input --
+# exactly the 256 output bytes for these 128 channels.
+# `hi` interleaves the padding and is discarded.
+lo, _ = V.vintlv(a, b, byte_mask)
+V.vstore(lo, packed_ub[col * PACK_FACTOR])
 ```
 
 There is a trap underneath both. A `uint8` vector register is **256 lanes**, so a
@@ -250,7 +259,7 @@ invites, costs **7.02x**.
 
 `per_token/05` writes the scale array transposed, so a consumer can fetch a
 tile's scales contiguously. The scales live one-per-group in vector lanes, and
-**you cannot restride a register**. ASC must therefore compute, for every lane,
+**lane assignment inside a vector register is fixed**. ASC must therefore compute, per lane,
 which source element that lane should receive — and then gather:
 
 *source:* `puzzles/asc/quant/answer/per_token/05_col_major_sf.py:50-56`
@@ -304,9 +313,9 @@ sf_out_ub[g, sub] = T.reinterpret("float32", biased << 23)
 | vs ASC | 1.00x | 0.99x | 13.74x |
 
 **This is the sharpest single trade in the set.** SIMT's 15 lines against ASC's
-54 is the largest source-length win anywhere in the 22 variants, and 13.74x is
-among the worst cycle ratios. The thread model removes the lane-placement problem
-and leaves most of the vector unit idle doing it.
+54 is the largest source-size reduction among the 22 variants, and the cycle
+ratio is 13.74x — the 14th lowest SIMT ratio of 22. The thread model removes the
+per-lane index arithmetic and leaves most of the 128-lane unit unused.
 
 One caveat on reading the ASC-vs-PTO numbers here. The 56-to-38 operation count
 in PTO's favour is *not* the transpose — on the gather itself the two are a draw,
@@ -324,7 +333,7 @@ fraction of its width.
 
 ---
 
-## 4. Where PTO's SIMD style is already clean enough
+## 4. Where the operation already maps onto the hardware
 
 The mirror image of section 3, and the question worth asking before reaching for
 a thread model: when does the SIMD code have nothing to simplify?
@@ -345,6 +354,8 @@ acc[0] = S.vdup(E4M3_CLAMP_MIN, T.float32)
 for row in T.serial(group_tokens):
     v = S.vabs(S.vcvt(S.vld(x_ub[row, col], dist="UNPK_B16"),
                       T.float32))
+    # lane c holds the max over tokens seen so far
+    acc[0] = S.vmax(acc[0], v)
 ```
 
 PTO is the same code with a mask operand:
@@ -359,6 +370,8 @@ acc[0] = V.vbrc(T.float32(E4M3_CLAMP_MIN), size=LANES)
 for row in T.serial(group_tokens):
     v = V.vabs(V.vcvt(V.vload(x_ub[row, col], size=LANES),
                       "float32"), mask)
+    # lane c holds the max over tokens seen so far
+    acc[0] = V.vmax(acc[0], v, mask)
 ```
 
 SIMT is the mirror image — a channel is a *thread*, and the reduction is a serial
@@ -402,14 +415,14 @@ operations row above is blank for SIMT throughout this report.
 `per_block/01` computes one scale per 32x32 tile. A single value has no layout,
 so writing the scale array transposed — the same configuration that costs ASC a
 lane-index vector and a gather in section 3.2 — is **free in all three styles**:
-the index swap lives outside the vector body entirely, on the final copy.
+the index swap lives outside the `T.SimdVF` region entirely, on the final copy.
 
 The contrast between those two variants is the cleanest statement of what the
 thread model actually buys. Same configuration, same chip; what changes is
 whether the data being relaid out sits in lanes.
 ---
 
-## 5. Where PTO's logical style is the real win
+## 5. Segmented reduction: PTO's largest measured advantage
 
 ### 5.1 The segmented reduction
 
@@ -467,10 +480,9 @@ for g in T.Parallel(num_groups):
 | vs ASC | 1.00x | 0.74x | 11.59x |
 
 **This is the one pattern where both axes agree.** PTO halves the operation
-count *and* uses 0.74x the cycles. It is also where SIMT's cost first becomes an
-order of magnitude, and the reason is visible in the code above: with
-`group_size = 32` and `hidden = 128` there are four groups, so the reduction runs
-**4 threads out of 128**.
+count *and* uses 0.74x the cycles. SIMT costs 11.59x here: with
+`group_size = 32` and `hidden = 128` there are four groups, so the reduction
+occupies **4 of the 128 declared threads**.
 
 ### 5.2 Width as an argument
 
@@ -489,6 +501,8 @@ biased = S.vadds(S.vshrs(S.vsub(bits, one), 23), 1)
 sf = T.reinterpret(S.vshls(biased, 23), "float32x64")
 # 254 - biased == 127 - ceil_exp: the negated exponent
 inv = T.reinterpret(
+    S.vshls(S.vsub(S.vdup(254, T.uint32), biased), 23),
+    "float32x64")
 ```
 
 PTO writes the same arithmetic with the width as a parameter — so it can be
@@ -540,7 +554,7 @@ different widths, not fewer cycles.
 
 ---
 
-## 6. Where PTO costs you
+## 6. Where PTO's explicitness costs source length
 
 A comparison that only lists one frontend's wins is not usable. Three places
 where VMI is the weaker surface:
@@ -638,12 +652,12 @@ subnormal renormalization, guard/round/sticky, saturation:
 
 <!-- snippet: fp4_simt -->
 ```python
-sh = T.min(126 - exps, 31)
-mant_pre = 0x400000 | (mant >> 1)         # the implicit 1, then make room
-low = (1 << sh) - 1                       # the bits about to be shifted out
-
-if branch_free:
-    # -(cond) is 0 or all-ones. Both arms are always evaluated, which is
+bits = T.reinterpret("int32", v)
+# bit 3 of (bits >> 28) is bit 31 of bits: the sign nibble, without
+# depending on whether >> sign-extends.
+sign_nib = (bits >> 28) & 0x8
+exps = (bits >> 23) & 0xFF
+mant = bits & 0x7FFFFF
 ```
 
 That is an extract; the full encoder is eighteen lines. It is bit-exact against
@@ -674,7 +688,7 @@ per-element condition lowers to a real branch on this toolchain, not a predicate
 select, and this is the only variant in the set whose trace carries a large
 number of `SIMT_START_DVG` markers. Respelling the encoder's three conditionals
 as mask arithmetic — `m = -T.Cast("int32", cond)`, then `(a & m) | (b & ~m)` —
-issues **45% more instructions and runs 1.78x fewer cycles**: 613,632 down to
+issues **45% more instructions and runs at 0.56x the cycles**: 613,632 down to
 **345,189**, or 56.0x ASC rather than 99.6x.
 
 Both spellings ship in the variant behind a `branch_free` flag and the harness
@@ -693,9 +707,9 @@ of this variant's gap is a **codegen gap, not a cost of the thread model**.
 Sections 5 and 6 compared what gets written. This section is the warning label on
 all of it.
 
-The `per_block` family is the cleanest case. PTO writes **more** vector
-operations than ASC on all four of `01`, `02`, `04` and `05` — and runs fewer
-cycles on three of them:
+`per_block` shows it most directly. PTO writes **more** vector operations than
+ASC on four of the five variants, and runs fewer cycles on two of those four;
+the fifth, `03`, is the one where PTO writes fewer operations:
 
 | variant | ops ASC | ops PTO | cycles PTO/ASC |
 |---|---:|---:|---:|
@@ -734,14 +748,14 @@ for chunk in T.serial(num_chunks):
 More operations written per step, half as many steps executed. A static count
 cannot see the trip count, and here the trip count dominates.
 
-`cast_back/05` makes the same point from the other direction: it is PTO's
-**largest static win** in the set (16 operations against 8, 18 lines against 11)
-and its **worst cycle regression** — **1.13x**. Shorter and slower, in one
-variant.
+`cast_back/05` shows the same independence in reverse: PTO's largest operation
+reduction within `cast_back` (16 against 8, 18 lines against 11) and its **worst
+cycle regression in the set, 1.13x**. Shorter and slower, in one variant. The
+largest operation reduction overall is `per_token/02`, at 45 against 14, whose
+cycle ratio is 1.02x.
 
 The lesson for anyone using operation counts to choose a frontend: they measure
-how much you write, which is a real and important thing, and they are not a
-performance model.
+source size, which matters on its own, and they are not a performance model.
 
 ---
 
@@ -792,7 +806,7 @@ Excluding `per_token/04`, whose hand-written FP4 encoder is a special case
 figure to carry away for the thread model as such; the 99.62x row measures a
 missing instruction, not a programming style.
 
-### Reading the two axes together
+### Source size and cycle count, side by side
 
 - **SIMT** writes **53%** of ASC's lines and costs roughly an order of
   magnitude in cycles. The win is concentrated in lane-placement work; the cost
@@ -885,16 +899,17 @@ Stated plainly, because they bound every conclusion above.
 
 ## 12. Conclusions
 
-**Where SIMT genuinely simplifies the kernel.** Only where the SIMD frontends
+**Where SIMT reduces source size.** Only where the SIMD frontends
 had to move data *between lanes*. The three cases in this set are a group
 broadcast (section 2), an interleave (3.1) and a transpose (3.2), and they are
 also where SIMD code is at its least readable — `S.vci` plus `S.vgather2` to
 express "store it transposed", or an interleave instruction plus a padded scratch
 row to express "write two bytes". There SIMT is a third of the code and removes
-a class of bug. Everywhere else it buys notation rather than structure, and it
-pays an order of magnitude in cycles throughout.
+a class of index error. Elsewhere its shorter source expresses the same stages
+and the same memory traffic, at 3.20x to 21.18x the cycles — under 6x on 8 of
+the 22 variants and over 10x on 11.
 
-**Where PTO's SIMD style is already clean enough.** When the operation maps onto
+**Where the SIMD frontends have nothing to simplify.** When the operation maps onto
 the hardware as written. If the data already lines up with the lanes
 (`per_channel/01`: a channel *is* a lane), or the value being placed is a scalar
 (`per_block/01`: a tile scale has no layout), then ASC is already saying exactly
@@ -911,7 +926,7 @@ remove. Those variants come out 17 operations against 16, and 21 lines against
 | **ASC** | an instruction VMI cannot express is needed — a per-lane variable right shift being the clearest case — or a specific distribution mode is the point |
 
 **The methodological conclusion, which generalises past this chip.** Operation
-counts and line counts measure how much you write. They were a poor predictor of
+counts and line counts measure source size. They were a poor predictor of
 cycles here: PTO writes 74% of ASC's operations and uses 92% of its cycles, wins
 on 9 variants of 22, and on four of those *writes more operations than ASC*. The
 `per_block` family shows why — a wider logical vector means more operations

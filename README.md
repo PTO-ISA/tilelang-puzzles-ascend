@@ -309,9 +309,11 @@ conditional into a select.
 ```
 README.md
 presentation/                   the standalone style-and-performance report
-  quant_kernel_style_compare.md   SIMT vs PTO vs ASC: code style and measured cycles
-  quant_kernel_style_compare.pdf  the same argument as a 25-slide deck
+  quant_kernel_style_compare.md   SIMT vs PTO vs ASC: code size and measured cycles
+  quant_kernel_style_compare.pdf  the same argument as a 33-slide Beamer deck
   slides.md                       deck source (Marp dialect; generated)
+  plots/                          charts, generated from perf/quant_vf_cycles.json
+  optional/                       the same deck via Marp; see its README
 doc/                            all prose lives here, as rendered markdown
   tiers/{torch,asc,pto,simt}.md what each tier is for, and how to read it
   quant/<kernel>/README.md      the kernel: maths, variant index, GPU vs NPU
@@ -348,6 +350,7 @@ tools/
   check_doc_numbers.py          verify the line counts quoted in the variant pages
   make_report_snippets.py       cut presentation/ code blocks from the real kernels
   make_slides.py                generate the deck source from code + measurements
+  make_report_plots.py          draw the charts from the measured data (--check)
   check_report_numbers.py       re-derive every number the report and deck quote
   check_math.py                 lint every .md for GitHub LaTeX pitfalls
 docker/                         the container this was validated in; clones tilelang at TILELANG_COMMIT
@@ -406,6 +409,7 @@ python harness/probe/vf_lane_limits.py          # which VF bodies lower
 python harness/probe/fp8_out_idx.py             # whether out_idx can allocate FP8
 python harness/probe/simt_limits.py             # what a T.SimtVF region can lower
 python harness/probe/simt_limits.py --run       # ...and what it silently gets wrong
+python harness/probe/simt_thread_count.py      # does a smaller SIMT thread count help?
 python tools/vf_trace_audit.py                 # is each measured trace the quant kernel?
 ```
 

@@ -4,6 +4,12 @@
 \usepackage{lmodern}
 \usepackage{xcolor}
 \usepackage{booktabs}
+\usepackage{graphicx}
+% pdflatex runs inside build/, but slides.md references plots/ relative to
+% presentation/ so that the Marp build resolves the same paths.
+\graphicspath{{../}{./}}
+% Charts are 16:9-ish PNGs; cap them so they cannot overflow a frame.
+\setkeys{Gin}{width=\linewidth,height=0.72\textheight,keepaspectratio}
 
 % ---- theme -------------------------------------------------------------
 \usetheme{default}
