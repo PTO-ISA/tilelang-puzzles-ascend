@@ -1,0 +1,61 @@
+% Preamble for the Beamer build of slides.md (see presentation/Makefile).
+% Deliberately plain: this is a technical review deck, not a showcase.
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{xcolor}
+\usepackage{booktabs}
+
+% ---- theme -------------------------------------------------------------
+\usetheme{default}
+\usecolortheme{seahorse}
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{footline}[frame number]
+\setbeamerfont{frametitle}{size=\large,series=\bfseries}
+\setbeamercolor{frametitle}{fg=black,bg=gray!15}
+\setbeamercolor{structure}{fg=black!70}
+\setbeamerfont{framesubtitle}{size=\small}
+
+% Dense technical slides: tighten the default vertical spacing.
+\setbeamertemplate{itemize/enumerate body begin}{\small}
+\setbeamertemplate{itemize/enumerate subbody begin}{\footnotesize}
+\setlength{\parskip}{2pt}
+
+% ---- code --------------------------------------------------------------
+\definecolor{kw}{rgb}{0.00,0.25,0.62}      % keywords
+\definecolor{str}{rgb}{0.65,0.11,0.11}     % strings
+\definecolor{cmt}{rgb}{0.35,0.45,0.35}     % comments
+\definecolor{num}{rgb}{0.40,0.20,0.60}     % numbers
+\definecolor{codebg}{rgb}{0.975,0.975,0.96}
+
+\lstset{
+  language=Python,
+  basicstyle=\ttfamily\scriptsize,
+  keywordstyle=\color{kw}\bfseries,
+  stringstyle=\color{str},
+  commentstyle=\color{cmt}\itshape,
+  numberstyle=\color{num},
+  showstringspaces=false,
+  breaklines=true,
+  breakatwhitespace=true,
+  columns=fullflexible,
+  keepspaces=true,
+  backgroundcolor=\color{codebg},
+  frame=leftline,
+  framesep=4pt,
+  rulecolor=\color{black!25},
+  xleftmargin=6pt,
+  aboveskip=4pt,
+  belowskip=4pt,
+  % tilelang vocabulary, so the vector intrinsics read as code not prose
+  emph={S,V,T},
+  emphstyle=\color{kw},
+  morekeywords={with,for,in,if,else,assert,def,return},
+}
+
+% Pandoc emits \tightlist; beamer does not define it.
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{1pt}\setlength{\parskip}{0pt}}
+
+% Keep tables from overflowing a 16:9 frame.
+\let\oldtabular\tabular
+\renewcommand{\tabular}{\scriptsize\oldtabular}
