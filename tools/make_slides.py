@@ -437,8 +437,26 @@ One scalar per 32x32 tile. **ASC** takes 16 steps of 64 lanes:
 | operations, ASC -> PTO | 21->22 | 27->30 | 28->26 | 21->22 | 29->31 |
 | cycles, PTO/ASC | **0.85x** | 1.02x | **0.64x** | **0.65x** | 1.02x |
 
-> **A3** — more operations per step, half as many steps: a static count
-> cannot observe a trip count.
+PTO writes more operations on 4 of these 5 and runs fewer cycles on 2 of those 4.
+
+---
+
+## A3 `per_block/01`: SIMT has no tile loop, and reduces in two levels
+
+A thread cannot see another thread's accumulator, so the tile reduction becomes
+a tree. Level 1 gives each of the 32 rows a thread:
+
+{code("blockreduce_simt")}
+
+Level 2 is a second region, `for _z in T.Parallel(1)`, folding the 32 partials
+to the scalar — one thread working while 127 wait.
+
+{meas("per_block/01_raw_32x32")}
+
+> **A3** — more operations per step and half as many steps executed: a static
+> count cannot observe a trip count. SIMT has neither — no tile loop and no
+> vector width — and pays {c("simt","per_block/01_raw_32x32")/c("asc","per_block/01_raw_32x32"):.2f}x
+> for the serial fold.
 
 ---
 
@@ -606,7 +624,7 @@ array means computing, per lane, which source element that lane receives.
 
 ---
 
-## C2 `per_token/05`: PTO needs an extra broadcast; SIMT needs an index
+## C2 `per_token/05`: PTO builds the same index; SIMT changes one store
 
 **PTO** builds the same index vector. VMI has no scalar-operand `vmul`, so the
 stride is broadcast first — 10 lines against ASC's 7 — and the gather needs its
@@ -616,8 +634,10 @@ mask:
 
 {code("transpose_pto_gather")}
 
-**SIMT** stores the scale at the transposed index: no index vector, no gather,
-one line.
+**SIMT** stores the scale at the transposed index. The fragment is one
+statement because the rest of its `T.Parallel(num_groups)` body is B2's,
+unchanged: the column-major configuration changes which index this store uses
+and nothing else. There is no index vector and no gather to show.
 
 {code("transpose_simt")}
 
@@ -797,11 +817,20 @@ software encoder standing in for one convert instruction.
 
 ## Frontend selection
 
-| | applicable when |
-|---|---|
-| **SIMT** | development speed outweighs cycles; or the kernel is dominated by data placement — packing, transposes, gathers — where SIMT is 2-4x shorter and removes lane-indexing errors |
-| **PTO/VMI** | general production vector code: {A['ops']} of ASC's operations at {A['pmean']} of its cycles, with width-parameterised definitions ASC cannot express |
-| **ASC** | an instruction VMI does not expose is required (per-lane variable right shift), or a specific distribution mode is the objective |
+**SIMT** — when the kernel is dominated by data placement (packing, transposes,
+gathers) and development time is worth more than cycles. It is never faster
+here: the shorter source is bought with cycles.
+*`per_token/05` {st['per_token/05_col_major_sf']['la']} lines to {st['per_token/05_col_major_sf']['ls']} at {c("simt","per_token/05_col_major_sf")/c("asc","per_token/05_col_major_sf"):.2f}x · `per_channel/02` {st['per_channel/02_round_packed_m']['la']} to {st['per_channel/02_round_packed_m']['ls']} at {c("simt","per_channel/02_round_packed_m")/c("asc","per_channel/02_round_packed_m"):.2f}x · `cast_back/01` {st['cast_back/01_e4m3_fp32sf']['la']} to {st['cast_back/01_e4m3_fp32sf']['ls']} at {c("simt","cast_back/01_e4m3_fp32sf")/c("asc","cast_back/01_e4m3_fp32sf"):.2f}x*
+
+**PTO/VMI** — general production vector code, and anywhere a segment count or a
+width replaces repetition: {A['ops']} of ASC's operations at {A['pmean']} of its
+cycles.
+*`per_token/01` {st['per_token/01_raw_fp32sf']['oa']} operations to {st['per_token/01_raw_fp32sf']['op']} at {c("pto","per_token/01_raw_fp32sf")/c("asc","per_token/01_raw_fp32sf"):.2f}x · `per_token/02` {st['per_token/02_round_sf']['oa']} to {st['per_token/02_round_sf']['op']} at {c("pto","per_token/02_round_sf")/c("asc","per_token/02_round_sf"):.2f}x · `per_block/03` at {c("pto","per_block/03_fp4_e2m1")/c("asc","per_block/03_fp4_e2m1"):.2f}x*
+
+**ASC** — when an instruction VMI does not expose is required (per-lane variable
+right shift), when a distribution mode is the objective, or when there is
+nothing for VMI to factor out.
+*`cast_back/02` {st['cast_back/02_packed_ue8m0']['la']} lines against PTO's {st['cast_back/02_packed_ue8m0']['lp']} · `per_channel/04` {st['per_channel/04_compose']['la']} against {st['per_channel/04_compose']['lp']} · `cast_back/05`, PTO's worst cycle regression, {c("pto","cast_back/05_fp4_e2m1")/c("asc","cast_back/05_fp4_e2m1"):.2f}x*
 
 **On methodology.** Source size correlates with simulated cycles at r = -0.09
 on this set: a frontend comparison reporting only source size reports one of the

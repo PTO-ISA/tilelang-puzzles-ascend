@@ -325,12 +325,16 @@ V.vstore(V.vgather(sf_dense_ub[0, base], idx, gmask),
 ```
 
 In SIMT the transposed layout is simply the index the scale is stored at. There
-is no index vector, no gather, and no block of scales held back to be permuted:
+is no index vector, no gather, and no block of scales held back to be permuted.
+The fragment is one statement because the rest of its `T.Parallel(num_groups)`
+body is section 5.2's, unchanged — the configuration changes which index this
+store uses and nothing else:
 
-*source:* `puzzles/simt/quant/answer/per_token/05_col_major_sf.py:63-63`
+*source:* `puzzles/simt/quant/answer/per_token/05_col_major_sf.py:62-63`
 
 <!-- snippet: transpose_simt -->
 ```python
+# The whole column-major config: a different index.
 sf_out_ub[g, sub] = T.reinterpret("float32", biased << 23)
 ```
 
@@ -809,6 +813,28 @@ for chunk in T.serial(num_chunks):
 
 More operations written per step, half as many steps executed. A static count
 cannot see the trip count, and here the trip count dominates.
+
+SIMT has no trip count to compare, because it has no tile loop: a thread cannot
+see another thread's accumulator, so the same reduction becomes a two-level
+tree. Level 1 gives each of the 32 rows a thread —
+
+*source:* `puzzles/simt/quant/answer/per_block/01_raw_32x32.py:56-63`
+
+<!-- snippet: blockreduce_simt -->
+```python
+# level 1: one thread per row of the tile
+for t in T.Parallel(bm):
+    amax = T.alloc_var(T.float32)
+    amax = E4M3_CLAMP_MIN
+    for j in T.serial(bk):
+        amax = T.max(amax,
+                     T.abs(T.Cast("float32", x_ub[t, j])))
+    row_ub[t] = amax
+```
+
+— and level 2 is a second region, `for _z in T.Parallel(1)`, folding the 32
+partials to the scalar with one thread while 127 wait. That fold is most of the
+**17.75x**: 19,276 cycles against ASC's 1,086, from 18 source lines against 21.
 
 `cast_back/05` shows the same independence in reverse: PTO's largest operation
 reduction within `cast_back` (16 against 8, 18 lines against 11) and its **worst

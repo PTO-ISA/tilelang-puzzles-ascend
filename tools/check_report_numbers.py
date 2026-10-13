@@ -125,6 +125,12 @@ def build_claims(cycles: dict, static: dict) -> list[tuple[str, str]]:
         ("branch-free vs ASC",
          f"{bf / c('asc', 'per_token/04_fp32_in_fp4_out'):.1f}x ASC rather than "
          f"{fp4 / c('asc', 'per_token/04_fp32_in_fp4_out'):.1f}x"),
+        ("per_block/01 SIMT fold",
+         f"**{c('simt', 'per_block/01_raw_32x32') / c('asc', 'per_block/01_raw_32x32'):.2f}x**: "
+         f"{c('simt', 'per_block/01_raw_32x32'):,.0f} cycles against ASC's "
+         f"{c('asc', 'per_block/01_raw_32x32'):,.0f}, from "
+         f"{static['per_block/01_raw_32x32']['ln_simt']} source lines against "
+         f"{static['per_block/01_raw_32x32']['ln_asc']}"),
         ("per_block/03 SIMT ratio",
          f"{c('simt', 'per_block/03_fp4_e2m1') / c('asc', 'per_block/03_fp4_e2m1'):.2f}x"),
         ("cast_back/05 PTO regression",

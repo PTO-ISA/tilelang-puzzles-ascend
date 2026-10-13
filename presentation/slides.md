@@ -345,8 +345,37 @@ for chunk in T.serial(num_chunks):
 | operations, ASC -> PTO | 21->22 | 27->30 | 28->26 | 21->22 | 29->31 |
 | cycles, PTO/ASC | **0.85x** | 1.02x | **0.64x** | **0.65x** | 1.02x |
 
-> **A3** — more operations per step, half as many steps: a static count
-> cannot observe a trip count.
+PTO writes more operations on 4 of these 5 and runs fewer cycles on 2 of those 4.
+
+---
+
+## A3 `per_block/01`: SIMT has no tile loop, and reduces in two levels
+
+A thread cannot see another thread's accumulator, so the tile reduction becomes
+a tree. Level 1 gives each of the 32 rows a thread:
+
+```python
+# level 1: one thread per row of the tile
+for t in T.Parallel(bm):
+    amax = T.alloc_var(T.float32)
+    amax = E4M3_CLAMP_MIN
+    for j in T.serial(bk):
+        amax = T.max(amax,
+                     T.abs(T.Cast("float32", x_ub[t, j])))
+    row_ub[t] = amax
+```
+
+Level 2 is a second region, `for _z in T.Parallel(1)`, folding the 32 partials
+to the scalar — one thread working while 127 wait.
+
+| measured | cycles ASC | cycles PTO | cycles SIMT | VF lines A/P/S |
+|---|---:|---:|---:|---:|
+| `per_block/01` | 1,086 | 924 (0.85x) | 19,276 (17.75x) | 21 / 25 / 18 |
+
+> **A3** — more operations per step and half as many steps executed: a static
+> count cannot observe a trip count. SIMT has neither — no tile loop and no
+> vector width — and pays 17.75x
+> for the serial fold.
 
 ---
 
@@ -630,7 +659,7 @@ S.vsts(sf_out_ub[base, 0],
 
 ---
 
-## C2 `per_token/05`: PTO needs an extra broadcast; SIMT needs an index
+## C2 `per_token/05`: PTO builds the same index; SIMT changes one store
 
 **PTO** builds the same index vector. VMI has no scalar-operand `vmul`, so the
 stride is broadcast first — 10 lines against ASC's 7 — and the gather needs its
@@ -654,10 +683,13 @@ V.vstore(V.vgather(sf_dense_ub[0, base], idx, gmask),
          sf_out_ub[base, 0])
 ```
 
-**SIMT** stores the scale at the transposed index: no index vector, no gather,
-one line.
+**SIMT** stores the scale at the transposed index. The fragment is one
+statement because the rest of its `T.Parallel(num_groups)` body is B2's,
+unchanged: the column-major configuration changes which index this store uses
+and nothing else. There is no index vector and no gather to show.
 
 ```python
+# The whole column-major config: a different index.
 sf_out_ub[g, sub] = T.reinterpret("float32", biased << 23)
 ```
 
@@ -898,11 +930,20 @@ software encoder standing in for one convert instruction.
 
 ## Frontend selection
 
-| | applicable when |
-|---|---|
-| **SIMT** | development speed outweighs cycles; or the kernel is dominated by data placement — packing, transposes, gathers — where SIMT is 2-4x shorter and removes lane-indexing errors |
-| **PTO/VMI** | general production vector code: 74% of ASC's operations at 0.92x of its cycles, with width-parameterised definitions ASC cannot express |
-| **ASC** | an instruction VMI does not expose is required (per-lane variable right shift), or a specific distribution mode is the objective |
+**SIMT** — when the kernel is dominated by data placement (packing, transposes,
+gathers) and development time is worth more than cycles. It is never faster
+here: the shorter source is bought with cycles.
+*`per_token/05` 54 lines to 15 at 13.74x · `per_channel/02` 35 to 17 at 7.02x · `cast_back/01` 16 to 6 at 3.28x*
+
+**PTO/VMI** — general production vector code, and anywhere a segment count or a
+width replaces repetition: 74% of ASC's operations at 0.92x of its
+cycles.
+*`per_token/01` 39 operations to 19 at 0.74x · `per_token/02` 45 to 14 at 1.02x · `per_block/03` at 0.64x*
+
+**ASC** — when an instruction VMI does not expose is required (per-lane variable
+right shift), when a distribution mode is the objective, or when there is
+nothing for VMI to factor out.
+*`cast_back/02` 12 lines against PTO's 16 · `per_channel/04` 46 against 51 · `cast_back/05`, PTO's worst cycle regression, 1.13x*
 
 **On methodology.** Source size correlates with simulated cycles at r = -0.09
 on this set: a frontend comparison reporting only source size reports one of the
