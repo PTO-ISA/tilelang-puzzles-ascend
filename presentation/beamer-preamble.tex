@@ -65,3 +65,14 @@
 % Keep tables from overflowing a 16:9 frame.
 \let\oldtabular\tabular
 \renewcommand{\tabular}{\scriptsize\oldtabular}
+
+% ---- takeaway blocks ---------------------------------------------------
+% The per-variant key messages are markdown block quotes. Beamer's `quote`
+% has no space above it, so the takeaway collided with the last line of the
+% paragraph before it. Give it air and a rule, so it reads as a conclusion
+% rather than a continuation.
+\renewenvironment{quote}
+  {\par\addvspace{7pt}\small\itshape
+   \leftskip=1.2em \rightskip=0.6em
+   \noindent\hspace*{-1.2em}\textcolor{black!35}{\rule[-1pt]{2pt}{9pt}}\hspace*{0.5em}\ignorespaces}
+  {\par\addvspace{4pt}}

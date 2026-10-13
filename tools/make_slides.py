@@ -178,12 +178,22 @@ range the spread is under 4%, so the penalty is not caused by declaring more
 threads than the reduction uses. It is the per-element execution model: ~37,000
 instructions at 1.95 cycles each, against 32 VF launches of vector work."""
 
+def _ordinal(n):
+    return f"{n}{'th' if 10 <= n % 100 <= 20 else {1:'st',2:'nd',3:'rd'}.get(n % 10, 'th')}"
+
+
 F = dict(
     both_better=len(_both_better),
+    cb01_rank=_ordinal(_simt_sorted.index("cast_back/01_e4m3_fp32sf") + 1),
+    pto_longer=sum(1 for v in st if st[v]["lp"] > st[v]["la"]),
+    simt_shorter=sum(1 for v in st if st[v]["ls"] < st[v]["la"]),
     simt_below6=sum(1 for v in st if c("simt", v) / c("asc", v) < 6),
     t05_rank=_simt_sorted.index("per_token/05_col_major_sf") + 1,
     biggest_op_cut=_biggest_op_cut.split("_")[0].replace("/", "/"),
     bf_ratio=bf / c("simt", "per_token/04_fp32_in_fp4_out"),
+    # the same measurement the other way up: the branch-free arm is this much
+    # FASTER. Quoting the 0.56x as "a 0.56x gap" was wrong once already.
+    bf_speedup=c("simt", "per_token/04_fp32_in_fp4_out") / bf,
     bf_vs_asc=bf / c("asc", "per_token/04_fp32_in_fp4_out"),
     fp4_vs_asc=c("simt", "per_token/04_fp32_in_fp4_out")
     / c("asc", "per_token/04_fp32_in_fp4_out"),
@@ -280,7 +290,129 @@ all 66 traces for the arithmetic a quant kernel must contain.
 
 ---
 
-## `cast_back/01`: applying a per-group scale
+## Walkthrough: nine variants, four kinds of layout mismatch
+
+The algorithm is the same in all 22 variants. What changes is where its
+quantities sit relative to the 64- or 128-lane vector register.
+
+| | variant | code pattern | what it decides |
+|---|---|---|---|
+| **A** reduce | `per_channel/01` | one channel per lane | nothing to simplify |
+| | `per_token/01` | 4 groups per register | PTO's clearest win |
+| | `per_block/01` | 32x32 tile to a scalar | counts mispredict cycles |
+| **B** scale | `cast_back/01` | one scalar across lanes | SIMT's first real cut |
+| | `per_token/02` | exponent, any width | PTO's width argument |
+| | `cast_back/02` | nothing to factor out | PTO's operands cost lines |
+| **C** output | `per_channel/02` | interleave two registers | SIMT drops an instruction |
+| | `per_token/05` | transposed store = gather | biggest cut, and its price |
+| **D** convert | `per_token/04` | float32 -> e2m1 | SIMT's {F['fp4_vs_asc']:.1f}x |
+
+The other 13 variants compose these patterns and are measured in the tables at
+the end. Long form: companion report, sections 2-8.
+
+---
+
+## A1 `per_channel/01`: the reduction axis is already the lane axis
+
+One scale per channel, so the reduction runs down the token axis. A channel
+occupies one lane from start to finish and no frontend performs a cross-lane
+operation.
+
+**ASC** accumulates into a register across 32 rows:
+
+{code("chanreduce_asc")}
+
+**PTO** — the same structure, with mask and width operands:
+
+{code("chanreduce_pto")}
+
+---
+
+## A1 `per_channel/01`: equal source, unequal cycles
+
+**SIMT** assigns one thread per channel and loops over the 32 rows:
+
+{code("chanreduce_simt")}
+
+{meas("per_channel/01_raw_32tokens")}
+
+ASC and PTO write {st['per_channel/01_raw_32tokens']['oa']} and
+{st['per_channel/01_raw_32tokens']['op']} vector operations and
+{st['per_channel/01_raw_32tokens']['la']} lines each: segment counts and width
+arguments have nothing to apply to. The cycles still differ by
+{c("pto","per_channel/01_raw_32tokens")/c("asc","per_channel/01_raw_32tokens"):.2f}x,
+because ASC's vector type is 64 lanes and PTO's `size=LANES` is 128 — at
+`hidden=128` ASC's column-tile loop runs twice and PTO's once.
+
+> **A1** — where the data already lines up with the lanes, PTO has nothing to
+> factor out and SIMT nothing to remove; SIMT states the same three stages in
+> {st['per_channel/01_raw_32tokens']['ls']} lines at
+> {c("simt","per_channel/01_raw_32tokens")/c("asc","per_channel/01_raw_32tokens"):.2f}x
+> the cycles. The cycle difference comes from register width, which no count of
+> source lines can see. That recurs, larger, at A3.
+
+---
+
+## A2 `per_token/01`: a segmented reduction is PTO's clearest win
+
+Each 32-channel group needs its own maximum. An ASC vector reduction produces
+one value per register, so 4 groups require 4 masked reductions and 4
+single-element stores:
+
+{code("segreduce_asc")}
+
+**PTO** declares the segment count on one reduction:
+
+{code("segreduce_pto")}
+
+8 instructions become 3. The matching broadcast on the apply pass collapses from
+4 loads plus 2 selects to 1 load.
+
+---
+
+## A2 `per_token/01`: SIMT, and the measured result
+
+**SIMT** assigns one thread per group:
+
+{code("segreduce_simt")}
+
+{meas("per_token/01_raw_fp32sf")}
+
+`T.Parallel(num_groups)` has extent 4 at `K=128, group_size=32`, so the SIMT
+reduction uses 4 of the 128 declared threads.
+
+> **A2** — the one pattern where PTO is both shorter and faster:
+> {st['per_token/01_raw_fp32sf']['op']} operations against ASC's
+> {st['per_token/01_raw_fp32sf']['oa']} at
+> {c("pto","per_token/01_raw_fp32sf")/c("asc","per_token/01_raw_fp32sf"):.2f}x the
+> cycles. Operation count and cycle count favour PTO together on
+> {F['both_better']} of the 22 variants. SIMT is shorter again
+> ({st['per_token/01_raw_fp32sf']['ls']} lines) at
+> {c("simt","per_token/01_raw_fp32sf")/c("asc","per_token/01_raw_fp32sf"):.2f}x.
+
+---
+
+## A3 `per_block`: the same tile, half as many steps
+
+One scalar per 32x32 tile. **ASC** takes 16 steps of 64 lanes:
+
+{code("blockreduce_asc")}
+
+**PTO** reaches 128 float32 lanes, so the tile takes 8 steps of 128:
+
+{code("blockreduce_pto")}
+
+| `per_block` | `/01` | `/02` | `/03` | `/04` | `/05` |
+|---|---:|---:|---:|---:|---:|
+| operations, ASC -> PTO | 21->22 | 27->30 | 28->26 | 21->22 | 29->31 |
+| cycles, PTO/ASC | **0.85x** | 1.02x | **0.64x** | **0.65x** | 1.02x |
+
+> **A3** — more operations per step, half as many steps: a static count
+> cannot observe a trip count.
+
+---
+
+## B1 `cast_back/01`: broadcasting one scalar across a lane range
 
 64 consecutive channels span two scale groups, so each lane requires one of two
 scalars.
@@ -289,7 +421,7 @@ scalars.
 
 {code("broadcast_asc")}
 
-**PTO** declares the segment structure on the load: 64 lanes, 2 segments.
+**PTO** declares the segment structure on the load:
 
 {code("broadcast_pto")}
 
@@ -299,12 +431,9 @@ scalars.
 
 ---
 
-## `cast_back/01`: measured, and output dtype selection
+## B1 `cast_back/01`: measured, and output dtype selection
 
 {meas("cast_back/01_e4m3_fp32sf")}
-
-PTO replaces 3 instructions with 1 and uses 4.6% more cycles. SIMT uses 6 lines
-against ASC's 16, at 3.28x the cycles.
 
 The variant also switches output dtype. ASC selects a different store
 instruction — the wider dtype takes the simpler one:
@@ -315,12 +444,77 @@ PTO infers packing from the destination buffer, so only the convert changes:
 
 {code("outdtype_pto")}
 
-SIMT emits no dtype branch: `T.copy` converts between buffers of differing
-dtype.
+SIMT emits no dtype branch: `T.copy` converts between buffers.
+
+> **B1** — the first variant where SIMT's source is materially shorter
+> ({st['cast_back/01_e4m3_fp32sf']['la']} lines to
+> {st['cast_back/01_e4m3_fp32sf']['ls']}): per-element indexing replaces explicit
+> lane-mask construction, at
+> {c("simt","cast_back/01_e4m3_fp32sf")/c("asc","cast_back/01_e4m3_fp32sf"):.2f}x —
+> the {F['cb01_rank']} lowest SIMT ratio of 22.
 
 ---
 
-## `per_channel/02`: M-packed scales require a lane interleave
+## B2 `per_token/02`: lane count as a parameter
+
+The scale is rounded up to a power of two by rewriting the float32 exponent
+field. **ASC** fixes the lane count in every type name (`"uint32x64"`):
+
+{code("exponent_asc")}
+
+**PTO** takes the width as an argument, so one definition serves 4, 64, 128 or
+256 lanes:
+
+{code("exponent_pto")}
+
+---
+
+## B2 `per_token/02`: the same arithmetic on scalars
+
+**SIMT** has no vector width to carry:
+
+{code("exponent_simt")}
+
+{meas("per_token/02_round_sf")}
+
+> **B2** — {st['per_token/02_round_sf']['oa']} operations against
+> {st['per_token/02_round_sf']['op']} is the largest operation-count reduction in
+> the set, at a
+> {c("pto","per_token/02_round_sf")/c("asc","per_token/02_round_sf"):.2f}x cycle
+> ratio. PTO's gain here is a definition that is written once instead of per
+> width; it is not a speed gain, and reporting only the operation count would
+> have presented it as one.
+
+---
+
+## B3 `cast_back/02`: where PTO's explicitness costs source length
+
+Decoding a UE8M0 exponent byte. **ASC** names the distribution mode on the load:
+
+{code("ue8m0_asc")}
+
+**PTO** states width, stride, group count and mask:
+
+{code("ue8m0_pto")}
+
+Two further ASC advantages, both outside this snippet:
+
+- **No per-lane variable right shift in VMI.** `S.vshr(v, shifts)` accepts a
+  shift vector; `V.vshrs` accepts a scalar only, so production PTO computes both
+  byte positions and selects.
+- **`per_channel/04`** is PTO's longest region, {st['per_channel/04_compose']['lp']}
+  lines against {st['per_channel/04_compose']['la']}, at a 1.00x cycle ratio.
+
+> **B3** — the counter-example to B2: with nothing to factor out, operation
+> counts tie at {st['cast_back/02_packed_ue8m0']['oa']} and PTO is
+> {st['cast_back/02_packed_ue8m0']['lp'] - st['cast_back/02_packed_ue8m0']['la']}
+> lines longer than ASC ({st['cast_back/02_packed_ue8m0']['lp']} vs
+> {st['cast_back/02_packed_ue8m0']['la']}). The mandatory `size=` and mask
+> operands are a real ergonomic cost of VMI.
+
+---
+
+## C1 `per_channel/02`: M-packed scales require a lane interleave
 
 Output byte `2c` holds m-group `2i`'s exponent for channel `c`, byte `2c+1`
 holds m-group `2i+1`'s. On a vector unit this is an interleave instruction.
@@ -335,7 +529,7 @@ holds m-group `2i+1`'s. On a vector unit this is an interleave instruction.
 
 ---
 
-## `per_channel/02`: SIMT replaces the interleave with two scalar stores
+## C1 `per_channel/02`: SIMT replaces the interleave with two scalar stores
 
 {code("interleave_simt")}
 
@@ -353,21 +547,22 @@ A scalar store cannot overrun, so SIMT allocates the exact size:
 
 ---
 
-## `per_channel/02`: performance penalty of SIMT
+## C1 `per_channel/02`: the measured cost of removing the interleave
 
 {row("per_channel/02_round_packed_m")}
 
-Observations:
-
 - SIMT removes one instruction and one padding requirement, using 17 lines
-  against ASC's 35
-- SIMT costs **7.02x** the simulated cycles
+  against ASC's 35, at **7.02x** the cycles
 - PTO is **5 lines longer** than ASC (40 vs 35) at 0.96x the cycles: the
   explicit `size=` and mask operands cost source length, not time
 
+> **C1** — SIMT's largest structural simplification so far: it deletes an
+> instruction *and* a correctness rule about register width. Both deletions are
+> real; 7.02x is what they cost.
+
 ---
 
-## `per_token/05`: column-major scales require a register gather
+## C2 `per_token/05`: column-major scales require a register gather
 
 Lane assignment inside a vector register is fixed, so transposing the scale
 array means computing, per lane, which source element that lane receives.
@@ -382,7 +577,7 @@ array means computing, per lane, which source element that lane receives.
 
 ---
 
-## `per_token/05`: PTO needs an extra broadcast; SIMT needs an index
+## C2 `per_token/05`: PTO needs an extra broadcast; SIMT needs an index
 
 **PTO** performs the same index arithmetic. VMI has no scalar-operand `vmul`, so
 the stride constant is first broadcast into a vector — 3 lines where ASC uses 2:
@@ -395,11 +590,9 @@ the stride constant is first broadcast into a vector — 3 lines where ASC uses 
 
 ---
 
-## `per_token/05`: SIMT's performance penalty on transpose
+## C2 `per_token/05`: the sharpest source-size / cycle trade in the set
 
 {row("per_token/05_col_major_sf")}
-
-Observations:
 
 - 15 SIMT lines against ASC's 54 is the largest source-size reduction among the
   22 variants
@@ -407,130 +600,14 @@ Observations:
 - ASC and PTO are within 1% of each other: a gather is a single hardware
   operation, so VMI has no segment structure or width to collapse here
 
----
-
-## `per_channel/01`: reduction along M needs no cross-lane step
-
-One scale per channel means the reduction runs down the token axis. A channel
-occupies one lane throughout, so no frontend performs a cross-lane operation.
-
-**ASC** accumulates into a register across 32 rows:
-
-{code("chanreduce_asc")}
-
-**PTO** — the same structure, with mask and width operands:
-
-{code("chanreduce_pto")}
+> **C2** — one line of SIMT replaces nine of index arithmetic, and the SIMD
+> frontends tie because the hardware already provides the operation. Where the
+> work *is* index arithmetic, SIMT is the shortest by a wide margin and the
+> slowest by one too.
 
 ---
 
-## `per_channel/01`: SIMT, and the measured result
-
-**SIMT** assigns one thread per channel and loops over the 32 rows:
-
-{code("chanreduce_simt")}
-
-{meas("per_channel/01_raw_32tokens")}
-
-ASC and PTO use **{st['per_channel/01_raw_32tokens']['oa']} and
-{st['per_channel/01_raw_32tokens']['op']} vector operations and
-{st['per_channel/01_raw_32tokens']['la']} lines each**: segment counts and width
-arguments have nothing to apply to. SIMT's 12 lines express the same three
-stages and the same memory traffic, at 5.33x the cycles.
-
-`per_block/01` is the second such case — one scale per 32x32 tile is a scalar,
-so a column-major scale array changes only the final `T.copy` index and costs
-no additional instruction in any of the three frontends.
-
----
-
-## `per_token/01`: segmented reduction
-
-Each 32-channel group needs its own maximum. An ASC vector reduction produces
-one value per register, so 4 groups require 4 masked reductions and 4
-single-element stores:
-
-{code("segreduce_asc")}
-
-**PTO** declares the segment count on one reduction:
-
-{code("segreduce_pto")}
-
-8 instructions become 3. The matching broadcast on the apply pass collapses from
-4 loads plus 2 selects to 1 load.
-
----
-
-## `per_token/01`: SIMT, and the measured result
-
-**SIMT** assigns one thread per group:
-
-{code("segreduce_simt")}
-
-{meas("per_token/01_raw_fp32sf")}
-
-- PTO uses {st['per_token/01_raw_fp32sf']['op']} vector operations against ASC's
-  {st['per_token/01_raw_fp32sf']['oa']} and **0.74x** the cycles. Operation count
-  and cycle count favour PTO together on {F['both_better']} of the 22 variants.
-- `T.Parallel(num_groups)` has extent 4 at `K=128, group_size=32`: the SIMT
-  reduction uses 4 of the 128 declared threads, at 11.59x the cycles.
-
----
-
-## `per_token/02`: lane count as a parameter
-
-The scale is rounded up to a power of two by rewriting the float32 exponent
-field. **ASC** fixes the lane count in every type name (`"uint32x64"`):
-
-{code("exponent_asc")}
-
-**PTO** takes the width as an argument, so one definition serves 4, 64, 128 or
-256 lanes:
-
-{code("exponent_pto")}
-
----
-
-## `per_token/02`: the same arithmetic on scalars
-
-**SIMT** has no vector width to carry:
-
-{code("exponent_simt")}
-
-{meas("per_token/02_round_sf")}
-
-{st['per_token/02_round_sf']['oa']} operations against
-{st['per_token/02_round_sf']['op']} is the largest operation-count reduction in
-the set, at a **1.02x** cycle ratio. The width-parameterised definition is PTO's
-measurable advantage here; cycle count is unchanged.
-
----
-
-## `cast_back/02`: PTO's width and mask operands cost source length
-
-Decoding a UE8M0 exponent byte. **ASC** names the distribution mode on the load:
-
-{code("ue8m0_asc")}
-
-**PTO** states width, stride, group count and mask:
-
-{code("ue8m0_pto")}
-
-Operation counts tie at {st['cast_back/02_packed_ue8m0']['oa']};
-**PTO uses {st['cast_back/02_packed_ue8m0']['lp'] - st['cast_back/02_packed_ue8m0']['la']} more lines**
-({st['cast_back/02_packed_ue8m0']['lp']} vs {st['cast_back/02_packed_ue8m0']['la']}).
-Two further ASC advantages:
-
-- **No per-lane variable right shift in VMI.** `S.vshr(v, shifts)` accepts a
-  shift vector; `V.vshrs` accepts a scalar only, so production PTO computes both
-  byte positions and selects. No variant in this set uses it — the kernels above
-  shift left by a vector, which both frontends support.
-- **`per_channel/04`** is PTO's longest region, {st['per_channel/04_compose']['lp']}
-  lines against {st['per_channel/04_compose']['la']}, at a 1.00x cycle ratio.
-
----
-
-## `per_token/04`: FP4 output, where SIMT has no instruction
+## D1 `per_token/04`: FP4 output, where SIMT has no instruction
 
 ASC and PTO both reach a hardware `float32 -> e2m1` convert. Their work is
 limited to pre-rounding to bfloat16 with a sticky bit.
@@ -545,7 +622,7 @@ limited to pre-rounding to bfloat16 with a sticky bit.
 
 ---
 
-## `per_token/04`: SIMT encodes e2m1 in software
+## D1 `per_token/04`: SIMT encodes e2m1 in software
 
 No FP4 store is reachable from a `T.SimtVF` region. The SIMT kernel declares its
 output `uint8` and extracts the float32 fields by hand — the first 6 lines of an
@@ -561,7 +638,7 @@ carries the same encoder at 16.77x.
 
 ---
 
-## `per_token/04`: {F['fp4_vs_asc']:.0f}x decomposes into instruction count and divergence
+## D1 `per_token/04`: {F['fp4_vs_asc']:.1f}x decomposes into instructions and divergence
 
 | factor | SIMT `per_token/04` | other SIMT `per_token` variants |
 |---|---|---|
@@ -581,43 +658,23 @@ instructions** and runs at **{F['bf_ratio']:.2f}x the cycles** —
 the kernel behind a `branch_free` flag and the harness asserts their outputs are
 byte-identical.
 
-A GPU compiler predicates such a conditional into a select, so this component is
-a code-generation gap rather than a property of the thread model.
+> **D1** — a missing instruction is not a style difference. Of the
+> {F['fp4_vs_asc']:.1f}x, a factor of {F['bf_speedup']:.2f}x is a code-generation
+> gap a GPU compiler would not have, since it predicates such a conditional into
+> a select; the remaining {F['bf_vs_asc']:.1f}x is a software encoder standing in
+> for one convert instruction.
 
 ---
 
-## `per_block`: operation count and cycle count move independently
+## Source size: VF-region lines, all three frontends
 
-| variant | ops ASC | ops PTO | PTO ops | cycles PTO/ASC |
-|---|---:|---:|---|---:|
-| `per_block/01` | 21 | 22 | more | **0.85x** |
-| `per_block/02` | 27 | 30 | more | 1.02x |
-| `per_block/03` | 28 | 26 | fewer | **0.64x** |
-| `per_block/04` | 21 | 22 | more | **0.65x** |
-| `per_block/05` | 29 | 31 | more | 1.02x |
+![](plots/lines.png)
 
-PTO writes more operations on 4 of the 5 and runs fewer cycles on 2 of those 4.
-The reduction loop accounts for it. **ASC** processes a 1024-value tile in 16
-steps of 64 lanes; **PTO** reaches 128 float32 lanes, so the same tile takes 8
-steps of 128:
-
-{code("blockreduce_pto")}
-
-More operations per step, half as many steps executed. A static count cannot
-observe the trip count.
-
----
-
-## Source size does not predict cycle count
-
-![](plots/correlation.png)
-
-Left: PTO vs ASC, operations written against simulated cycles, 22 variants. The
-dotted line marks where the points would fall if source size predicted cycles.
-Right: SIMT vs ASC, source lines against cycles, `per_token/04` excluded.
-
-Pearson r is **-0.09** and **-0.01**: on this set, source size does not
-estimate runtime.
+Totals **{tot('la')} / {tot('lp')} / {tot('ls')}** lines — PTO {A['lp']} of ASC,
+SIMT {A['ls']}. PTO is *longer* than ASC on {F['pto_longer']} of the 22: its
+saving is concentrated in the segmented-reduction variants (A2) and spent again
+on `size=` and mask operands elsewhere (B3). SIMT is shorter on
+{F['simt_shorter']} of 22 and ties on the other.
 
 ---
 
@@ -707,22 +764,26 @@ for i in T.Parallel(hidden):         extent 128  (the apply)
 ## Conclusions
 
 **SIMT reduces source size where the SIMD frontends move data between lanes.**
-The three cases measured here are a group broadcast (`cast_back/01`, 16 lines to
-6), a lane interleave (`per_channel/02`, 35 to 17) and a register gather
-(`per_token/05`, 54 to 15). In each, the SIMD code is dominated by index
+The three cases measured here are a group broadcast (B1, 16 lines to 6), a lane
+interleave (C1, 35 to 17) and a register gather (C2, 54 to 15). In each, the SIMD code is dominated by index
 arithmetic that the thread model does not require, and in `per_channel/02` SIMT
 also removes the 256-lane padding requirement. The cost is 3.28x, 7.02x and
 13.74x simulated cycles respectively.
 
-**PTO's SIMD style has nothing to simplify where the operation already maps onto
-the hardware.** When a channel occupies one lane (`per_channel/01`) or the value
-being placed is a scalar (`per_block/01`), ASC and PTO use 17 and 16 operations
+**PTO simplifies where a segment count or a width replaces repetition** (A2,
+B2: 39 operations to 19 and 45 to 14) **and costs source length where there is
+nothing to factor out** (B3: 4 lines longer at an identical operation count).
+
+**Neither SIMD frontend has anything to simplify where the operation already maps onto
+the hardware.** When a channel occupies one lane (A1) or the value being placed
+is a scalar (`per_block/01`), ASC and PTO use 17 and 16 operations
 and 21 lines each, and SIMT's shorter source expresses the same three stages.
 
 **Where the hardware has an instruction, the frontend that can name it wins by a
-wide margin.** FP4 output costs SIMT {F['fp4_vs_asc']:.0f}x, of which
-{F['bf_ratio']:.2f}x is a code-generation gap and the remainder is a software
-encoder standing in for one convert instruction.
+wide margin.** FP4 output (D1) costs SIMT {F['fp4_vs_asc']:.1f}x. A factor of
+{F['bf_speedup']:.2f}x of that is a code-generation gap — branch divergence the
+mask-arithmetic spelling removes — and the remaining {F['bf_vs_asc']:.1f}x is a
+software encoder standing in for one convert instruction.
 
 ---
 
