@@ -126,6 +126,8 @@ SNIPPETS: dict[str, Cut] = {
                      r"packed = S\.vld\(sf_ub\[strip\]", 5),
     "ue8m0_pto": Cut("pto", "cast_back/02_packed_ue8m0",
                      r"packed = V\.vload\(sf_ub\[strip\]", 5),
+    "ue8m0_simt": Cut("simt", "cast_back/02_packed_ue8m0",
+                      r"for i in T\.Parallel\(hidden\):", 5),
 
     # -- pattern 7: where SIMT loses ----------------------------------------
     "fp4_asc": Cut("asc", "per_token/04_fp32_in_fp4_out",
