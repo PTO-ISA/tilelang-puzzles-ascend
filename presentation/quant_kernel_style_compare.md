@@ -92,24 +92,28 @@ two scale groups, so each lane needs the right one of two scalars.
 ASC must build that vector explicitly — load each scalar broadcast across all
 lanes, then select between them with a lane mask:
 
-*source:* `puzzles/asc/quant/answer/cast_back/01_e4m3_fp32sf.py:66-68`
+*source:* `puzzles/asc/quant/answer/cast_back/01_e4m3_fp32sf.py:66-70`
 
 <!-- snippet: broadcast_asc -->
 ```python
 lo = S.vld(sf_ub[group], dist="BRC_B32")
 hi = S.vld(sf_ub[group + 1], dist="BRC_B32")
 scale = S.vsel(lo, hi, mask_low)
+
+scaled = S.vmul(values, scale)
 ```
 
 PTO states the shape instead of constructing it. One load, two segments, each
 broadcast from a consecutive scalar:
 
-*source:* `puzzles/pto/quant/answer/cast_back/01_e4m3_fp32sf.py:60-61`
+*source:* `puzzles/pto/quant/answer/cast_back/01_e4m3_fp32sf.py:60-63`
 
 <!-- snippet: broadcast_pto -->
 ```python
 scale = V.vload(sf_ub[group], size=LANES, stride=1,
                 dist_mode="brc", group=groups_per_strip)
+
+scaled = V.vmul(values, scale, mask)
 ```
 
 SIMT does not have the problem. A thread knows which element it owns, so the
@@ -185,7 +189,7 @@ and the consumer wants two token groups interleaved into each 16-bit word: byte
 On a vector unit that is an interleave instruction. ASC loads both byte rows and
 calls `S.vintlv`:
 
-*source:* `puzzles/asc/quant/answer/per_channel/02_round_packed_m.py:88-91`
+*source:* `puzzles/asc/quant/answer/per_channel/02_round_packed_m.py:88-95`
 
 <!-- snippet: interleave_asc -->
 ```python
@@ -201,7 +205,7 @@ S.vsts(packed_ub[col * PACK_FACTOR], lo, dist="NORM_B8")
 
 PTO is the same shape, with the width spelled out:
 
-*source:* `puzzles/pto/quant/answer/per_channel/02_round_packed_m.py:94-97`
+*source:* `puzzles/pto/quant/answer/per_channel/02_round_packed_m.py:94-101`
 
 <!-- snippet: interleave_pto -->
 ```python
@@ -222,6 +226,13 @@ SIMD tiers therefore have to pad the scratch buffer by a whole tile:
 *source:* `puzzles/asc/quant/answer/per_channel/02_round_packed_m.py:41-41`
 
 <!-- snippet: pad_asc -->
+```python
+sf_rows_ub = T.alloc_shared((PACK_FACTOR, hidden + BYTE_LANES), T.uint8)
+```
+
+*source:* `puzzles/pto/quant/answer/per_channel/02_round_packed_m.py:41-41`
+
+<!-- snippet: pad_pto -->
 ```python
 sf_rows_ub = T.alloc_shared((PACK_FACTOR, hidden + BYTE_LANES), T.uint8)
 ```
@@ -287,13 +298,30 @@ PTO does the same thing and is slightly *more* verbose, because VMI has no
 scalar-operand `vmul`: the stride constant must be broadcast into a vector
 first:
 
-*source:* `puzzles/pto/quant/answer/per_token/05_col_major_sf.py:57-59`
+*source:* `puzzles/pto/quant/answer/per_token/05_col_major_sf.py:50-59`
 
 <!-- snippet: transpose_pto -->
 ```python
+lane = V.vci(T.int32(0), size=LANES)
+mask64 = V.create_mask(LANES, size=LANES)
+token_of_lane = V.vand(V.vinterpret_cast(lane, "uint32"),
+                       V.vbrc(T.uint32(token_block - 1), size=LANES))
+group_of_lane = V.vinterpret_cast(
+    V.vshrs(lane, log2_block, mask64), "uint32")
+# No scalar-operand vmul in VMI: the stride must be a vector.
 stride_v = V.vbrc(T.uint32(SF_STRIDE), size=LANES)
 V.vstore(V.vadd(V.vmul(token_of_lane, stride_v, mask64),
                 group_of_lane), idx_ub[0])
+```
+
+PTO gathers through it in turn, with the mask `vgather` requires:
+
+*source:* `puzzles/pto/quant/answer/per_token/05_col_major_sf.py:111-112`
+
+<!-- snippet: transpose_pto_gather -->
+```python
+V.vstore(V.vgather(sf_dense_ub[0, base], idx, gmask),
+         sf_out_ub[base, 0])
 ```
 
 In SIMT the transposed layout is simply the index the scale is stored at. There
@@ -344,7 +372,7 @@ a thread model: when does the SIMD code have nothing to simplify?
 channel. A channel *is* a lane, so there is no cross-lane step for anybody. ASC
 keeps a register accumulator and maxes 32 loaded rows into it:
 
-*source:* `puzzles/asc/quant/answer/per_channel/01_raw_32tokens.py:44-49`
+*source:* `puzzles/asc/quant/answer/per_channel/01_raw_32tokens.py:44-53`
 
 <!-- snippet: chanreduce_asc -->
 ```python
@@ -356,11 +384,13 @@ for row in T.serial(group_tokens):
                       T.float32))
     # lane c holds the max over tokens seen so far
     acc[0] = S.vmax(acc[0], v)
+S.vsts(sf_ub[col], S.vdiv(acc[0], qmax))
+S.vsts(inv_ub[col], S.vdiv(qmax, acc[0]))
 ```
 
 PTO is the same code with a mask operand:
 
-*source:* `puzzles/pto/quant/answer/per_channel/01_raw_32tokens.py:46-51`
+*source:* `puzzles/pto/quant/answer/per_channel/01_raw_32tokens.py:46-55`
 
 <!-- snippet: chanreduce_pto -->
 ```python
@@ -372,12 +402,14 @@ for row in T.serial(group_tokens):
                       "float32"), mask)
     # lane c holds the max over tokens seen so far
     acc[0] = V.vmax(acc[0], v, mask)
+V.vstore(V.vdiv(acc[0], qmax, mask), sf_ub[col])
+V.vstore(V.vdiv(qmax, acc[0], mask), inv_ub[col])
 ```
 
 SIMT is the mirror image — a channel is a *thread*, and the reduction is a serial
 loop down 32 rows:
 
-*source:* `puzzles/simt/quant/answer/per_channel/01_raw_32tokens.py:50-56`
+*source:* `puzzles/simt/quant/answer/per_channel/01_raw_32tokens.py:50-57`
 
 <!-- snippet: chanreduce_simt -->
 ```python
@@ -388,6 +420,7 @@ for c in T.Parallel(hidden):
         amax = T.max(amax,
                      T.abs(T.Cast("float32", x_ub[row, c])))
     sf_ub[c] = amax / E4M3_MAX
+    inv_ub[c] = E4M3_MAX / amax
 ```
 
 | | ASC | PTO | SIMT |
@@ -430,10 +463,14 @@ whether the data being relaid out sits in lanes.
 produces one value per register, so four groups inside a 128-channel pair means
 four masked reductions and four single-element stores:
 
-*source:* `puzzles/asc/quant/answer/per_token/01_raw_fp32sf.py:63-69`
+*source:* `puzzles/asc/quant/answer/per_token/01_raw_fp32sf.py:59-70`
 
 <!-- snippet: segreduce_asc -->
 ```python
+a0 = S.vabs(S.vcvt(S.vld(x_ub[col], dist="UNPK_B16"), T.float32))
+a1 = S.vabs(S.vcvt(S.vld(x_ub[col + LANES], dist="UNPK_B16"),
+                   T.float32))
+# Each register holds two groups, so reduce half at a time.
 S.vsts(amax_ub[group], S.vcmax(a0, mask_low), dist="ONEPT_B32")
 S.vsts(amax_ub[group + 1], S.vcmax(a0, mask_high),
        dist="ONEPT_B32")
@@ -445,16 +482,17 @@ S.vsts(amax_ub[group + 3], S.vcmax(a1, mask_high),
 
 PTO says "reduce, in four segments" and the backend does the rest:
 
-*source:* `puzzles/pto/quant/answer/per_token/01_raw_fp32sf.py:55-56`
+*source:* `puzzles/pto/quant/answer/per_token/01_raw_fp32sf.py:54-56`
 
 <!-- snippet: segreduce_pto -->
 ```python
+x = V.vcvt(V.vload(x_ub[col], size=PAIR), "float32")
 V.vstore(V.vcmax(V.vabs(x, mask), mask, group=groups_per_pair),
          amax_ub[group])
 ```
 
-Eight operations become three. The matching broadcast on the apply pass collapses
-the same way — four broadcast loads and two selects become one `vload` with
+Fourteen vector operations become five. The matching broadcast on the apply pass
+collapses the same way — four broadcast loads and two selects become one `vload` with
 `dist_mode="brc", group=4`.
 
 SIMT puts one thread on each group and scans serially:
@@ -490,7 +528,7 @@ occupies **4 of the 128 declared threads**.
 to a power of two by reading and rewriting the float32 exponent field. ASC must
 spell it inline, with the lane count baked into every type:
 
-*source:* `puzzles/asc/quant/answer/per_token/02_round_sf.py:63-69`
+*source:* `puzzles/asc/quant/answer/per_token/02_round_sf.py:63-71`
 
 <!-- snippet: exponent_asc -->
 ```python
@@ -508,7 +546,7 @@ inv = T.reinterpret(
 PTO writes the same arithmetic with the width as a parameter — so it can be
 factored into a macro that serves 4, 64, 128 or 256 lanes:
 
-*source:* `puzzles/pto/quant/answer/per_token/02_round_sf.py:35-41`
+*source:* `puzzles/pto/quant/answer/per_token/02_round_sf.py:35-44`
 
 <!-- snippet: exponent_pto -->
 ```python
@@ -519,22 +557,34 @@ bits = V.vinterpret_cast(
 # ((bits - 1) >> 23) + 1  ==  ceil(log2(v)) + 127
 biased = V.vadd(V.vshr(V.vsub(bits, one), shift), one)
 sf = V.vinterpret_cast(V.vshl(biased, shift), "float32")
+# 254 - biased == 127 - ceil_exp: the negated exponent, still biased.
+inv = V.vinterpret_cast(
+    V.vshl(V.vsub(V.vbrc(T.uint32(254), size=lanes), biased), shift), "float32")
 ```
 
 ASC structurally cannot write that function once, because `"uint32x64"` fixes the
 width. This is VMI's deepest advantage and it does not show up as an operation
 count — it shows up as reuse.
 
-SIMT, having no width at all, writes the arithmetic as scalars:
+SIMT, having no width at all, writes the arithmetic as scalars. The fragment is
+the whole `T.Parallel` body: its first six lines are the reduction of section
+5.1, unchanged, and the scale arithmetic is the last four:
 
-*source:* `puzzles/simt/quant/answer/per_token/02_round_sf.py:54-57`
+*source:* `puzzles/simt/quant/answer/per_token/02_round_sf.py:46-57`
 
 <!-- snippet: exponent_simt -->
 ```python
-bits = T.reinterpret("int32", amax / E4M3_MAX)
-biased = ((bits - 1) >> 23) + 1
-sf_l[g] = T.reinterpret("float32", biased << 23)
-inv_l[g] = T.reinterpret("float32", (254 - biased) << 23)
+for g in T.Parallel(num_groups):
+    amax = T.alloc_var(T.float32)
+    amax = E4M3_CLAMP_MIN
+    for j in T.serial(group_size):
+        v = T.Cast("float32", x_ub[g * group_size + j])
+        amax = T.max(amax, T.abs(v))
+
+    bits = T.reinterpret("int32", amax / E4M3_MAX)
+    biased = ((bits - 1) >> 23) + 1
+    sf_l[g] = T.reinterpret("float32", biased << 23)
+    inv_l[g] = T.reinterpret("float32", (254 - biased) << 23)
 ```
 
 | | ASC | PTO | SIMT |
@@ -564,7 +614,7 @@ where VMI is the weaker surface:
 `cast_back/02` decodes a UE8M0 exponent byte. ASC names the distribution mode on
 the load and applies a per-lane shift vector:
 
-*source:* `puzzles/asc/quant/answer/cast_back/02_packed_ue8m0.py:49-52`
+*source:* `puzzles/asc/quant/answer/cast_back/02_packed_ue8m0.py:49-53`
 
 <!-- snippet: ue8m0_asc -->
 ```python
@@ -572,6 +622,7 @@ packed = S.vld(sf_ub[strip], dist="BRC_B16")
 bits = S.vand(S.vshl(T.reinterpret(packed, "uint32x64"),
                      sf_shift), exp_mask)
 # An exponent field with a zero mantissa *is* 2^(e-127).
+scale = T.reinterpret(bits, "float32x64")
 ```
 
 PTO needs the width, the stride, the group count and a mask spelled out, and
@@ -621,7 +672,7 @@ a sticky bit so the hardware's second rounding cannot double-round.
 
 ASC pairs two registers to deinterleave them, then converts:
 
-*source:* `puzzles/asc/quant/answer/per_token/04_fp32_in_fp4_out.py:73-77`
+*source:* `puzzles/asc/quant/answer/per_token/04_fp32_in_fp4_out.py:73-78`
 
 <!-- snippet: fp4_asc -->
 ```python
@@ -630,6 +681,7 @@ low, high = S.vdintlv(T.reinterpret(q0, "uint16x128"),
 odd = S.vor(high, S.vmin(low, one_u16))
 S.vsts(q_ub[col],
        S.vcvt(T.reinterpret(odd, "bfloat16x128"),
+              T.float4_e2m1fn), dist="PK4_B32")
 ```
 
 PTO's version is four operations, because `vunzip` splits a single value rather
@@ -644,11 +696,21 @@ one = V.vbrc(T.uint16(1), size=lanes)
 return V.vinterpret_cast(V.vor(high, V.vmin(low, one)), "bfloat16")
 ```
 
+It is a `@T.macro`, so the call site is where ASC's inline statements are:
+
+*source:* `puzzles/pto/quant/answer/per_token/04_fp32_in_fp4_out.py:79-80`
+
+<!-- snippet: fp4_pto_call -->
+```python
+odd = to_bf16_round_odd(q, PAIR)
+V.vstore(V.vcvt(odd, "float4_e2m1fn", rounding="R"), q_ub[col])
+```
+
 **No FP4 store is reachable from a `SimtVF` region.** The SIMT kernel therefore
 declares its output as `uint8` and encodes the format by hand — sign, exponent,
 subnormal renormalization, guard/round/sticky, saturation:
 
-*source:* `puzzles/simt/quant/answer/per_token/04_fp32_in_fp4_out.py:62-67`
+*source:* `puzzles/simt/quant/answer/per_token/04_fp32_in_fp4_out.py:55-60`
 
 <!-- snippet: fp4_simt -->
 ```python
@@ -848,6 +910,18 @@ cycle total, so VF launch counts were compared across tiers on every variant.
 They match everywhere except `per_token/05`, where ASC and PTO issue 34 against
 SIMT's 32 — the two extra being the one-time gather-index setup that SIMT does
 not need.
+
+**Code fragments.** No fragment in this report is typed by hand. Each is cut
+from a kernel the harness passes, by `tools/make_report_snippets.py`, which
+locates it by an anchor line rather than a line number and re-resolves every cut
+on each run; `tools/check_report_numbers.py` fails if an embedded block or the
+`*source:*` range above it has drifted. Within a variant the fragments quoted
+side by side cover the same step of the algorithm, so they can be read against
+each other: where a SIMD fragment's enclosing `for ... in T.serial(...)` tile
+loop is left out, the SIMT fragment's `T.Parallel` header is kept, because that
+header is what replaces it. The two exceptions are stated where they appear —
+the e2m1 encoder in section 7, quoted as 6 lines of 18, and PTO's `@T.macro`
+bodies, which are shown with their call sites.
 
 ### Two failure modes that were caught
 

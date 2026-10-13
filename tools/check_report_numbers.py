@@ -41,6 +41,12 @@ sys.path.insert(0, str(ROOT / "tools"))
 from make_report_snippets import SNIPPETS, resolve                # noqa: E402
 
 
+def _cite(name: str) -> str:
+    """`path:first-last` for one snippet, as the report prints it."""
+    path, first, last, _ = resolve(name)
+    return f"{path.relative_to(ROOT)}:{first}-{last}"
+
+
 def load() -> tuple[dict, dict]:
     cycles = json.loads((ROOT / "perf/quant_vf_cycles.json").read_text())
     out = subprocess.run([sys.executable, str(ROOT / "tools/vf_lines.py")],
@@ -183,6 +189,18 @@ def main() -> int:
             return f"<!-- snippet: {name} -->\n```python\n{resolve(name)[3]}```"
         fixed = re.sub(r"<!-- snippet: (\w+) -->\n```python\n.*?```", _sub,
                        text, flags=re.S)
+
+        # The `*source:*` line above each block names the file and the line
+        # range. It moves whenever a cut is widened, so re-derive it too --
+        # a stale range is a reader following a pointer to the wrong code.
+        def _src(m):
+            name = m.group(2)
+            if name not in SNIPPETS:
+                return m.group(0)
+            return f"*source:* `{_cite(name)}`\n\n<!-- snippet: {name} -->"
+        fixed = re.sub(r"\*source:\* `[^`]+`\n\n<!-- snippet: (?P<n>\w+) -->",
+                       lambda m: _src(type("M", (), {"group": lambda s, i: m.group("n")})()),
+                       fixed)
         if fixed != text:
             REPORT.write_text(fixed)
             print(f"re-synced embedded code blocks in "
@@ -207,6 +225,14 @@ def main() -> int:
             bad += 1
     print(f"report code blocks: {len(blocks)} embedded, {len(seen)} distinct, "
           f"{len(SNIPPETS) - len(seen)} extracted but unused")
+
+    # 1a. the `*source:*` pointer above each block
+    for cited, name in re.findall(
+            r"\*source:\* `([^`]+)`\n\n<!-- snippet: (\w+) -->", text):
+        if name in SNIPPETS and cited != _cite(name):
+            print(f"STALE SOURCE LINE {name}: report says {cited}, "
+                  f"now {_cite(name)}")
+            bad += 1
 
     # 1b. the deck: every fenced block must be a known extract
     if SLIDES.exists():

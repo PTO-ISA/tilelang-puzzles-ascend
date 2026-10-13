@@ -10,7 +10,7 @@ description: >-
 
 # Writing technical slides
 
-Rules derived from two reviews of a benchmark deck, where the content was
+Rules derived from three reviews of a benchmark deck, where the content was
 correct and first the writing, then the structure, was rejected. Every rule
 below has a before/after taken from those reviews.
 
@@ -169,6 +169,52 @@ Three things fix it, and all three are needed:
 Carry those labels into the conclusions, so the closing argument points back at
 the evidence by name.
 
+## 13. Fragments compared side by side must be cut to the same scope
+
+Two excerpts under one comparison are read as equivalent. If one of them covers
+more of the algorithm than the other, the comparison is false even though both
+are verbatim.
+
+| rejected | reason |
+|---|---|
+| ASC/PTO fragments showing the four stores, beside a SIMT fragment showing load, reduce *and* store | the SIMD side looked shorter than it is |
+| a SIMT fragment without its `T.Parallel` header, beside SIMD fragments that are not in a loop | the header is the construct being compared |
+| ASC's inline convert beside PTO's macro body, with no call site | the call site is what corresponds to the inline code |
+| a fragment cut inside its own call, ending on `S.vcvt(` | truncated mid-statement |
+
+Fix the cut, not the caption. Where a difference in scope is unavoidable — a
+quoted 6 lines of an 18-line encoder, a macro body versus its call site — say so
+in the caption, and state the convention once for the whole document ("the SIMD
+fragments' enclosing tile loop is elided; the SIMT fragment's `T.Parallel`
+header is kept, because that header is what replaces it").
+
+Counting the operations in each fragment from the fragment itself, rather than
+typing the numbers, keeps the sentence beside the code honest when a cut moves.
+
+## 14. Measured values for several implementations go in a table
+
+A sentence makes the reader hold three numbers and two ratios in their head:
+
+> **Measured** — cycles ASC 502 / PTO 387 / SIMT 2,677 (0.77x / 5.33x vs ASC);
+> VF-region lines 21 / 21 / 12.
+
+One row of a table costs the same vertical space and lets the eye travel down a
+column across slides:
+
+| measured | cycles ASC | cycles PTO | cycles SIMT | VF lines A/P/S |
+|---|---:|---:|---:|---:|
+| `per_channel/01` | 502 | 387 (0.77x) | 2,677 (5.33x) | 21 / 21 / 12 |
+
+Use the same shape on every slide that carries one.
+
+## 15. Aggregate results come before the worked examples
+
+The charts covering all 22 variants were at the end, after nine detailed
+examples. Moved to the front they give the audience the shape of the result
+before any one case, and each example then lands somewhere on a picture already
+seen. The raw per-variant tables stay at the end, where a reader goes to look
+something up.
+
 ## Quick self-check before shipping
 
 1. Does every title name a subject and a finding?
@@ -182,3 +228,7 @@ the evidence by name.
 9. Does every chart carry more than its one-sentence summary?
 10. Is there an outline before the examples, a stated reason for their order,
     and a key message closing each one?
+11. Does each fragment in a comparison cover the same step as the others, and is
+    any remaining difference in scope stated?
+12. Are the measured numbers in a table rather than a sentence?
+13. Do the aggregate results come before the worked examples?
