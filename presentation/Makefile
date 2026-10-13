@@ -23,9 +23,10 @@ all: $(NAME).pdf
 # (theme + CSS) is what tools/slides_strip_marp.py removes for pandoc.
 MARP_ENV := PATH=/opt/node/bin:$$PATH CHROME_PATH=/usr/bin/google-chrome
 marp: slides.md
+	@mkdir -p optional
 	$(MARP_ENV) marp slides.md --pdf --allow-local-files --no-sandbox \
-	    -o $(NAME)_marp.pdf
-	@echo "built $(NAME)_marp.pdf -- $$(pdfinfo $(NAME)_marp.pdf | awk '/^Pages/{print $$2}') pages"
+	    -o optional/$(NAME)_marp.pdf
+	@echo "built optional/$(NAME)_marp.pdf -- $$(pdfinfo optional/$(NAME)_marp.pdf | awk '/^Pages/{print $$2}') pages"
 
 slides.md: ../tools/make_slides.py ../perf/quant_vf_cycles.json
 	@python3 ../tools/make_slides.py
@@ -56,4 +57,4 @@ check:
 	@python3 ../tools/check_report_numbers.py
 
 clean:
-	rm -rf build $(NAME).pdf $(NAME)_marp.pdf
+	rm -rf build $(NAME).pdf optional/$(NAME)_marp.pdf
