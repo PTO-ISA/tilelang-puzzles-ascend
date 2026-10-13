@@ -654,10 +654,26 @@ amounts and apply `S.vshr(v, shifts)`; `V.vshrs` takes a scalar amount only, so
 the production PTO `cast_back` computes both byte positions and selects between
 them with `vcmp` + `vsel` where the ASC path did one shift.
 
+SIMT expresses it without the question arising, because a per-element shift by a
+per-element amount is ordinary scalar code:
+
+*source:* `puzzles/simt/quant/answer/cast_back/02_packed_ue8m0.py:42-46`
+
+<!-- snippet: ue8m0_simt -->
+```python
+for i in T.Parallel(hidden):
+    g = i // group_size
+    word = T.Cast("int32", sf_ub[g // PACK_FACTOR])
+    byte = (word >> (8 * (g % PACK_FACTOR))) & 0xFF
+    o_l[i] = q_l[i] * T.reinterpret("float32", byte << 23)
+```
+
 To be precise about scope: **no variant in this set exercises that regression** —
 the kernels above use a left shift by a vector, which both frontends support. It
 is reported here because it is the clearest case where ASC can express something
 VMI cannot, and because a reader deciding between the two should know it exists.
+That SIMT also writes `cast_back/02` in 9 lines against ASC's 12, at 3.20x — its
+lowest ratio in the set — is the same point from the other side.
 
 ### 6.3 Verbosity with nothing to factor out
 
@@ -670,9 +686,12 @@ and no width to parameterise, VMI's explicitness is pure cost.
 
 ## 7. Where SIMT loses outright
 
-`per_token/04` quantizes to FP4 (e2m1). ASC and PTO both own a hardware
-`float32 -> e2m1` convert; their only real work is pre-rounding to bfloat16 with
-a sticky bit so the hardware's second rounding cannot double-round.
+`per_token/04` quantizes to FP4 (e2m1). The hardware convert exists, and all
+three frontends run on the same unit; what differs is whether the frontend has a
+call that reaches it. ASC and PTO name it — `S.vcvt(v, T.float4_e2m1fn)`,
+`V.vcvt(v, "float4_e2m1fn")` — so their only real work is pre-rounding to
+bfloat16 with a sticky bit, to stop the hardware's second rounding from
+double-rounding.
 
 ASC pairs two registers to deinterleave them, then converts:
 
@@ -710,9 +729,12 @@ odd = to_bf16_round_odd(q, PAIR)
 V.vstore(V.vcvt(odd, "float4_e2m1fn", rounding="R"), q_ub[col])
 ```
 
-**No FP4 store is reachable from a `SimtVF` region.** The SIMT kernel therefore
-declares its output as `uint8` and encodes the format by hand — sign, exponent,
-subnormal renormalization, guard/round/sticky, saturation:
+**Nothing in the SIMT surface reaches that convert.** Inside a `T.SimtVF` region
+the arithmetic is plain operators on scalars, and `T.copy` into an FP4 buffer
+does not compile — `harness/probe/simt_limits.py` keeps that as a regression
+test. The SIMT kernel therefore declares its output as `uint8` and encodes the
+format by hand — sign, exponent, subnormal renormalization, guard/round/sticky,
+saturation:
 
 *source:* `puzzles/simt/quant/answer/per_token/04_fp32_in_fp4_out.py:55-60`
 
@@ -765,7 +787,9 @@ of this variant's gap is a **codegen gap, not a cost of the thread model**.
 ### The rule
 
 > When the hardware has an instruction for the job, the frontend that can *name*
-> it wins, and the margin is not close.
+> it wins, and the margin is not close. All three run on the same vector unit;
+> what differs is whether the frontend's surface has a call that reaches the
+> instruction.
 ---
 
 ## 8. The inversion: static counts mispredict cycles
@@ -891,8 +915,8 @@ PTO is faster than ASC on **9 of 22** variants.
 
 Excluding `per_token/04`, whose hand-written FP4 encoder is a special case
 (section 7), SIMT's range is **3.20x–21.18x, mean 10.44x**. That is the
-figure to carry away for the thread model as such; the 99.62x row measures a
-missing instruction, not a programming style.
+figure to carry away for the thread model as such; the 99.62x row measures an
+instruction the SIMT surface cannot name, not a programming style.
 
 ### Source size and cycle count, side by side
 

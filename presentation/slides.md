@@ -158,9 +158,9 @@ on `size=` and mask operands elsewhere (B3). SIMT is shorter on
 
 ![](plots/simt_cycles.png)
 
-`per_token/04` is separated because its cost is a missing hardware instruction
-rather than a property of the thread model — D1 decomposes it. The remaining 21
-variants span 3.20x-21.18x.
+`per_token/04` is separated because its cost is a convert the SIMT surface
+cannot reach, not a property of the thread model (D1). The other 21 variants
+span 3.20x-21.18x.
 
 ---
 
@@ -518,7 +518,7 @@ for g in T.Parallel(num_groups):
 
 ## B3 `cast_back/02`: where PTO's explicitness costs source length
 
-Decoding a UE8M0 exponent byte. **ASC** names the distribution mode on the load:
+Decoding a UE8M0 exponent byte. **ASC** names the distribution mode:
 
 ```python
 packed = S.vld(sf_ub[strip], dist="BRC_B16")
@@ -538,20 +538,23 @@ bits = V.vand(V.vshl(V.vinterpret_cast(packed, "uint32"),
 scale = V.vinterpret_cast(bits, "float32")
 ```
 
-Two further ASC advantages, both outside this snippet:
+**SIMT** shifts by a per-element amount, which VMI cannot express — `V.vshrs`
+takes a scalar:
 
-- **No per-lane variable right shift in VMI.** `S.vshr(v, shifts)` accepts a
-  shift vector; `V.vshrs` accepts a scalar only, so production PTO computes both
-  byte positions and selects.
-- **`per_channel/04`** is PTO's longest region, 51
-  lines against 46, at a 1.00x cycle ratio.
+```python
+for i in T.Parallel(hidden):
+    g = i // group_size
+    word = T.Cast("int32", sf_ub[g // PACK_FACTOR])
+    byte = (word >> (8 * (g % PACK_FACTOR))) & 0xFF
+    o_l[i] = q_l[i] * T.reinterpret("float32", byte << 23)
+```
 
-> **B3** — the counter-example to B2: with nothing to factor out, operation
-> counts tie at 12 and PTO is
-> 4
-> lines longer than ASC (16 vs
-> 12). The mandatory `size=` and mask
-> operands are a real ergonomic cost of VMI.
+> **B3** — the counter-example to B2. With nothing to factor out, operations
+> tie at 12 and PTO runs
+> 16 lines against
+> 12; SIMT writes
+> 9 at
+> 3.20x, the tier's lowest.
 
 ---
 
@@ -714,10 +717,14 @@ sf_out_ub[g, sub] = T.reinterpret("float32", biased << 23)
 
 ---
 
-## D1 `per_token/04`: FP4 output, where SIMT has no instruction
+## D1 `per_token/04`: no FP4 convert is reachable from a `SimtVF` region
 
-ASC and PTO both reach a hardware `float32 -> e2m1` convert. Their work is
-limited to pre-rounding to bfloat16 with a sticky bit.
+The hardware convert exists and all three frontends run on it. ASC and PTO name
+it — `S.vcvt(v, T.float4_e2m1fn)`, `V.vcvt(v, "float4_e2m1fn")` — so their work
+is limited to pre-rounding to bfloat16 with a sticky bit. Nothing in the SIMT
+surface reaches it: inside a `T.SimtVF` region the arithmetic is plain operators
+on scalars, and `T.copy` into an FP4 buffer does not compile
+(`harness/probe/simt_limits.py`).
 
 **ASC** pairs two registers to deinterleave them, then converts:
 
@@ -748,10 +755,9 @@ V.vstore(V.vcvt(odd, "float4_e2m1fn", rounding="R"), q_ub[col])
 
 ## D1 `per_token/04`: SIMT encodes e2m1 in software
 
-No FP4 store is reachable from a `T.SimtVF` region. The SIMT kernel declares its
-output `uint8` and extracts the float32 fields by hand — the first 6 lines of an
-18-line encoder covering sign, exponent, subnormal renormalization,
-guard/round/sticky and saturation:
+So the SIMT kernel declares its output `uint8` and extracts the float32 fields
+by hand — the first 6 lines of an 18-line encoder covering sign, exponent,
+subnormal renormalization, guard/round/sticky and saturation:
 
 ```python
 bits = T.reinterpret("int32", v)
@@ -791,7 +797,8 @@ instructions** and runs at **0.56x the cycles** —
 the kernel behind a `branch_free` flag and the harness asserts their outputs are
 byte-identical.
 
-> **D1** — a missing instruction is not a style difference. Of the
+> **D1** — an instruction the frontend cannot name is not a style difference.
+> Of the
 > 99.6x, a factor of 1.78x is a code-generation
 > gap a GPU compiler would not have, since it predicates such a conditional into
 > a select; the remaining 56.0x is a software encoder standing in
@@ -921,7 +928,8 @@ is a scalar (`per_block/01`), ASC and PTO use 17 and 16 operations
 and 21 lines each, and SIMT's shorter source expresses the same three stages.
 
 **Where the hardware has an instruction, the frontend that can name it wins by a
-wide margin.** FP4 output (D1) costs SIMT 99.6x. A factor of
+wide margin.** All three run on the same unit; only ASC and PTO have a call that
+reaches the e2m1 convert. FP4 output (D1) costs SIMT 99.6x. A factor of
 1.78x of that is a code-generation gap — branch divergence the
 mask-arithmetic spelling removes — and the remaining 56.0x is a
 software encoder standing in for one convert instruction.
@@ -941,8 +949,8 @@ cycles.
 *`per_token/01` 39 operations to 19 at 0.74x · `per_token/02` 45 to 14 at 1.02x · `per_block/03` at 0.64x*
 
 **ASC** — when an instruction VMI does not expose is required (per-lane variable
-right shift), when a distribution mode is the objective, or when there is
-nothing for VMI to factor out.
+right shift, which SIMT can also express — B3), when a distribution mode is the
+objective, or when there is nothing for VMI to factor out.
 *`cast_back/02` 12 lines against PTO's 16 · `per_channel/04` 46 against 51 · `cast_back/05`, PTO's worst cycle regression, 1.13x*
 
 **On methodology.** Source size correlates with simulated cycles at r = -0.09

@@ -320,9 +320,9 @@ on `size=` and mask operands elsewhere (B3). SIMT is shorter on
 
 ![](plots/simt_cycles.png)
 
-`per_token/04` is separated because its cost is a missing hardware instruction
-rather than a property of the thread model — D1 decomposes it. The remaining 21
-variants span {A['nmin']}-{A['nmax']}.
+`per_token/04` is separated because its cost is a convert the SIMT surface
+cannot reach, not a property of the thread model (D1). The other 21 variants
+span {A['nmin']}-{A['nmax']}.
 
 ---
 
@@ -536,7 +536,7 @@ unchanged; the scale arithmetic is the last four:
 
 ## B3 `cast_back/02`: where PTO's explicitness costs source length
 
-Decoding a UE8M0 exponent byte. **ASC** names the distribution mode on the load:
+Decoding a UE8M0 exponent byte. **ASC** names the distribution mode:
 
 {code("ue8m0_asc")}
 
@@ -544,20 +544,17 @@ Decoding a UE8M0 exponent byte. **ASC** names the distribution mode on the load:
 
 {code("ue8m0_pto")}
 
-Two further ASC advantages, both outside this snippet:
+**SIMT** shifts by a per-element amount, which VMI cannot express — `V.vshrs`
+takes a scalar:
 
-- **No per-lane variable right shift in VMI.** `S.vshr(v, shifts)` accepts a
-  shift vector; `V.vshrs` accepts a scalar only, so production PTO computes both
-  byte positions and selects.
-- **`per_channel/04`** is PTO's longest region, {st['per_channel/04_compose']['lp']}
-  lines against {st['per_channel/04_compose']['la']}, at a 1.00x cycle ratio.
+{code("ue8m0_simt")}
 
-> **B3** — the counter-example to B2: with nothing to factor out, operation
-> counts tie at {st['cast_back/02_packed_ue8m0']['oa']} and PTO is
-> {st['cast_back/02_packed_ue8m0']['lp'] - st['cast_back/02_packed_ue8m0']['la']}
-> lines longer than ASC ({st['cast_back/02_packed_ue8m0']['lp']} vs
-> {st['cast_back/02_packed_ue8m0']['la']}). The mandatory `size=` and mask
-> operands are a real ergonomic cost of VMI.
+> **B3** — the counter-example to B2. With nothing to factor out, operations
+> tie at {st['cast_back/02_packed_ue8m0']['oa']} and PTO runs
+> {st['cast_back/02_packed_ue8m0']['lp']} lines against
+> {st['cast_back/02_packed_ue8m0']['la']}; SIMT writes
+> {st['cast_back/02_packed_ue8m0']['ls']} at
+> {c("simt","cast_back/02_packed_ue8m0")/c("asc","cast_back/02_packed_ue8m0"):.2f}x, the tier's lowest.
 
 ---
 
@@ -660,10 +657,14 @@ and nothing else. There is no index vector and no gather to show.
 
 ---
 
-## D1 `per_token/04`: FP4 output, where SIMT has no instruction
+## D1 `per_token/04`: no FP4 convert is reachable from a `SimtVF` region
 
-ASC and PTO both reach a hardware `float32 -> e2m1` convert. Their work is
-limited to pre-rounding to bfloat16 with a sticky bit.
+The hardware convert exists and all three frontends run on it. ASC and PTO name
+it — `S.vcvt(v, T.float4_e2m1fn)`, `V.vcvt(v, "float4_e2m1fn")` — so their work
+is limited to pre-rounding to bfloat16 with a sticky bit. Nothing in the SIMT
+surface reaches it: inside a `T.SimtVF` region the arithmetic is plain operators
+on scalars, and `T.copy` into an FP4 buffer does not compile
+(`harness/probe/simt_limits.py`).
 
 **ASC** pairs two registers to deinterleave them, then converts:
 
@@ -680,10 +681,9 @@ limited to pre-rounding to bfloat16 with a sticky bit.
 
 ## D1 `per_token/04`: SIMT encodes e2m1 in software
 
-No FP4 store is reachable from a `T.SimtVF` region. The SIMT kernel declares its
-output `uint8` and extracts the float32 fields by hand — the first 6 lines of an
-18-line encoder covering sign, exponent, subnormal renormalization,
-guard/round/sticky and saturation:
+So the SIMT kernel declares its output `uint8` and extracts the float32 fields
+by hand — the first 6 lines of an 18-line encoder covering sign, exponent,
+subnormal renormalization, guard/round/sticky and saturation:
 
 {code("fp4_simt")}
 
@@ -714,7 +714,8 @@ instructions** and runs at **{F['bf_ratio']:.2f}x the cycles** —
 the kernel behind a `branch_free` flag and the harness asserts their outputs are
 byte-identical.
 
-> **D1** — a missing instruction is not a style difference. Of the
+> **D1** — an instruction the frontend cannot name is not a style difference.
+> Of the
 > {F['fp4_vs_asc']:.1f}x, a factor of {F['bf_speedup']:.2f}x is a code-generation
 > gap a GPU compiler would not have, since it predicates such a conditional into
 > a select; the remaining {F['bf_vs_asc']:.1f}x is a software encoder standing in
@@ -808,7 +809,8 @@ is a scalar (`per_block/01`), ASC and PTO use 17 and 16 operations
 and 21 lines each, and SIMT's shorter source expresses the same three stages.
 
 **Where the hardware has an instruction, the frontend that can name it wins by a
-wide margin.** FP4 output (D1) costs SIMT {F['fp4_vs_asc']:.1f}x. A factor of
+wide margin.** All three run on the same unit; only ASC and PTO have a call that
+reaches the e2m1 convert. FP4 output (D1) costs SIMT {F['fp4_vs_asc']:.1f}x. A factor of
 {F['bf_speedup']:.2f}x of that is a code-generation gap — branch divergence the
 mask-arithmetic spelling removes — and the remaining {F['bf_vs_asc']:.1f}x is a
 software encoder standing in for one convert instruction.
@@ -828,8 +830,8 @@ cycles.
 *`per_token/01` {st['per_token/01_raw_fp32sf']['oa']} operations to {st['per_token/01_raw_fp32sf']['op']} at {c("pto","per_token/01_raw_fp32sf")/c("asc","per_token/01_raw_fp32sf"):.2f}x · `per_token/02` {st['per_token/02_round_sf']['oa']} to {st['per_token/02_round_sf']['op']} at {c("pto","per_token/02_round_sf")/c("asc","per_token/02_round_sf"):.2f}x · `per_block/03` at {c("pto","per_block/03_fp4_e2m1")/c("asc","per_block/03_fp4_e2m1"):.2f}x*
 
 **ASC** — when an instruction VMI does not expose is required (per-lane variable
-right shift), when a distribution mode is the objective, or when there is
-nothing for VMI to factor out.
+right shift, which SIMT can also express — B3), when a distribution mode is the
+objective, or when there is nothing for VMI to factor out.
 *`cast_back/02` {st['cast_back/02_packed_ue8m0']['la']} lines against PTO's {st['cast_back/02_packed_ue8m0']['lp']} · `per_channel/04` {st['per_channel/04_compose']['la']} against {st['per_channel/04_compose']['lp']} · `cast_back/05`, PTO's worst cycle regression, {c("pto","cast_back/05_fp4_e2m1")/c("asc","cast_back/05_fp4_e2m1"):.2f}x*
 
 **On methodology.** Source size correlates with simulated cycles at r = -0.09

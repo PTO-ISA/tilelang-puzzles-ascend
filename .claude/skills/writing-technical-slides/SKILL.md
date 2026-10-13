@@ -10,7 +10,7 @@ description: >-
 
 # Writing technical slides
 
-Rules derived from three reviews of a benchmark deck, where the content was
+Rules derived from four reviews of a benchmark deck, where the content was
 correct and first the writing, then the structure, was rejected. Every rule
 below has a before/after taken from those reviews.
 
@@ -215,6 +215,39 @@ before any one case, and each example then lands somewhere on a picture already
 seen. The raw per-variant tables stay at the end, where a reader goes to look
 something up.
 
+## 16. In an N-way comparison, a silently absent implementation reads as an omission
+
+Two slides concluded about ASC and PTO only, and showed only those two. By the
+rule above that is defensible — but in a document that compares three
+implementations throughout, the reader asks "why is the third one missing?"
+rather than reading the slide's narrower claim.
+
+Both were worth filling in, and both turned out to carry the strongest material
+on their slide:
+
+- `per_block`: SIMT has no tile loop at all, so the reduction becomes a
+  two-level tree whose second level is one thread folding 32 partials — most of
+  that variant's 17.75x
+- `cast_back/02`: the per-lane variable shift that the SIMD frontend cannot
+  express is ordinary scalar code in SIMT, which was the slide's own point,
+  argued in prose while the evidence sat unused
+
+Either show it, or say in one clause why the slide is narrower.
+
+## 17. Shorthand that overstates a mechanism
+
+A title read "FP4 output, where SIMT has no instruction". Every frontend lowers
+to the same hardware; the instruction exists. What is true is narrower and more
+interesting: **nothing in that frontend's surface reaches it**.
+
+| shorthand | what was actually measured |
+|---|---|
+| "SIMT has no instruction" | no call in the `T.SimtVF` surface lowers to the e2m1 convert; the arithmetic there is plain operators on scalars |
+| "a missing instruction" | an instruction the frontend cannot name |
+
+The fix is usually one more clause, and it is the clause a reader working on
+that frontend needs. Where a probe establishes the limit, cite it.
+
 ## Quick self-check before shipping
 
 1. Does every title name a subject and a finding?
@@ -232,3 +265,6 @@ something up.
     any remaining difference in scope stated?
 12. Are the measured numbers in a table rather than a sentence?
 13. Do the aggregate results come before the worked examples?
+14. Does any slide drop one implementation without saying why?
+15. Does any claim about hardware say "no instruction" when it means "no call in
+    this frontend reaches the instruction"?
