@@ -1,4 +1,4 @@
-# puzzles/simt/quant/answer/per_channel/01_raw_32tokens.py:50-56
+# puzzles/simt/quant/answer/per_channel/01_raw_32tokens.py:50-57
 # extracted by tools/make_report_snippets.py -- do not edit
 for c in T.Parallel(hidden):
     amax = T.alloc_var(T.float32)
@@ -7,3 +7,4 @@ for c in T.Parallel(hidden):
         amax = T.max(amax,
                      T.abs(T.Cast("float32", x_ub[row, c])))
     sf_ub[c] = amax / E4M3_MAX
+    inv_ub[c] = E4M3_MAX / amax

@@ -54,9 +54,9 @@ SNIPPETS: dict[str, Cut] = {
 
     # -- pattern 1: the per-group scale broadcast ---------------------------
     "broadcast_asc": Cut("asc", "cast_back/01_e4m3_fp32sf",
-                         r"lo = S\.vld\(sf_ub\[group\]", 3),
+                         r"lo = S\.vld\(sf_ub\[group\]", 5),
     "broadcast_pto": Cut("pto", "cast_back/01_e4m3_fp32sf",
-                         r"scale = V\.vload\(sf_ub\[group\]", 2),
+                         r"scale = V\.vload\(sf_ub\[group\]", 4),
     "broadcast_simt": Cut("simt", "cast_back/01_e4m3_fp32sf",
                           r"for i in T\.Parallel\(hidden\):", 2),
     "outdtype_asc": Cut("asc", "cast_back/01_e4m3_fp32sf",
@@ -85,23 +85,28 @@ SNIPPETS: dict[str, Cut] = {
     "transpose_asc_gather": Cut("asc", "per_token/05_col_major_sf",
                                 r"S\.vsts\(sf_out_ub\[base, 0\],", 2),
     "transpose_pto": Cut("pto", "per_token/05_col_major_sf",
-                         r"stride_v = V\.vbrc\(T\.uint32\(SF_STRIDE\)", 3),
+                         r"lane = V\.vci\(T\.int32\(0\), size=LANES\)", 10),
+    "transpose_pto_gather": Cut("pto", "per_token/05_col_major_sf",
+                                r"V\.vstore\(V\.vgather\(sf_dense_ub", 2),
     "transpose_simt": Cut("simt", "per_token/05_col_major_sf",
                           r"sf_out_ub\[g, sub\] = T\.reinterpret", 1),
 
     # -- pattern 4: where PTO is already clean ------------------------------
     "chanreduce_asc": Cut("asc", "per_channel/01_raw_32tokens",
-                          r"acc = S\.alloc_local", 8),
+                          r"acc = S\.alloc_local", 10),
     "chanreduce_pto": Cut("pto", "per_channel/01_raw_32tokens",
-                          r"acc = V\.alloc_local", 8),
+                          r"acc = V\.alloc_local", 10),
     "chanreduce_simt": Cut("simt", "per_channel/01_raw_32tokens",
-                           r"for c in T\.Parallel\(hidden\):", 7),
+                           r"for c in T\.Parallel\(hidden\):", 8),
 
     # -- pattern 5: PTO's real win -- the segmented reduction ---------------
     "segreduce_asc": Cut("asc", "per_token/01_raw_fp32sf",
-                         r"S\.vsts\(amax_ub\[group\], S\.vcmax", 7),
+                         r"a0 = S\.vabs\(S\.vcvt\(S\.vld\(x_ub\[col\]", 12),
+    # pass 3 loads x the same way, so start the search inside pass 1.
     "segreduce_pto": Cut("pto", "per_token/01_raw_fp32sf",
-                         r"V\.vstore\(V\.vcmax\(V\.vabs\(x, mask\)", 2),
+                         r"x = V\.vcvt\(V\.vload\(x_ub\[col\], size=PAIR\)", 3,
+                         after=r"pass 1: segmented reduce",
+                         before=r"T\.simd\.mem_bar"),
     "segreduce_simt": Cut("simt", "per_token/01_raw_fp32sf",
                           r"for g in T\.Parallel\(num_groups\):", 7),
 
@@ -109,21 +114,24 @@ SNIPPETS: dict[str, Cut] = {
     "exponent_asc": Cut("asc", "per_token/02_round_sf",
                         r"one = S\.vdup\(1, T\.uint32\)", 9),
     "exponent_pto": Cut("pto", "per_token/02_round_sf",
-                        r"one = V\.vbrc\(T\.uint32\(1\), size=lanes\)", 7),
+                        r"one = V\.vbrc\(T\.uint32\(1\), size=lanes\)", 10),
+    # spans the BEGIN SOLUTION marker, which resolve() drops
     "exponent_simt": Cut("simt", "per_token/02_round_sf",
-                         r'bits = T\.reinterpret\("int32", amax / E4M3_MAX\)', 4),
+                         r"for g in T\.Parallel\(num_groups\):", 12),
 
     # -- pattern 6: where PTO costs you -------------------------------------
     "ue8m0_asc": Cut("asc", "cast_back/02_packed_ue8m0",
-                     r"packed = S\.vld\(sf_ub\[strip\]", 4),
+                     r"packed = S\.vld\(sf_ub\[strip\]", 5),
     "ue8m0_pto": Cut("pto", "cast_back/02_packed_ue8m0",
                      r"packed = V\.vload\(sf_ub\[strip\]", 5),
 
     # -- pattern 7: where SIMT loses ----------------------------------------
     "fp4_asc": Cut("asc", "per_token/04_fp32_in_fp4_out",
-                   r"low, high = S\.vdintlv", 5),
+                   r"low, high = S\.vdintlv", 6),
     "fp4_pto": Cut("pto", "per_token/04_fp32_in_fp4_out",
                    r'low, high = V\.vunzip\(x, "uint16"\)', 3),
+    "fp4_pto_call": Cut("pto", "per_token/04_fp32_in_fp4_out",
+                        r"odd = to_bf16_round_odd\(q, PAIR\)", 2),
     "fp4_simt": Cut("simt", "per_token/04_fp32_in_fp4_out",
                     r'bits = T\.reinterpret\("int32", v\)', 6),
 
@@ -173,7 +181,13 @@ def resolve(name: str) -> tuple[Path, int, int, str]:
                          f"{[h + 1 for h in hits]}); make it unique, or bound "
                          f"the window with after= / before=")
     first = hits[0]
-    body = textwrap.dedent("\n".join(lines[first:first + cut.nlines])).rstrip() + "\n"
+    # `# --- BEGIN/END SOLUTION` are puzzle scaffolding, not part of any
+    # kernel's algorithm, and the BEGIN marker carries a long hint string. A
+    # fragment that spans one drops it, and `nlines` counts the source lines,
+    # marker included -- so the count still matches the file.
+    kept = [ln for ln in lines[first:first + cut.nlines]
+            if "BEGIN SOLUTION" not in ln and "END SOLUTION" not in ln]
+    body = textwrap.dedent("\n".join(kept)).rstrip() + "\n"
     return path, first + 1, first + cut.nlines, body
 
 

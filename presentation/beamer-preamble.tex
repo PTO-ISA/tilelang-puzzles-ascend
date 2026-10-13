@@ -24,7 +24,7 @@
 % Dense technical slides: tighten the default vertical spacing.
 \setbeamertemplate{itemize/enumerate body begin}{\small}
 \setbeamertemplate{itemize/enumerate subbody begin}{\footnotesize}
-\setlength{\parskip}{2pt}
+\setlength{\parskip}{1.5pt}
 
 % ---- code --------------------------------------------------------------
 \definecolor{kw}{rgb}{0.00,0.25,0.62}      % keywords
@@ -35,7 +35,9 @@
 
 \lstset{
   language=Python,
-  basicstyle=\ttfamily\scriptsize,
+  % a touch smaller than \scriptsize, and tighter between lines: the
+  % three-frontend slides carry up to 25 lines of code each.
+  basicstyle=\ttfamily\fontsize{6.6pt}{7.4pt}\selectfont,
   keywordstyle=\color{kw}\bfseries,
   stringstyle=\color{str},
   commentstyle=\color{cmt}\itshape,
@@ -50,8 +52,8 @@
   framesep=4pt,
   rulecolor=\color{black!25},
   xleftmargin=6pt,
-  aboveskip=4pt,
-  belowskip=4pt,
+  aboveskip=2.5pt,
+  belowskip=2.5pt,
   % tilelang vocabulary, so the vector intrinsics read as code not prose
   emph={S,V,T},
   emphstyle=\color{kw},
