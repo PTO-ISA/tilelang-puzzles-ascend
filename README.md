@@ -308,6 +308,10 @@ conditional into a select.
 
 ```
 README.md
+presentation/                   the standalone style-and-performance report
+  quant_kernel_style_compare.md   SIMT vs PTO vs ASC: code style and measured cycles
+  quant_kernel_style_compare.pdf  the same argument as a 25-slide deck
+  slides.md                       deck source (Marp dialect; generated)
 doc/                            all prose lives here, as rendered markdown
   tiers/{torch,asc,pto,simt}.md what each tier is for, and how to read it
   quant/<kernel>/README.md      the kernel: maths, variant index, GPU vs NPU
@@ -342,6 +346,9 @@ tools/
   vf_drive.py                   launch one variant as the first op, for measurement
   ladder_table.py               generate doc/ladder-audit.md's table (--check)
   check_doc_numbers.py          verify the line counts quoted in the variant pages
+  make_report_snippets.py       cut presentation/ code blocks from the real kernels
+  make_slides.py                generate the deck source from code + measurements
+  check_report_numbers.py       re-derive every number the report and deck quote
   check_math.py                 lint every .md for GitHub LaTeX pitfalls
 docker/                         the container this was validated in; clones tilelang at TILELANG_COMMIT
 ```
