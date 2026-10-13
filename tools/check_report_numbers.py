@@ -122,7 +122,8 @@ def build_claims(cycles: dict, static: dict) -> list[tuple[str, str]]:
         ("per_block/03 SIMT ratio",
          f"{c('simt', 'per_block/03_fp4_e2m1') / c('asc', 'per_block/03_fp4_e2m1'):.2f}x"),
         ("cast_back/05 PTO regression",
-         f"**{c('pto', 'cast_back/05_fp4_e2m1') / c('asc', 'cast_back/05_fp4_e2m1'):.2f}x**"),
+         f"worst\ncycle regression in the set, "
+         f"{c('pto', 'cast_back/05_fp4_e2m1') / c('asc', 'cast_back/05_fp4_e2m1'):.2f}x"),
         ("per_channel/04 draw",
          f"**{c('pto', 'per_channel/04_compose') / c('asc', 'per_channel/04_compose'):.2f}x**"),
         ("per_channel/04 lines",
@@ -137,7 +138,7 @@ def build_claims(cycles: dict, static: dict) -> list[tuple[str, str]]:
          f"({static['cast_back/02_packed_ue8m0']['ln_pto']} against "
          f"{static['cast_back/02_packed_ue8m0']['ln_asc']})"),
         ("cast_back/05 static win",
-         f"({static['cast_back/05_fp4_e2m1']['ops_asc']} operations against "
+         f"({static['cast_back/05_fp4_e2m1']['ops_asc']} against "
          f"{static['cast_back/05_fp4_e2m1']['ops_pto']}, "
          f"{static['cast_back/05_fp4_e2m1']['ln_asc']} lines against "
          f"{static['cast_back/05_fp4_e2m1']['ln_pto']})"),
@@ -160,6 +161,9 @@ def main() -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--list", action="store_true",
                     help="print every claim and whether it was found")
+    ap.add_argument("--fix-snippets", action="store_true",
+                    help="rewrite stale embedded code blocks in the report from "
+                         "their kernels (numbers and prose are never touched)")
     args = ap.parse_args()
 
     if not REPORT.exists():
@@ -167,6 +171,25 @@ def main() -> int:
         return 2
     text = REPORT.read_text()
     bad = 0
+
+    if args.fix_snippets:
+        # Cut lengths change when a slide needs to show more of an instruction.
+        # The report embeds the same extracts inline, so re-sync them here
+        # rather than by hand; prose and numbers are left alone.
+        def _sub(m):
+            name = m.group(1)
+            if name not in SNIPPETS:
+                return m.group(0)
+            return f"<!-- snippet: {name} -->\n```python\n{resolve(name)[3]}```"
+        fixed = re.sub(r"<!-- snippet: (\w+) -->\n```python\n.*?```", _sub,
+                       text, flags=re.S)
+        if fixed != text:
+            REPORT.write_text(fixed)
+            print(f"re-synced embedded code blocks in "
+                  f"{REPORT.relative_to(ROOT)}")
+            text = fixed
+        else:
+            print("embedded code blocks were already current")
 
     # 1. code blocks
     blocks = re.findall(r"<!-- snippet: (\w+) -->\n```python\n(.*?)```",

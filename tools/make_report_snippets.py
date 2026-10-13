@@ -66,13 +66,15 @@ SNIPPETS: dict[str, Cut] = {
 
     # -- pattern 2: SIMT wins -- the M-pack interleave ----------------------
     "interleave_asc": Cut("asc", "per_channel/02_round_packed_m",
-                          r"a = S\.vld\(sf_rows_ub\[0, col\]", 4),
+                          r"a = S\.vld\(sf_rows_ub\[0, col\]", 8),
     "interleave_pto": Cut("pto", "per_channel/02_round_packed_m",
-                          r"a = V\.vload\(sf_rows_ub\[0, col\]", 4),
+                          r"a = V\.vload\(sf_rows_ub\[0, col\]", 8),
     "interleave_simt": Cut("simt", "per_channel/02_round_packed_m",
                            r"for c in T\.Parallel\(hidden\):", 3,
                            after=r"BEGIN SOLUTION"),
     "pad_asc": Cut("asc", "per_channel/02_round_packed_m",
+                   r"sf_rows_ub = T\.alloc_shared", 1),
+    "pad_pto": Cut("pto", "per_channel/02_round_packed_m",
                    r"sf_rows_ub = T\.alloc_shared", 1),
     "pad_simt": Cut("simt", "per_channel/02_round_packed_m",
                     r"sf_rows_ub = T\.alloc_shared", 1),
@@ -89,9 +91,9 @@ SNIPPETS: dict[str, Cut] = {
 
     # -- pattern 4: where PTO is already clean ------------------------------
     "chanreduce_asc": Cut("asc", "per_channel/01_raw_32tokens",
-                          r"acc = S\.alloc_local", 6),
+                          r"acc = S\.alloc_local", 8),
     "chanreduce_pto": Cut("pto", "per_channel/01_raw_32tokens",
-                          r"acc = V\.alloc_local", 6),
+                          r"acc = V\.alloc_local", 8),
     "chanreduce_simt": Cut("simt", "per_channel/01_raw_32tokens",
                            r"for c in T\.Parallel\(hidden\):", 7),
 
@@ -105,7 +107,7 @@ SNIPPETS: dict[str, Cut] = {
 
     # -- pattern 5b: width as an argument -----------------------------------
     "exponent_asc": Cut("asc", "per_token/02_round_sf",
-                        r"one = S\.vdup\(1, T\.uint32\)", 7),
+                        r"one = S\.vdup\(1, T\.uint32\)", 9),
     "exponent_pto": Cut("pto", "per_token/02_round_sf",
                         r"one = V\.vbrc\(T\.uint32\(1\), size=lanes\)", 7),
     "exponent_simt": Cut("simt", "per_token/02_round_sf",
@@ -123,7 +125,7 @@ SNIPPETS: dict[str, Cut] = {
     "fp4_pto": Cut("pto", "per_token/04_fp32_in_fp4_out",
                    r'low, high = V\.vunzip\(x, "uint16"\)', 3),
     "fp4_simt": Cut("simt", "per_token/04_fp32_in_fp4_out",
-                    r"sh = T\.min\(126 - exps, 31\)", 6),
+                    r'bits = T\.reinterpret\("int32", v\)', 6),
 
     # -- pattern 8: the static/dynamic inversion ----------------------------
     # Both per_block loops repeat `for chunk in ...`, so start the search at
