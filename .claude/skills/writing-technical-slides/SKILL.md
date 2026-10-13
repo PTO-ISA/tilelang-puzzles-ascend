@@ -10,9 +10,9 @@ description: >-
 
 # Writing technical slides
 
-Rules derived from a review of a 25-slide benchmark deck, where the content was
-correct and the writing was rejected as model-generated. Every rule below has a
-before/after taken from that review.
+Rules derived from two reviews of a benchmark deck, where the content was
+correct and first the writing, then the structure, was rejected. Every rule
+below has a before/after taken from those reviews.
 
 The underlying test: **a reader should not be able to delete a sentence without
 losing a fact.**
@@ -132,8 +132,42 @@ each quoted figure and fails when the prose no longer matches.
 
 A 13-row by 8-column table is not readable from a projector. Keep the table for
 the record and add a chart that makes the single claim: sorted horizontal bars
-for per-item ratios, a scatter with the "if X predicted Y" diagonal for a
-correlation claim, a log axis when one point is 5x the rest.
+for per-item ratios, a log axis when one point is 5x the rest.
+
+## 11. A chart has to carry what the prose cannot
+
+A figure whose whole content fits in one sentence is wasted space, and a
+figure confirming what the audience already expects is worse than none.
+
+| rejected | reason | replacement |
+|---|---|---|
+| scatter of source size vs cycles, annotated `r = -0.09` | the reader already expects no relationship, and the number says it in nine characters | grouped bars of the three implementations' line counts, which no sentence reproduces |
+
+Test: write the chart's finding as one sentence. If the sentence is as
+informative as the picture, ship the sentence.
+
+## 12. A run of examples needs an outline and an order
+
+Nine worked examples named `per_token/05`, `per_channel/02`, `per_token/01`
+arrive as unconnected pieces: the reader cannot remember what each name means,
+why `05` came before `01`, or what any of them was supposed to settle.
+
+Three things fix it, and all three are needed:
+
+1. **One outline slide** mapping each example to its pattern and to the
+   question it decides — before the first example.
+2. **An order with a reason**, stated in a word or two. This deck's examples
+   were reordered into four parts along one axis (how far the data sits from
+   the vector register's lane structure): reduce, place the scale, place the
+   output, convert it. Difficulty, pipeline order and increasing cost are other
+   defensible axes; file name is not one.
+3. **A key message per example**, in a fixed position and form. Here: a
+   one-sentence takeaway block closing each example, labelled with the
+   example's index in the outline (`A1`, `A2`, ...), so a slide seen alone
+   still says where it sits.
+
+Carry those labels into the conclusions, so the closing argument points back at
+the evidence by name.
 
 ## Quick self-check before shipping
 
@@ -145,3 +179,6 @@ correlation claim, a log axis when one point is 5x the rest.
 6. Does each excerpt contain the operation the caption claims?
 7. Is every figure derived from data, and checked?
 8. Any table over ~10 rows without a chart beside it?
+9. Does every chart carry more than its one-sentence summary?
+10. Is there an outline before the examples, a stated reason for their order,
+    and a key message closing each one?

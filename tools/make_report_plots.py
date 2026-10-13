@@ -6,14 +6,21 @@
 Three charts, all derived from `perf/quant_vf_cycles.json` and the static counts
 printed by `tools/vf_lines.py`:
 
-* `correlation.png` -- the deck's central result. Operations (or lines) written
-  against measured cycles, per variant, with the Pearson r. Across 22 variants
-  r is -0.09 for PTO and -0.01 for SIMT once the FP4 outlier is removed: source
-  size carries essentially no information about cycle count.
+* `lines.png`       -- VF-region source lines per variant, the three frontends
+  side by side (comment and blank lines excluded, as in `tools/vf_lines.py`).
+  Totals 646 / 578 / 343. The two FP4 variants are hatched: their SIMT bar
+  excludes an 18-line encoder defined outside the region.
 * `pto_cycles.png`  -- PTO/ASC cycle ratio per variant, sorted, against the 1.00
   line.
 * `simt_cycles.png` -- SIMT/ASC cycle ratio per variant, log axis, with the
   `per_token/04` outlier marked separately.
+
+An earlier version of the first chart was a scatter of source size against
+cycles with its Pearson r. Both facts it carried -- that SIMT is slower and that
+operation counts do not predict cycles -- are stated in one line of prose and
+needed no plot; the line counts are the comparison a reader cannot reconstruct
+from the text, so they got the figure instead. `r_pto` and `r_simt_no_fp4` are
+still computed and recorded in the sidecar, because the prose quotes them.
 
 PNG rather than PDF so the same markdown renders under both the Beamer and the
 Marp builds. A sidecar `plots/data.json` records the exact series plotted;
@@ -62,6 +69,9 @@ def pearson(a: list[float], b: list[float]) -> float:
     return num / den if den else 0.0
 
 
+FP4_HELPER = ("per_token/04_fp32_in_fp4_out", "per_block/03_fp4_e2m1")
+
+
 def series(data: dict) -> dict:
     v = list(data)
     pto_ops = [data[k]["ops_pto"] / data[k]["ops_asc"] for k in v]
@@ -71,6 +81,9 @@ def series(data: dict) -> dict:
     keep = [i for i, k in enumerate(v) if k != FP4]
     return {
         "variants": v,
+        "ln_asc": [data[k]["ln_asc"] for k in v],
+        "ln_pto": [data[k]["ln_pto"] for k in v],
+        "ln_simt": [data[k]["ln_simt"] for k in v],
         "pto_ops_ratio": pto_ops, "pto_cycle_ratio": pto_cyc,
         "simt_line_ratio": simt_ln, "simt_cycle_ratio": simt_cyc,
         "r_pto": pearson(pto_ops, pto_cyc),
@@ -98,30 +111,46 @@ def draw(s: dict) -> None:
     })
     names = [short(v) for v in s["variants"]]
 
-    # ---- 1. the central result: size does not predict cycles ----------
-    fig, ax = plt.subplots(1, 2, figsize=(10, 3.9))
-    ax[0].scatter(s["pto_ops_ratio"], s["pto_cycle_ratio"], s=44,
-                  color="#1f4e8c", zorder=3)
-    ax[0].axhline(1.0, color="#999", lw=1, ls="--", zorder=1)
-    lo = min(s["pto_ops_ratio"]); hi = max(s["pto_ops_ratio"])
-    ax[0].plot([lo, hi], [lo, hi], color="#c0392b", lw=1.2, ls=":",
-               label="if size predicted cycles", zorder=2)
-    ax[0].set_xlabel("PTO / ASC  vector operations written")
-    ax[0].set_ylabel("PTO / ASC  simulated cycles")
-    ax[0].set_title(f"PTO vs ASC   (Pearson r = {s['r_pto']:+.2f}, n=22)")
-    ax[0].legend(frameon=False, fontsize=9, loc="upper left")
-
-    keep = [i for i, v in enumerate(s["variants"]) if v != FP4]
-    ax[1].scatter([s["simt_line_ratio"][i] for i in keep],
-                  [s["simt_cycle_ratio"][i] for i in keep],
-                  s=44, color="#1f4e8c", zorder=3)
-    ax[1].axhline(1.0, color="#999", lw=1, ls="--", zorder=1)
-    ax[1].set_xlabel("SIMT / ASC  source lines written")
-    ax[1].set_ylabel("SIMT / ASC  simulated cycles")
-    ax[1].set_title(f"SIMT vs ASC   (r = {s['r_simt_no_fp4']:+.2f}, n=21,\n"
-                    f"per_token/04 excluded)")
+    # ---- 1. how much source each frontend needs ----------------------
+    # Grouped bars rather than a ratio, because the absolute counts carry the
+    # scale: a variant at 6/7/6 lines and one at 54/48/15 both have "a ratio".
+    fig, ax = plt.subplots(figsize=(10, 4.3))
+    x = list(range(22))
+    w = 0.27
+    for off, key, lab, col in ((-w, "ln_asc", "ASC", "#1f4e8c"),
+                               (0.0, "ln_pto", "PTO", "#2e7d32"),
+                               (w, "ln_simt", "SIMT", "#c07d1a")):
+        tot = sum(s[key])
+        bars = ax.bar([i + off for i in x], s[key], w, color=col,
+                      label=f"{lab}  ({tot} lines total)")
+        if key == "ln_simt":
+            for i, b in enumerate(bars):
+                if s["variants"][i] in FP4_HELPER:
+                    b.set_hatch("////")
+                    b.set_edgecolor("#4a2d00")
+    ax.set_xticks(x)
+    ax.set_xticklabels(names, rotation=40, ha="right", fontsize=8.5)
+    ax.set_ylabel("source lines in the\nSimdVF / SimtVF region")
+    ax.set_title("VF-region source lines per variant   "
+                 "(comments and blank lines excluded)")
+    ax.legend(frameon=False, fontsize=9.5, loc="upper left")
+    ax.set_ylim(0, max(s["ln_asc"]) * 1.22)
+    # family separators: the four kernel groups
+    seen, bound = None, []
+    for i, v in enumerate(s["variants"]):
+        fam = v.split("/")[0]
+        if seen is not None and fam != seen:
+            bound.append(i - 0.5)
+        seen = fam
+    for b in bound:
+        ax.axvline(b, color="#cccccc", lw=0.9, ls="-", zorder=0)
+    ax.text(0.985, 0.93,
+            "hatched: SIMT bar excludes an\n18-line e2m1 encoder written\n"
+            "outside the region",
+            transform=ax.transAxes, ha="right", va="top", fontsize=8,
+            color="#4a2d00")
     fig.tight_layout()
-    fig.savefig(OUT / "correlation.png")
+    fig.savefig(OUT / "lines.png")
     plt.close(fig)
 
     # ---- 2. PTO/ASC cycle ratio per variant ---------------------------
@@ -181,7 +210,7 @@ def main() -> int:
             return 1
         old = json.loads(sidecar.read_text())
         drift = [k for k in s if json.dumps(old.get(k)) != json.dumps(s[k])]
-        missing = [p for p in ("correlation.png", "pto_cycles.png",
+        missing = [p for p in ("lines.png", "pto_cycles.png",
                                "simt_cycles.png") if not (OUT / p).exists()]
         if drift or missing:
             for k in drift:

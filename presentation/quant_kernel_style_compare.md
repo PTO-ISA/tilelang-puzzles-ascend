@@ -808,6 +808,8 @@ missing instruction, not a programming style.
 
 ### Source size and cycle count, side by side
 
+![VF-region source lines per variant, the three frontends side by side](plots/lines.png)
+
 - **SIMT** writes **53%** of ASC's lines and costs roughly an order of
   magnitude in cycles. The win is concentrated in lane-placement work; the cost
   is lane occupancy and is paid everywhere.
