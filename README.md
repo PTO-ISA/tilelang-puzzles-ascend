@@ -310,7 +310,7 @@ conditional into a select.
 README.md
 presentation/                   the standalone style-and-performance report
   quant_kernel_style_compare.md   SIMT vs PTO vs ASC: code size and measured cycles
-  quant_kernel_style_compare.pdf  the same argument as a 34-slide Beamer deck
+  quant_kernel_style_compare.pdf  the same argument as a 35-slide Beamer deck
   slides.md                       deck source (Marp dialect; generated)
   plots/                          charts, generated from perf/quant_vf_cycles.json
   optional/                       the same deck via Marp; see its README
