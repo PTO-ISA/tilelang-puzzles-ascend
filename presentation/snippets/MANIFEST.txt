@@ -36,3 +36,4 @@ transpose_pto_gather, puzzles/pto/quant/answer/per_token/05_col_major_sf.py, 111
 transpose_simt, puzzles/simt/quant/answer/per_token/05_col_major_sf.py, 62-63
 ue8m0_asc, puzzles/asc/quant/answer/cast_back/02_packed_ue8m0.py, 49-53
 ue8m0_pto, puzzles/pto/quant/answer/cast_back/02_packed_ue8m0.py, 52-56
+ue8m0_simt, puzzles/simt/quant/answer/cast_back/02_packed_ue8m0.py, 42-46
