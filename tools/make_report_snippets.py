@@ -88,8 +88,10 @@ SNIPPETS: dict[str, Cut] = {
                          r"lane = V\.vci\(T\.int32\(0\), size=LANES\)", 10),
     "transpose_pto_gather": Cut("pto", "per_token/05_col_major_sf",
                                 r"V\.vstore\(V\.vgather\(sf_dense_ub", 2),
+    # one statement, with the comment that says what it replaces: the rest of
+    # this T.Parallel body is per_token/02's, quoted whole at B2.
     "transpose_simt": Cut("simt", "per_token/05_col_major_sf",
-                          r"sf_out_ub\[g, sub\] = T\.reinterpret", 1),
+                          r"# The whole column-major config: a different index\.", 2),
 
     # -- pattern 4: where PTO is already clean ------------------------------
     "chanreduce_asc": Cut("asc", "per_channel/01_raw_32tokens",
@@ -142,6 +144,8 @@ SNIPPETS: dict[str, Cut] = {
                            r"for chunk in T\.serial\(num_chunks\):", 5,
                            after=r"mask_chunks = S\.pset",
                            before=r"S\.mem_bar"),
+    "blockreduce_simt": Cut("simt", "per_block/01_raw_32x32",
+                            r"# level 1: one thread per row of the tile", 8),
     "blockreduce_pto": Cut("pto", "per_block/01_raw_32x32",
                            r"for chunk in T\.serial\(num_chunks\):", 4,
                            after=r"one1 = V\.create_mask",
