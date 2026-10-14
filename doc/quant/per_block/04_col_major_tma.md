@@ -56,6 +56,32 @@ The platforms diverge only when the *layout of a vector* has to change — which
 the cleanest demonstration in the repo of where the thread model actually buys
 something.
 
+## SIMT — free here too, and the contrast is the lesson
+
+All three vector tiers agree this config is free, and they agree for one reason:
+a tile scale is a single scalar, and a single value has no layout. The SIMT VF
+body is byte-identical to [variant 01](01_raw_32x32.md)'s; the whole change is
+the declaration of `SfCm` as `(num_k_blocks, num_m_blocks)` and one swapped pair
+of indices on the final copy:
+
+```python
+T.copy(sf_ub[0:1], SfCm[kb, mb:mb + 1])
+```
+
+13 lines against ASC's 21 and PTO's 25 — the same as variant 01 in every tier,
+which is the no-change result all three report.
+
+The contrast with [per_token/05](../per_token/05_col_major_sf.md) is worth
+holding onto, because the two variants ask for the *same* transposed layout and
+get completely different answers. There the scales are one per group and live in
+vector lanes, so ASC must build a lane-index vector and permute a block through
+`S.vgather2`, PTO is barely shorter, and SIMT writes one index — a real spread.
+Here there are no lanes in play, so there is no spread to have.
+
+Same config, same chip; what changes is whether the data being relaid out sits in
+lanes. That is the clearest statement in the ladder of what the thread model
+actually buys.
+
 ## What the harness checks
 
 - the shape really is transposed, with an explicit message:

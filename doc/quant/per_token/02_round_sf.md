@@ -122,6 +122,36 @@ count often is not.
 
 Measured: 45 ASC operations against 14.
 
+## SIMT — the bit trick is the one place scalars are plainly better
+
+The ceil-log2 exponent trick is arithmetic on an integer, and SIMT is the only
+tier that gets to say so:
+
+```python
+bits     = T.reinterpret("int32", amax / E4M3_MAX)
+biased   = ((bits - 1) >> 23) + 1
+sf_l[g]  = T.reinterpret("float32", biased << 23)
+inv_l[g] = T.reinterpret("float32", (254 - biased) << 23)
+```
+
+Four lines, no lane count, no broadcast of constants. ASC spells the same
+arithmetic as six vector operations with `"uint32x64"` baked into the types. PTO
+is shorter than ASC but has to thread `size=` through everything, which is
+precisely why its version has to become a `@T.macro` to be reusable at all — the
+factoring this page describes as structural exists to carry a width argument that
+SIMT does not have.
+
+18 lines against ASC's 43 and PTO's 20 — a 25-line saving, third largest in the
+ladder behind [`per_token/05`](05_col_major_sf.md) and
+[`per_channel/04`](../per_channel/04_compose.md), and unlike either of those it
+is *all* width plumbing: the same arithmetic, with nothing in SIMT's favour
+except not having to say how wide it is.
+
+A detail worth noticing: the SIMD tiers need an explicit `V.vmax` against
+`E4M3_CLAMP_MIN`, while the SIMT body gets the clamp for free by seeding the
+accumulator with it. That is not a tier advantage so much as a consequence of the
+reduction being a loop you can initialise.
+
 ## What the harness checks
 
 - scales **bit-exact** (`max_ulps=0`) against the oracle — a power of two and its

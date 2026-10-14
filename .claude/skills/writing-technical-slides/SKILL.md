@@ -1,0 +1,302 @@
+---
+name: writing-technical-slides
+description: >-
+  Write engineering slide decks and technical reports that read as
+  human-written rather than model-generated. Use when authoring or editing
+  slides, decks, presentations, Marp/Beamer/reveal.js markdown, technical
+  reports, benchmark write-ups, or any document that compares implementations
+  and quotes measurements.
+---
+
+# Writing technical slides
+
+Rules derived from five reviews of a benchmark deck, where the content was
+correct and first the writing, then the structure, then the subject itself was
+rejected. Every rule below has a before/after taken from those reviews.
+
+The underlying test: **a reader should not be able to delete a sentence without
+losing a fact.**
+
+## 1. Titles name a finding or a mechanism
+
+A title is the most-read line on a slide. Abstract nouns and evaluations waste
+it.
+
+| rejected | reason | replacement |
+|---|---|---|
+| `One algorithm, three frontends` | names a shape, not a subject | `tilelang frontend comparison` |
+| `The headline: two axes that disagree` | "axes" names nothing | `ASC vs PTO: fewer operations, comparable cycles` |
+| `Method, and why the numbers can be trusted` | defensive | `Benchmark setup (and caveats resolved)` |
+| `Pattern 2 -- the trap underneath, and the cost` | mystery-novel phrasing | `per_channel/02: performance penalty of SIMT` |
+| `Pattern 3 -- the sharpest single trade` | superlative, no content | `per_token/05: SIMT's performance penalty on transpose` |
+| `Pattern 4 -- a genuine draw` | sports metaphor + hedge | `per_channel/01: reduction along M needs no cross-lane step` |
+
+Prefer `<subject>: <finding>`. If the title would survive being pasted onto a
+different slide, it is too vague.
+
+## 2. No second person
+
+"You" turns a report into a chat reply.
+
+- `what you name` -> `abstraction level`
+- `the unit you think in` -> `smallest unit of data`
+- `you cannot restride a register` -> `lane assignment inside a vector register is fixed`
+- `Where PTO costs you` -> `Where PTO's explicitness costs source length`
+- `measure how much you write` -> `measure source size`
+
+## 3. Every sentence carries a fact
+
+Delete sentences whose only function is to announce that something matters.
+
+- `This row sets the theme.` -> delete, or `Observations:`
+- `Neither axis predicts the other.` -> `Operations written and cycles executed correlate at r = -0.09 (n = 22).`
+- `Nothing here says "SIMT is slow" in general.` -> state the measured range instead.
+- `It is tempting to assume ... Across these 22 variants, it does not:` -> drop the set-up, open with the table.
+
+Watch for the scaffolding tic: `Two things are worth separating out`,
+`The rule:`, `worth stating`, `it is worth noticing`.
+
+## 4. Replace adjectives with the measurement
+
+If a number exists, the adjective is a worse version of it.
+
+- `among the worst cycle ratios` -> `13.74x, the 14th lowest of 22` (the original was also false: 8 variants were worse)
+- `an order of magnitude throughout` -> `3.20x to 21.18x; under 6x on 8 of 22`
+- `roughly an order of magnitude` -> `10.44x mean`
+- `two axes that disagree` -> `Pearson r = -0.09`
+
+Hedges to cut: `genuinely`, `simply`, `merely`, `quietly`, `plainly`,
+`essentially`, `marginally`, `nonetheless`.
+
+## 5. Name the concrete object
+
+- `the vector body` -> `the T.SimdVF / T.SimtVF region`
+- `the frontends differ by up to 99.62x in cycles` -> `msprof-simulated VF cycles differ by 10-100x between the SIMT and SIMD implementations`
+- `all passing the same checks` -> `all passing python -m harness.check`
+
+Units and measurement method travel with every quantity. `99.62x` alone does not
+say *of what*, *measured how*, or *on which variant*.
+
+## 6. Do not anthropomorphise the system under test
+
+`PTO says`, `ASC cannot write`, `a thread knows which element it owns`,
+`SIMT wrote a third of the code`, `VMI's wins come from`. Rewrite with the
+engineer as the agent, or with no agent: `PTO declares the segment structure on
+the load`.
+
+Avoid the scoring frame too — `win`, `lose`, `draw`, `pays off` — unless
+reporting an actual contest.
+
+## 7. A slide that concludes about N implementations shows N implementations
+
+The most damaging defect found in the review, because it reads as authoritative:
+
+- a single ASC snippet captioned **`ASC / PTO`** when PTO's code used different
+  APIs (`V.vload`/`V.vintlv` vs `S.vld`/`S.vintlv`)
+- a slide concluding `PTO is marginally longer` with no PTO code on it
+- `SIMT's 12 lines buy notation, not structure` with no SIMT code on it
+- `the code shows why` where the referenced code was not on that slide
+
+Before shipping a comparison slide, list the implementations the prose mentions
+and the implementations shown. They must match.
+
+## 8. Check that quoted code contains the thing being discussed
+
+Excerpts cut by line count drift away from their point:
+
+- a slide reading "that is an interleave instruction" whose excerpt stopped two
+  lines before `S.vintlv`
+- a reduction slide whose excerpt stopped before the `vmax`
+- an excerpt ending on `inv = T.reinterpret(` — an unterminated open paren
+- "an extract of 18 lines" printed above a 6-line block
+
+Anchor excerpts to a *pattern* rather than absolute line numbers, require the
+anchor to be unique, and re-verify extraction in CI.
+
+## 9. Re-derive every number; never retype one
+
+Hardcoded figures in prose rot silently and contradict each other. Real examples
+from one deck:
+
+- `PTO writes more operations on all four ... and runs fewer cycles on three` —
+  arithmetically impossible: the family had five members, the claim silently
+  excluded one to make "all four" true and re-included it to make "three" true
+- `the largest static gap in the set` on one slide vs `PTO's largest static win`
+  on another, naming different variants
+- `runs 1.78x fewer cycles` — not a valid ratio; write `runs at 0.56x the cycles`
+
+Generate the document from the measurements, and add a checker that re-derives
+each quoted figure and fails when the prose no longer matches.
+
+## 10. Charts for anything over ~10 rows
+
+A 13-row by 8-column table is not readable from a projector. Keep the table for
+the record and add a chart that makes the single claim: sorted horizontal bars
+for per-item ratios, a log axis when one point is 5x the rest.
+
+## 11. A chart has to carry what the prose cannot
+
+A figure whose whole content fits in one sentence is wasted space, and a
+figure confirming what the audience already expects is worse than none.
+
+| rejected | reason | replacement |
+|---|---|---|
+| scatter of source size vs cycles, annotated `r = -0.09` | the reader already expects no relationship, and the number says it in nine characters | grouped bars of the three implementations' line counts, which no sentence reproduces |
+
+Test: write the chart's finding as one sentence. If the sentence is as
+informative as the picture, ship the sentence.
+
+## 12. A run of examples needs an outline and an order
+
+Nine worked examples named `per_token/05`, `per_channel/02`, `per_token/01`
+arrive as unconnected pieces: the reader cannot remember what each name means,
+why `05` came before `01`, or what any of them was supposed to settle.
+
+Three things fix it, and all three are needed:
+
+1. **One outline slide** mapping each example to its pattern and to the
+   question it decides — before the first example.
+2. **An order with a reason**, stated in a word or two. This deck's examples
+   were reordered into four parts along one axis (how far the data sits from
+   the vector register's lane structure): reduce, place the scale, place the
+   output, convert it. Difficulty, pipeline order and increasing cost are other
+   defensible axes; file name is not one.
+3. **A key message per example**, in a fixed position and form. Here: a
+   one-sentence takeaway block closing each example, labelled with the
+   example's index in the outline (`A1`, `A2`, ...), so a slide seen alone
+   still says where it sits.
+
+Carry those labels into the conclusions, so the closing argument points back at
+the evidence by name.
+
+## 13. Fragments compared side by side must be cut to the same scope
+
+Two excerpts under one comparison are read as equivalent. If one of them covers
+more of the algorithm than the other, the comparison is false even though both
+are verbatim.
+
+| rejected | reason |
+|---|---|
+| ASC/PTO fragments showing the four stores, beside a SIMT fragment showing load, reduce *and* store | the SIMD side looked shorter than it is |
+| a SIMT fragment without its `T.Parallel` header, beside SIMD fragments that are not in a loop | the header is the construct being compared |
+| ASC's inline convert beside PTO's macro body, with no call site | the call site is what corresponds to the inline code |
+| a fragment cut inside its own call, ending on `S.vcvt(` | truncated mid-statement |
+
+Fix the cut, not the caption. Where a difference in scope is unavoidable — a
+quoted 6 lines of an 18-line encoder, a macro body versus its call site — say so
+in the caption, and state the convention once for the whole document ("the SIMD
+fragments' enclosing tile loop is elided; the SIMT fragment's `T.Parallel`
+header is kept, because that header is what replaces it").
+
+Counting the operations in each fragment from the fragment itself, rather than
+typing the numbers, keeps the sentence beside the code honest when a cut moves.
+
+## 14. Measured values for several implementations go in a table
+
+A sentence makes the reader hold three numbers and two ratios in their head:
+
+> **Measured** — cycles ASC 502 / PTO 387 / SIMT 2,677 (0.77x / 5.33x vs ASC);
+> VF-region lines 21 / 21 / 12.
+
+One row of a table costs the same vertical space and lets the eye travel down a
+column across slides:
+
+| measured | cycles ASC | cycles PTO | cycles SIMT | VF lines A/P/S |
+|---|---:|---:|---:|---:|
+| `per_channel/01` | 502 | 387 (0.77x) | 2,677 (5.33x) | 21 / 21 / 12 |
+
+Use the same shape on every slide that carries one.
+
+## 15. Aggregate results come before the worked examples
+
+The charts covering all 22 variants were at the end, after nine detailed
+examples. Moved to the front they give the audience the shape of the result
+before any one case, and each example then lands somewhere on a picture already
+seen. The raw per-variant tables stay at the end, where a reader goes to look
+something up.
+
+## 16. In an N-way comparison, a silently absent implementation reads as an omission
+
+Two slides concluded about ASC and PTO only, and showed only those two. By the
+rule above that is defensible — but in a document that compares three
+implementations throughout, the reader asks "why is the third one missing?"
+rather than reading the slide's narrower claim.
+
+Both were worth filling in, and both turned out to carry the strongest material
+on their slide:
+
+- `per_block`: SIMT has no tile loop at all, so the reduction becomes a
+  two-level tree whose second level is one thread folding 32 partials — most of
+  that variant's 17.75x
+- `cast_back/02`: the per-lane variable shift that the SIMD frontend cannot
+  express is ordinary scalar code in SIMT, which was the slide's own point,
+  argued in prose while the evidence sat unused
+
+Either show it, or say in one clause why the slide is narrower.
+
+## 17. Shorthand that overstates a mechanism
+
+A title read "FP4 output, where SIMT has no instruction". Every frontend lowers
+to the same hardware; the instruction exists. What is true is narrower and more
+interesting: **nothing in that frontend's surface reaches it**.
+
+| shorthand | what was actually measured |
+|---|---|
+| "SIMT has no instruction" | no call in the `T.SimtVF` surface lowers to the e2m1 convert; the arithmetic there is plain operators on scalars |
+| "a missing instruction" | an instruction the frontend cannot name |
+
+The fix is usually one more clause, and it is the clause a reader working on
+that frontend needs. Where a probe establishes the limit, cite it.
+
+## 18. If a measurement says the subject is written wrong, fix the subject
+
+The fifth review asked whether a library primitive would beat the hand-written
+reduction the deck was presenting. It did, by 8.73x. The first response was to
+*report* that: a new slide, a measured table, and a sentence saying every number
+in the deck was the slower spelling. The review's answer was that a deck is not
+a place to publish a known-worse implementation with a footnote.
+
+| rejected | replacement |
+|---|---|
+| a caveat slide saying "the SIMT numbers are the untuned spelling" | re-spell the 12 kernels, re-measure all of them, and publish the new numbers |
+| "anyone porting this for speed should start from `T.reduce_max`" | the shipped code starts from it |
+
+Two things make this rule practical rather than a counsel of perfection.
+
+**The cost of the re-measurement is the deciding factor, not the cost of the
+edit.** Re-spelling was an afternoon; re-measuring 12 kernels under a simulator
+and re-deriving 60 published claims is what has to be budgeted. Say so, with the
+number, rather than describing the change as cheap.
+
+**Keep the rejected spelling, measured, where the choice is instructive.** The
+scan is still in a probe, still verified byte-identical to the shipped fold, and
+the deck shows it on one slide as what the 8.73x was measured against. That is
+different from shipping it.
+
+And when an exception survives, it needs the same standard of evidence as the
+rule: the one kernel family here that kept the serial scan did so for three
+measured reasons -- no occupancy to recover (1.06x), the vendor's own reference
+scans the same axis, and on two variants the library call does not compile.
+
+## Quick self-check before shipping
+
+1. Does every title name a subject and a finding?
+2. Any `you` / `your`?
+3. Any sentence that could be deleted without losing a fact?
+4. Any adjective where a measured number exists?
+5. Does each comparison slide show every implementation it mentions?
+6. Does each excerpt contain the operation the caption claims?
+7. Is every figure derived from data, and checked?
+8. Any table over ~10 rows without a chart beside it?
+9. Does every chart carry more than its one-sentence summary?
+10. Is there an outline before the examples, a stated reason for their order,
+    and a key message closing each one?
+11. Does each fragment in a comparison cover the same step as the others, and is
+    any remaining difference in scope stated?
+12. Are the measured numbers in a table rather than a sentence?
+13. Do the aggregate results come before the worked examples?
+14. Does any slide drop one implementation without saying why?
+15. Does any claim about hardware say "no instruction" when it means "no call in
+    this frontend reaches the instruction"?
+16. Is the deck presenting an implementation a measurement has already shown to
+    be the wrong one? Fix the implementation, and keep the loser in a probe.

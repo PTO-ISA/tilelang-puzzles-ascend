@@ -100,4 +100,6 @@ README's References table. Nothing in this repo needs a sibling checkout.
 ## Next
 
 `doc/pto-vs-asc.md` consolidates the comparison with the measurements;
+`doc/tiers/simt.md` is the fourth tier — threads instead of lanes, with the
+measured cycle cost in `doc/quant_vf_cycle_comparison.md`;
 `doc/gpu-vs-npu.md` steps back to the GPU.

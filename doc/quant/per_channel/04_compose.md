@@ -101,6 +101,53 @@ most useful thing to take from it:
 Production's PTO port removed 83 lines net. The ladder shows where those lines
 came from — and where they did not.
 
+## SIMT — one half ports and wins, the other half does not port at all
+
+This variant composes two things, and they go opposite ways. Saying so is more
+useful than averaging them.
+
+**The M-packing wins outright**, exactly as in
+[variant 02](02_round_packed_m.md): a thread owning channel `c` writes two bytes,
+so `V.vintlv` and the padded scratch row both disappear.
+
+**The bfloat16 reduction does not survive the port.** The section above is clear
+that 128 lanes is the whole point here — masking off the sign bit and `V.vmax`ing
+raw `uint16` patterns on the integer unit, which works because for non-negative
+floats the integer order matches the float order, and which doubles the lane
+count. SIMT has no lane width to trade: threads are the parallelism, `T.copy`
+widens bfloat16 to float32 into a fragment, and a bfloat16 cross-thread reduction
+ICEs on this toolchain. So the SIMT reduction is float32.
+
+It is numerically identical, for the reason this page already gives in "Why the
+exponent survives the narrower reduction": only the **exponent** of the maximum is
+used, and bfloat16 keeps exponents exactly. The harness asserts that the chosen
+exponents match what float32 would pick, and the SIMT arm passes it trivially by
+being float32 throughout.
+
+17 lines against ASC's 46 and PTO's 51 — the second-largest spread in the ladder.
+But the composition being free is a tilelang property, not a vector-style one, and
+roughly half of what is saved here is the lane-width machinery that SIMT cannot
+use rather than machinery it has improved on.
+
+### Closing the ladder, from the fourth tier
+
+The three-tier version of this story ends with ASC naming the machine, PTO naming
+the intent, and the measurement saying PTO costs 74% of ASC's vector operations.
+The SIMT tier adds a fourth point that is not further along the same line: 51% of
+ASC's source lines across all 22 variants, at **1.20x to 10.18x** ASC's simulated
+VF cycles (mean 3.73x), plus one outlier at 91.28x where a hand-written FP4
+encoder replaces a hardware convert. Easiest to write and fastest to run are
+different axes,
+and [per_token/05](../per_token/05_col_major_sf.md) is where they most clearly
+disagree — the largest source-length win in the ladder, at 13.74x the cycles.
+
+Measuring cycles also unsettled the three-tier claim it was meant to extend.
+**PTO uses fewer simulated cycles than ASC on 9 of the 22 variants, mean 0.92x**,
+down to 0.64x on [per_block/03](../per_block/03_fp4_e2m1.md) — so "most verbose is
+fastest" is not what the simulator says either, and the static operation count
+was never going to tell us. See
+[the cycle comparison](../../quant_vf_cycle_comparison.md).
+
 ## What the harness checks
 
 - `M % 64 == 0` (packing along $M$, as in [variant 02](02_round_packed_m.md));

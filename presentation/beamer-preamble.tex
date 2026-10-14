@@ -1,0 +1,80 @@
+% Preamble for the Beamer build of slides.md (see presentation/Makefile).
+% Deliberately plain: this is a technical review deck, not a showcase.
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{graphicx}
+% pdflatex runs inside build/, but slides.md references plots/ relative to
+% presentation/ so that the Marp build resolves the same paths.
+\graphicspath{{../}{./}}
+% Charts are 16:9-ish PNGs; cap them so they cannot overflow a frame.
+\setkeys{Gin}{width=\linewidth,height=0.72\textheight,keepaspectratio}
+
+% ---- theme -------------------------------------------------------------
+\usetheme{default}
+\usecolortheme{seahorse}
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{footline}[frame number]
+\setbeamerfont{frametitle}{size=\large,series=\bfseries}
+\setbeamercolor{frametitle}{fg=black,bg=gray!15}
+\setbeamercolor{structure}{fg=black!70}
+\setbeamerfont{framesubtitle}{size=\small}
+
+% Dense technical slides: tighten the default vertical spacing.
+\setbeamertemplate{itemize/enumerate body begin}{\small}
+\setbeamertemplate{itemize/enumerate subbody begin}{\footnotesize}
+\setlength{\parskip}{1.5pt}
+
+% ---- code --------------------------------------------------------------
+\definecolor{kw}{rgb}{0.00,0.25,0.62}      % keywords
+\definecolor{str}{rgb}{0.65,0.11,0.11}     % strings
+\definecolor{cmt}{rgb}{0.35,0.45,0.35}     % comments
+\definecolor{num}{rgb}{0.40,0.20,0.60}     % numbers
+\definecolor{codebg}{rgb}{0.975,0.975,0.96}
+
+\lstset{
+  language=Python,
+  % a touch smaller than \scriptsize, and tighter between lines: the
+  % three-frontend slides carry up to 25 lines of code each.
+  basicstyle=\ttfamily\fontsize{6.6pt}{7.4pt}\selectfont,
+  keywordstyle=\color{kw}\bfseries,
+  stringstyle=\color{str},
+  commentstyle=\color{cmt}\itshape,
+  numberstyle=\color{num},
+  showstringspaces=false,
+  breaklines=true,
+  breakatwhitespace=true,
+  columns=fullflexible,
+  keepspaces=true,
+  backgroundcolor=\color{codebg},
+  frame=leftline,
+  framesep=4pt,
+  rulecolor=\color{black!25},
+  xleftmargin=6pt,
+  aboveskip=2.5pt,
+  belowskip=2.5pt,
+  % tilelang vocabulary, so the vector intrinsics read as code not prose
+  emph={S,V,T},
+  emphstyle=\color{kw},
+  morekeywords={with,for,in,if,else,assert,def,return},
+}
+
+% Pandoc emits \tightlist; beamer does not define it.
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{1pt}\setlength{\parskip}{0pt}}
+
+% Keep tables from overflowing a 16:9 frame.
+\let\oldtabular\tabular
+\renewcommand{\tabular}{\scriptsize\oldtabular}
+
+% ---- takeaway blocks ---------------------------------------------------
+% The per-variant key messages are markdown block quotes. Beamer's `quote`
+% has no space above it, so the takeaway collided with the last line of the
+% paragraph before it. Give it air and a rule, so it reads as a conclusion
+% rather than a continuation.
+\renewenvironment{quote}
+  {\par\addvspace{7pt}\small\itshape
+   \leftskip=1.2em \rightskip=0.6em
+   \noindent\hspace*{-1.2em}\textcolor{black!35}{\rule[-1pt]{2pt}{9pt}}\hspace*{0.5em}\ignorespaces}
+  {\par\addvspace{4pt}}

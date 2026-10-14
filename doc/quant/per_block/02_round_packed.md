@@ -58,6 +58,30 @@ shaped paths and ASC has to repeat it per width.
 Measured: 27 ASC operations against 30 — PTO is *longer* here, for the reasons in
 the [overview](README.md).
 
+## SIMT — where "only one lane matters" stops being a problem
+
+The section above notes that the scale math here runs on a single lane, and that
+the SIMD tiers still have to say everything at vector width: every constant
+becomes a `V.vbrc(..., size=1)` or an ASC `"uint32x64"`, and the byte store needs
+a convert (PTO) or a reinterpret plus a `PK4_B32` store mode (ASC).
+
+A scalar scale is a scalar in SIMT:
+
+```python
+bits = T.reinterpret("int32", tile / E4M3_MAX)
+biased = ((bits - 1) >> 23) + 1
+sf_ub[0] = T.Cast("uint8", biased)
+inv_ub[0] = T.reinterpret("float32", (254 - biased) << 23)
+```
+
+15 lines against ASC's 28 and PTO's 33, and here the thing being saved is width
+plumbing around arithmetic that was never vector work in the first place —
+where variant 01's saving is the reduction itself collapsing into one call.
+
+This is the same observation [per_token/02](../per_token/02_round_sf.md) makes
+about the exponent trick, sharpened: there the trick ran on 4 lanes, here on 1,
+and the SIMD tiers' notation cost is identical either way.
+
 ## What the harness checks
 
 - `assert_same_bytes` on the packed int16 — byte equality;
