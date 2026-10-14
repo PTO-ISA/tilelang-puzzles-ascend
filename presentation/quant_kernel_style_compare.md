@@ -809,7 +809,7 @@ test. The SIMT kernel therefore declares its output as `uint8` and encodes the
 format by hand — sign, exponent, subnormal renormalization, guard/round/sticky,
 saturation:
 
-*source:* `puzzles/simt/quant/answer/per_token/04_fp32_in_fp4_out.py:55-60`
+*source:* `puzzles/simt/quant/answer/per_token/04_fp32_in_fp4_out.py:61-66`
 
 <!-- snippet: fp4_simt -->
 ```python
@@ -858,6 +858,56 @@ Both spellings ship in the variant behind a `branch_free` flag and the harness
 asserts they are byte-identical. On a GPU the distinction would not arise, since
 a compiler predicates such a conditional into a select — so roughly a 2.09x slice
 of this variant's gap is a **codegen gap, not a cost of the thread model**.
+
+### The encoder is optional: 72.29x by leaving the region
+
+The obvious question is whether a `T.Cast` to FP4 works inside a `SimtVF`
+region, which would delete the encoder outright. It does not, and it cannot.
+Nine spellings were tried — a scalar cast, a `T.vectorized(2)` pair, an fp4
+fragment at 2, 4, 8 and 16 codes per thread, a `T.copy` from a float32
+fragment, an explicit `T.Cast("float4_e2m1fnx2", ...)`, and a reinterpret of a
+code as a byte — and all nine fail before codegen
+(`harness/probe/simt_fp4_convert.py`). An fp4 element is **four bits**, so fp4
+storage is retyped to `float4_e2m1fnx2` — one byte, two codes — and every store
+needs `index_lanes * 2` lanes, where per-thread scalar code has one. Underneath,
+the toolchain's only FP4 types are `vector_f4e2m1x2` and `float4_e2m1x2_t`, and
+the conversion is `vcvt(vector_f4e2m1x2, vector_bf16, preg, ROUND_R, PART_P0)`:
+a vector instruction over a vector-only type. **There is no scalar FP4 type to
+convert into**, which is a property of the hardware rather than of tilelang.
+
+What *does* work is leaving the region. A `T.SimtVF` region and a `T.SimdVF`
+region can live in one kernel, so the thread model can keep the reduction, the
+scales and the round-to-odd, and the vector model can be entered for the one
+instruction it owns:
+
+*source:* `puzzles/simt/quant/answer/per_token/04_fp32_in_fp4_out.py:193-198`
+
+<!-- snippet: fp4_hwcvt_simt -->
+```python
+with T.SimdVF():
+    for pair in T.serial(hidden // PAIR):
+        S.vsts(q_ub[pair * PAIR],
+               S.vcvt(S.vld(bf_ub[pair * PAIR]),
+                      T.float4_e2m1fn),
+               dist="PK4_B32")
+```
+
+| `per_token/04`, SIMT | cycles | vs ASC |
+|---|---:|---:|
+| the 18-line e2m1 encoder | 562,280 | 91.3x |
+| three lines of `T.SimdVF` | **7,778** | **1.26x** |
+
+**72.29x**, bit-exact against the torch packer and byte-identical to the other
+two spellings, which the harness asserts. It ships in the same file behind
+`hw_convert=` and is measured in the "Alternative spellings" section of
+[`quant_vf_cycle_comparison.md`](../doc/quant_vf_cycle_comparison.md).
+
+It is deliberately **not** the default, and this report's SIMT column does not
+use it: a kernel that drops into `T.SimdVF` for its hardest instruction is no
+longer an answer to "what does the thread model cost", which is the question the
+tier exists to measure. It is a very good answer to a different question — what
+a *mixed* kernel costs — and that question turns out to have a three-line
+answer.
 
 ### The rule
 

@@ -715,6 +715,19 @@
   "soc": "Ascend950PR_9599",
   "us": 149.649994
  },
+ "simt/per_token/04_fp32_in_fp4_out+hw_convert": {
+  "call_count": 64,
+  "cycles": 7778.0,
+  "instr": "VF,VF_SIMT",
+  "kind": "SIMT+SIMD",
+  "method": "driver",
+  "mode": "hw_convert",
+  "note": "measured through tools/vf_drive.py at mode=hw_convert; the harness path profiles this variant's placeholder torch.zeros fill instead of its kernel",
+  "result": "PASS",
+  "shape": "32x128",
+  "soc": "Ascend950PR_9599",
+  "us": 4.32
+ },
  "simt/per_token/05_col_major_sf": {
   "call_count": 32,
   "cycles": 10897.0,

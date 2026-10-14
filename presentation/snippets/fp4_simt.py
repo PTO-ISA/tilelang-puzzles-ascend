@@ -1,4 +1,4 @@
-# puzzles/simt/quant/answer/per_token/04_fp32_in_fp4_out.py:55-60
+# puzzles/simt/quant/answer/per_token/04_fp32_in_fp4_out.py:61-66
 # extracted by tools/make_report_snippets.py -- do not edit
 bits = T.reinterpret("int32", v)
 # bit 3 of (bits >> 28) is bit 31 of bits: the sign nibble, without

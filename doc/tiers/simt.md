@@ -177,8 +177,22 @@ conditionals as mask arithmetic (`m = -T.Cast("int32", cond)`, then
 `(a & m) | (b & ~m)`) issues **37% fewer instructions and runs 2.09x fewer
 cycles**: 562,280 down to 269,370, which is 43.7x ASC instead of 91.3x.
 
-Both are in the file behind `branch_free=`, both are checked by the harness to
-be byte-identical, and both are measured in
+### The encoder itself is optional
+
+No `T.Cast` to FP4 lowers inside a `SimtVF` region -- an fp4 element is four
+bits, the chip's only FP4 types are the vector ones, and a per-thread scalar has
+nothing to convert into (`harness/probe/simt_fp4_convert.py` records the nine
+spellings that fail). But a kernel may hold a `T.SimtVF` region **and** a
+`T.SimdVF` region, and three lines of the latter replace the eighteen-line
+encoder: **562,280 cycles to 7,778**, 1.26x ASC rather than 91.3x, byte-identical.
+
+That spelling ships behind `hw_convert=` and is not the default, for the reason
+this whole tier exists: it measures what the thread model costs on its own.
+What it shows is where the boundary actually lies -- not at the kernel, at the
+region.
+
+Both encoder spellings are in the file behind `branch_free=`, all three are
+checked by the harness to be byte-identical, and all three are measured in
 [`quant_vf_cycle_comparison.md`](../quant_vf_cycle_comparison.md). The default is
 the conditional, because that is the spelling this ladder set out to measure.
 

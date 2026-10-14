@@ -149,6 +149,9 @@ SNIPPETS: dict[str, Cut] = {
                         r"odd = to_bf16_round_odd\(q, PAIR\)", 2),
     "fp4_simt": Cut("simt", "per_token/04_fp32_in_fp4_out",
                     r'bits = T\.reinterpret\("int32", v\)', 6),
+    # the alternative spelling: out of the thread model for one instruction
+    "fp4_hwcvt_simt": Cut("simt", "per_token/04_fp32_in_fp4_out",
+                          r"with T\.SimdVF\(\):", 6),
 
     # -- A2's REJECTED reduction, cut from the probe that priced it ---------
     "scan_simt": Cut("probe", "simt_reduce_max",

@@ -108,6 +108,19 @@ The short version: the branch-free spelling issues 37% **fewer**
 instructions and runs **2.09x fewer cycles (562,280 to 269,370)** -- 43.7x ASC rather than 91.3x -- because the instructions it
 drops are the branching itself.
 
+**And the encoder itself is optional.** No `T.Cast` to FP4 lowers
+inside a `SimtVF` region -- an fp4 element is four bits, the
+toolchain's only FP4 types are the vector ones, and a per-thread
+scalar has nothing to convert into
+(`harness/probe/simt_fp4_convert.py` records the nine spellings
+that fail). But the *kernel* can leave the region for that one
+instruction: a three-line `T.SimdVF` block in place of the
+eighteen-line encoder, same bytes, **72.3x fewer cycles** and 1.26x ASC rather than 91.3x.
+That spelling ships in the same file behind `hw_convert=` and is
+in the table below. It is **not** what the SIMT column measures,
+because a kernel that drops into `T.SimdVF` is no longer answering
+what the thread model costs on its own.
+
 Two conclusions, and they pull in opposite directions, which is why
 both are stated. The 91.28x is a true measurement of the kernel as
 written, and it is not a measurement artefact -- the trace audit
@@ -194,7 +207,7 @@ case. A SIMT kernel issuing more would want explaining.
 
 ## Two variants are measured differently, and why
 
-`per_block/05_split_compose`, `per_token/04_fp32_in_fp4_out+branch_free`, `per_token/06_split_requant` are measured through `tools/vf_drive.py` rather
+`per_block/05_split_compose`, `per_token/04_fp32_in_fp4_out+branch_free`, `per_token/04_fp32_in_fp4_out+hw_convert`, `per_token/06_split_requant` are measured through `tools/vf_drive.py` rather
 than through `python -m harness.check`, at `mode="full"`.
 
 `msprof op simulator` profiles a **single operator** -- in practice the
@@ -229,19 +242,32 @@ here so the cost of the choice is on the record rather than implied.
 They are kept out of the table above, which stays one row per
 variant.
 
-| variant | spelling | cycles | vs the default | vs ASC |
+| variant | spelling | cycles | speed-up | vs ASC |
 |---|---|---:|---:|---:|
-| `per_token/04_fp32_in_fp4_out` | default (`T.if_then_else`) | 562,280 | 1.00x | 91.3x |
-| `per_token/04_fp32_in_fp4_out` | `branch_free` | **269,370** | **0.48x** | **43.7x** |
+| `per_token/04_fp32_in_fp4_out` | the shipped default | 562,280 | 1.00x | 91.3x |
+| `per_token/04_fp32_in_fp4_out` | `branch_free` | **269,370** | **2.09x** | **43.73x** |
+| `per_token/04_fp32_in_fp4_out` | `hw_convert` | **7,778** | **72.29x** | **1.26x** |
 
-`branch_free` is the e2m1 encoder's conditionals as mask arithmetic instead of `T.if_then_else`. It issues **more** instructions than the
-default and runs in fewer cycles, because `T.if_then_else` on a
-data-dependent per-element condition lowers to a real branch on this
-toolchain while the mask form lowers to a select. The default keeps
-the conditional deliberately: this ladder measures the spelling a GPU
-programmer reaches for first. `harness/probe/simt_divergence.py` is
-the controlled experiment, and `doc/known-issues.md` records it as a
-codegen gap rather than a property of the thread model.
+What each one is:
+
+* **`branch_free`** -- the e2m1 encoder's conditionals as mask arithmetic instead of `T.if_then_else`.
+* **`hw_convert`** -- no encoder at all: the kernel leaves the SimtVF region for a three-line `T.SimdVF` block holding the one instruction the thread model cannot name.
+
+`branch_free` issues **fewer** instructions than the default and
+runs in fewer cycles, because `T.if_then_else` on a data-dependent
+per-element condition lowers to a real branch on this toolchain
+while the mask form lowers to a select; the instructions it drops
+are the branching. `hw_convert` is not a respelling of the encoder
+but its removal, and it is the larger effect by far.
+
+The default keeps the hand-written conditional encoder
+deliberately: the SIMT column measures what the thread model costs
+on its own, and both alternatives change that question --
+`branch_free` by writing what a GPU compiler would have emitted,
+`hw_convert` by leaving the region. All three are verified
+byte-identical by the harness. `harness/probe/simt_divergence.py`
+and `harness/probe/simt_fp4_convert.py` are the controlled
+experiments, and `doc/known-issues.md` records both.
 
 ## Confirming the trace is the quant kernel
 

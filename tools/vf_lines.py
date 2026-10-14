@@ -29,6 +29,13 @@ round-to-odd, while SIMT's is an eighteen-line hand-written e2m1 encoder,
 because no FP4 convert is reachable from a SimtVF region. Those two rows
 understate SIMT's real cost; the variant pages say so.
 
+Second scope rule, for the same reason: where a variant ships an *alternative
+spelling* in the same region behind a trace-time flag, the alternative is
+bracketed with ``# --- BEGIN ALT`` / ``# --- END ALT`` and is not counted. Only
+one arm is ever emitted, and the column means "the shipped default". Today that
+is only ``simt/per_token/04``'s ``hw_convert``, which leaves the region for the
+FP4 convert.
+
 Caveat on magnitude: these teaching kernels are single-config, so each one
 spells the broadcast/select/pack machinery once. Production kernels branch over
 round_sf, packing, FP4, column-major and requant, which repeats that machinery
@@ -99,11 +106,20 @@ def vf_body(path: Path, opener: str, op_re: re.Pattern | None) -> tuple[int, int
             continue
         indent = len(m.group(1))
         i += 1
+        skipping = False
         while i < len(lines):
             line = lines[i]
             if line.strip() and (len(line) - len(line.lstrip())) <= indent:
                 break
-            if line.strip() and not line.strip().startswith("#"):
+            # An ALTERNATIVE spelling shipped in the same region behind a
+            # trace-time flag is not part of what the kernel writes: only one
+            # arm is ever emitted. `simt/per_token/04` is the case -- see the
+            # scope caveat in this file's docstring.
+            if "--- BEGIN ALT" in line:
+                skipping = True
+            elif "--- END ALT" in line:
+                skipping = False
+            elif not skipping and line.strip() and not line.strip().startswith("#"):
                 total += 1
                 if op_re is not None:
                     ops += sum(1 for n in op_re.findall(line) if n not in NOT_OPS)
