@@ -280,23 +280,31 @@ explicitness.
 ### And the fourth tier
 
 `puzzles/simt/` writes the same 22 variants with `T.SimtVF` and `T.Parallel` —
-threads, not lanes. It comes to **53% of ASC's source lines** inside the VF region,
-and costs **3.20x to 21.18x ASC's simulated VF cycles, mean 10.44x** — plus one
-outlier at 99.62x, `per_token/04`, where a hand-written e2m1 encoder stands in
-for a hardware conversion. Those are two different axes, not two readings of
-one: `per_token/05` is the largest source-length win in the ladder *and* costs
-13.74x the cycles.
+threads, not lanes. It comes to **51% of ASC's source lines** inside the VF region,
+and costs **1.20x to 10.18x ASC's simulated VF cycles, mean 3.73x** — plus one
+outlier at 91.28x, `per_token/04`, where a hand-written e2m1 encoder stands in
+for a hardware conversion.
 
 SIMT pays off where the SIMD tiers had to move data *between lanes* — a group
 broadcast, an in-register transpose, an interleave. It buys nothing where the data
-already lines up with the lanes (`per_channel/01`, `per_block/01`), and it loses
+already lines up with the lanes (`per_channel/01`), and it loses
 outright where the hardware has a conversion it cannot reach: the two FP4 output
 variants hand-write an 18-line e2m1 encoder against PTO's four operations.
 
-`simt/per_token/04` ships **two spellings** of that encoder — the natural
+**The width of a `T.Parallel` is the one thing to get right.** Every reduction in
+the tier first shipped as one thread per quant group with an inner `T.serial`,
+which at `group_size = 32` keeps 4 of 128 threads busy: `per_token/01` measured
+11.59x and `per_block/01` 17.75x that way. Handing the fold to
+`T.reduce_absmax` — how the CUDA references in `TileKernels` write it — makes
+them **1.33x** and **2.45x** with byte-identical output;
+`harness/probe/simt_reduce_max.py` measures both spellings of one kernel side by
+side (**8.73x**). `per_channel` keeps the scan, because its fold runs down the
+token axis where one thread per channel already uses all 128.
+
+`simt/per_token/04` ships **two spellings** of its encoder — the natural
 `T.if_then_else` and a branch-free mask form — because `T.if_then_else` lowers to
-a divergent branch here and the mask form is **1.78x faster while issuing 45%
-more instructions** (613,632 cycles down to 345,189). Both are checked by the harness to be byte-identical and
+a divergent branch here and the mask form is **2.09x faster while issuing 37%
+fewer instructions** (562,280 cycles down to 269,370). Both are checked by the harness to be byte-identical and
 both are measured. It is the clearest lesson in the tier, and a codegen gap
 rather than a cost of the thread model: a GPU compiler predicates that
 conditional into a select.
@@ -410,7 +418,7 @@ python harness/probe/fp8_out_idx.py             # whether out_idx can allocate F
 python harness/probe/simt_limits.py             # what a T.SimtVF region can lower
 python harness/probe/simt_limits.py --run       # ...and what it silently gets wrong
 python harness/probe/simt_thread_count.py      # does a smaller SIMT thread count help?
-python harness/probe/simt_reduce_max.py        # T.reduce_max vs the serial scan: 8.94x
+python harness/probe/simt_reduce_max.py        # T.reduce_absmax vs a thread-per-group scan: 8.73x
 python tools/vf_trace_audit.py                 # is each measured trace the quant kernel?
 ```
 

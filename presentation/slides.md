@@ -140,8 +140,8 @@ that header is what replaces it.
 
 ![](plots/lines.png)
 
-Totals **646 / 578 / 343** lines — PTO 89% of ASC,
-SIMT 53%. PTO is *longer* than ASC on 11 of the 22: its
+Totals **646 / 578 / 327** lines — PTO 89% of ASC,
+SIMT 51%. PTO is *longer* than ASC on 11 of the 22: its
 saving is concentrated in the segmented-reduction variants (A2) and spent again
 on `size=` and mask operands elsewhere (B3). SIMT is shorter on
 21 of 22 and ties on the other.
@@ -160,7 +160,7 @@ on `size=` and mask operands elsewhere (B3). SIMT is shorter on
 
 `per_token/04` is separated because its cost is a convert the SIMT surface
 cannot reach, not a property of the thread model (D1). The other 21 variants
-span 3.20x-21.18x.
+span 1.20x-10.18x.
 
 ---
 
@@ -173,13 +173,13 @@ quantities sit relative to the 64- or 128-lane vector register.
 |---|---|---|---|
 | **A** reduce | `per_channel/01` | one channel per lane | nothing to simplify |
 | | `per_token/01` | 4 groups per register | PTO's clearest win |
-| | `per_block/01` | 32x32 tile to a scalar | counts mispredict cycles |
+| | `per_block/01` | 32x32 tile to a scalar | one fold, not two levels |
 | **B** scale | `cast_back/01` | one scalar across lanes | SIMT's first real cut |
 | | `per_token/02` | exponent, any width | PTO's width argument |
 | | `cast_back/02` | nothing to factor out | PTO's operands cost lines |
 | **C** output | `per_channel/02` | interleave two registers | SIMT drops an instruction |
-| | `per_token/05` | transposed store = gather | biggest cut, and its price |
-| **D** convert | `per_token/04` | float32 -> e2m1 | SIMT's 99.6x |
+| | `per_token/05` | transposed store = gather | SIMT's biggest cut |
+| **D** convert | `per_token/04` | float32 -> e2m1 | SIMT's 91.3x |
 
 The other 13 variants compose these patterns and are measured in the tables at
 the end. Long form: companion report, sections 2-8.
@@ -225,7 +225,8 @@ V.vstore(V.vdiv(qmax, acc[0], mask), inv_ub[col])
 
 ## A1 `per_channel/01`: equal source, unequal cycles
 
-**SIMT** assigns one thread per channel and loops over the 32 rows:
+**SIMT** gives one thread each channel and loops down the 32 rows — the tier's
+one scanned reduction (A2), because 128 channels already fill the region:
 
 ```python
 for c in T.Parallel(hidden):
@@ -245,7 +246,7 @@ for c in T.Parallel(hidden):
 17 and
 16 vector operations, 21 lines each:
 segment counts and width arguments have nothing to apply to. Cycles differ
-anyway — 64 lanes against 128, so the elided tile loop runs twice, then once.
+anyway — 64 lanes against 128.
 
 > **A1** — where the data lines up with the lanes, PTO has nothing to factor
 > out and SIMT nothing to remove. The 0.77x is register width, which no source
@@ -289,25 +290,24 @@ matching broadcast on the apply pass collapses from 4 loads plus 2 selects to
 
 ## A2 `per_token/01`: SIMT, and the measured result
 
-**SIMT** assigns one thread per group:
+**SIMT** gives one thread each channel and asks the library for the fold:
 
 ```python
-for g in T.Parallel(num_groups):
-    amax_l[g] = E4M3_CLAMP_MIN
-    for j in T.serial(group_size):
-        v = T.Cast("float32", x_ub[g * group_size + j])
-        amax_l[g] = T.max(amax_l[g], T.abs(v))
-    inv_l[g] = E4M3_MAX / amax_l[g]
-    sf_l[g] = amax_l[g] / E4M3_MAX
+for g, j in T.Parallel(num_groups, group_size):
+    x_l[g, j] = T.Cast("float32", x_ub[g * group_size + j])
+T.reduce_absmax(x_l, amax_l, dim=1)
 ```
+
+The group is the fragment's fast axis, so the quant group *is* the reduction
+axis — the same reshape the CUDA reference makes before its own
+`T.reduce_absmax(dim=2)`. A clamp pass follows, since a fold cannot be seeded.
 
 | measured | cycles ASC | cycles PTO | cycles SIMT | VF lines A/P/S |
 |---|---:|---:|---:|---:|
-| `per_token/01` | 6,176 | 4,576 (0.74x) | 71,606 (11.59x) | 37 / 24 / 15 |
+| `per_token/01` | 6,176 | 4,576 (0.74x) | 8,204 (1.33x) | 37 / 24 / 16 |
 
-`T.Parallel(num_groups)` has extent 4 at `K=128, group_size=32`, so this
-reduction keeps 4 of the 128 declared threads busy — and issues its inner body
-32 times over. The next slide measures what that costs.
+Written instead as one thread per *group* with an inner `T.serial`, the same
+kernel costs 11.59x. The next slide measures that.
 
 > **A2** — the one pattern where PTO is both shorter and faster:
 > 19 operations against ASC's
@@ -315,37 +315,38 @@ reduction keeps 4 of the 128 declared threads busy — and issues its inner body
 > 0.74x the
 > cycles. Operation count and cycle count favour PTO together on
 > 6 of the 22 variants. SIMT is shorter again
-> (15 lines) at
-> 11.59x.
+> (16 lines) at
+> 1.33x.
 
 ---
 
-## A2 `per_token/01`: the reduction spelling is worth 8.94x
+## A2 `per_token/01`: the reduction spelling is worth 8.73x
 
-`T.reduce_max` gives every thread one element and leaves the fold to the
-backend. `harness/probe/simt_reduce_max.py` builds both spellings of this
-kernel, checks both against the oracle, confirms they are byte-identical, and
-measures each:
+This is the spelling the tier shipped first — a thread per quant group, the
+clamp riding along as the accumulator's seed, one line shorter:
 
 ```python
-for g, j in T.Parallel(num_groups, group_size):
-    a_l[g, j] = T.abs(
-        T.Cast("float32", x_ub[g * group_size + j]))
-T.reduce_max(a_l, amax_l, dim=1)
+for g in T.Parallel(num_groups):
+    amax_l[g] = E4M3_CLAMP_MIN
+    for j in T.serial(group_size):
+        v = T.Cast("float32", x_ub[g * group_size + j])
+        amax_l[g] = T.max(amax_l[g], T.abs(v))
 ```
 
-Every thread takes one element, where the scan gives work to 4 of 128.
+`T.Parallel(num_groups)` has extent 4 at `K=128, group_size=32`, so it keeps 4
+of the 128 declared threads busy and issues its inner body 32 times over.
+`harness/probe/simt_reduce_max.py` builds both spellings, checks both against
+the oracle, confirms they are byte-identical, and measures each:
 
-| reduction spelling | VF_SIMT cycles | vs ASC | abs/reduce instructions |
+| reduction spelling | VF_SIMT cycles | vs ASC | instructions |
 |---|---:|---:|---:|
-| serial scan — what this tier ships | 71,606 | 11.59x | 4,096 |
-| `T.reduce_max` | **8,012** | **1.30x** | 256 |
+| one thread per group, inner `T.serial` | 71,606 | 11.59x | 36,676 |
+| `T.reduce_absmax` — what this tier ships | **8,204** | **1.33x** | **4,036** |
 
-**Every SIMT cycle count in this deck is the serial-scan spelling.** The tier
-uses it throughout because the accumulator can be seeded with the clamp and
-because the later variants need somewhere to put their exponent arithmetic —
-uniformity that is worth having in a ladder and is not free. Read the SIMT
-column as the cost of one formulation, not of the thread model.
+**The SIMT numbers in this deck are the library call's**, in `per_token` and
+`per_block` alike; `per_channel` still scans, for the measured reason on the
+caveats slide. Nothing about the arithmetic changed — only the width of a
+`T.Parallel`.
 
 ---
 
@@ -379,33 +380,34 @@ PTO writes more operations on 4 of these 5 and runs fewer cycles on 2 of those 4
 
 ---
 
-## A3 `per_block/01`: SIMT has no tile loop, and reduces in two levels
+## A3 `per_block/01`: SIMT has no tile loop, and folds in one call
 
-A thread cannot see another thread's accumulator, so the tile reduction becomes
-a tree. Level 1 gives each of the 32 rows a thread:
+A fragment's shape is an index space, so the 32x32 tile can be declared as a
+single row and reduced in one call — no steps, no partials:
 
 ```python
-# level 1: one thread per row of the tile
-for t in T.Parallel(bm):
-    amax = T.alloc_var(T.float32)
-    amax = E4M3_CLAMP_MIN
-    for j in T.serial(bk):
-        amax = T.max(amax,
-                     T.abs(T.Cast("float32", x_ub[t, j])))
-    row_ub[t] = amax
+for i, j in T.Parallel(bm, bk):
+    flat_l[0, i * bk + j] = T.Cast("float32", x_ub[i, j])
+T.reduce_absmax(flat_l, tile_l, dim=1)
 ```
 
-Level 2 is a second region, `for _z in T.Parallel(1)`, folding the 32 partials
-to the scalar — one thread working while 127 wait.
+What remains for one thread is three scalar operations, not a loop:
+
+```python
+for _z in T.Parallel(1):
+    tile = T.max(tile_l[0], E4M3_CLAMP_MIN)
+    sf_ub[0] = tile / E4M3_MAX
+    inv_ub[0] = E4M3_MAX / tile
+```
 
 | measured | cycles ASC | cycles PTO | cycles SIMT | VF lines A/P/S |
 |---|---:|---:|---:|---:|
-| `per_block/01` | 1,086 | 924 (0.85x) | 19,276 (17.75x) | 21 / 25 / 18 |
+| `per_block/01` | 1,086 | 924 (0.85x) | 2,664 (2.45x) | 21 / 25 / 13 |
 
 > **A3** — more operations per step and half as many steps executed: a static
-> count cannot observe a trip count. SIMT has neither — no tile loop and no
-> vector width — and pays 17.75x
-> for the serial fold.
+> count cannot observe a trip count. SIMT has neither, and needs neither: the
+> two-level shape a GPU programmer writes first — a partial per row, then one
+> thread folding 32 of them — measured 19,276 cycles against 2,664 here.
 
 ---
 
@@ -474,7 +476,7 @@ else:
 > 6): per-element indexing replaces explicit
 > lane-mask construction, at
 > 3.28x,
-> the 2nd lowest SIMT ratio of 22.
+> the 10th lowest SIMT ratio of 22.
 
 ---
 
@@ -520,11 +522,7 @@ unchanged; the scale arithmetic is the last four:
 
 ```python
 for g in T.Parallel(num_groups):
-    amax = T.alloc_var(T.float32)
-    amax = E4M3_CLAMP_MIN
-    for j in T.serial(group_size):
-        v = T.Cast("float32", x_ub[g * group_size + j])
-        amax = T.max(amax, T.abs(v))
+    amax = T.max(amax_l[g], E4M3_CLAMP_MIN)
 
     bits = T.reinterpret("int32", amax / E4M3_MAX)
     biased = ((bits - 1) >> 23) + 1
@@ -534,7 +532,7 @@ for g in T.Parallel(num_groups):
 
 | measured | cycles ASC | cycles PTO | cycles SIMT | VF lines A/P/S |
 |---|---:|---:|---:|---:|
-| `per_token/02` | 4,608 | 4,688 (1.02x) | 71,008 (15.41x) | 43 / 20 / 17 |
+| `per_token/02` | 4,608 | 4,688 (1.02x) | 8,197 (1.78x) | 43 / 20 / 18 |
 
 > **B2** — 45 operations against
 > 14 is the largest operation-count reduction in
@@ -730,11 +728,7 @@ sf_out_ub = T.alloc_shared((num_groups, token_block), T.float32)
 
 ```python
 for g in T.Parallel(num_groups):
-    amax = T.alloc_var(T.float32)
-    amax = E4M3_CLAMP_MIN
-    for j in T.serial(group_size):
-        v = T.Cast("float32", x_ub[g * group_size + j])
-        amax = T.max(amax, T.abs(v))
+    amax = T.max(amax_l[g], E4M3_CLAMP_MIN)
 
     # ceil(log2(amax/448)) from the exponent field, then
     # both scales rebuilt by writing an exponent back.
@@ -753,22 +747,24 @@ index vector, no gather, and no block of scales held back to be permuted.
 
 ---
 
-## C2 `per_token/05`: the sharpest source-size / cycle trade in the set
+## C2 `per_token/05`: the largest source-size cut in the set
 
 | measured | cycles ASC | cycles PTO | cycles SIMT | VF lines A/P/S |
 |---|---:|---:|---:|---:|
-| `per_token/05` | 5,477 | 5,448 (0.99x) | 75,281 (13.74x) | 54 / 48 / 15 |
+| `per_token/05` | 5,477 | 5,448 (0.99x) | 10,897 (1.99x) | 54 / 48 / 16 |
 
-- 15 SIMT lines against ASC's 54 is the largest source-size reduction among the
-  22 variants
-- SIMT costs **13.74x** the cycles, the 14th lowest SIMT ratio of 22
+- 16 SIMT lines against ASC's 54 is the largest source-size reduction among
+  the 22 variants
+- it costs 1.99x the cycles, the 5th lowest SIMT ratio of 22 — this row used to
+  be the sharpest source-size / cycle *trade* in the deck, at 13.74x, before
+  its reduction was re-spelled (A2)
 - ASC and PTO are within 1% of each other: a gather is a single hardware
   operation, so VMI has no segment structure or width to collapse here
 
 > **C2** — one line of SIMT replaces nine of index arithmetic, and the SIMD
 > frontends tie because the hardware already provides the operation. Where the
-> work *is* index arithmetic, SIMT is the shortest by a wide margin and the
-> slowest by one too.
+> work *is* index arithmetic, SIMT is the shortest by a wide margin and no
+> longer pays much for it.
 
 ---
 
@@ -825,38 +821,39 @@ mant = bits & 0x7FFFFF
 
 | measured | cycles ASC | cycles PTO | cycles SIMT | VF lines A/P/S |
 |---|---:|---:|---:|---:|
-| `per_token/04` | 6,160 | 4,784 (0.78x) | 613,632 (99.62x) | 34 / 23 / 15 |
+| `per_token/04` | 6,160 | 4,784 (0.78x) | 562,280 (91.28x) | 34 / 23 / 17 |
 
 The result is bit-exact against the PyTorch reference packer. `per_block/03`
 carries the same encoder at 16.77x.
 
 ---
 
-## D1 `per_token/04`: 99.6x decomposes into instructions and divergence
+## D1 `per_token/04`: 91.3x decomposes into instructions and divergence
 
 | factor | SIMT `per_token/04` | other SIMT `per_token` variants |
 |---|---|---|
-| instructions issued | 124,294 | ~37,000 |
-| cycles per instruction | 4.94 | 1.90-2.01 |
+| instructions issued | 243,130 | 4,036-5,828 |
+| of those, branches | 44,835 | 0 |
+| of those, predicate sets | 22,788 | 0 |
 
 The second factor is branch divergence. `T.if_then_else` on a data-dependent
 per-element condition lowers to a branch rather than a predicated select, and
-this is the only variant whose trace carries a large number of
-`SIMT_START_DVG` markers.
+this is the only variant whose trace carries a large number of `SIMT_BRANCH`
+and `SIMT_START_DVG` markers.
 
 Rewriting the encoder's three conditionals as mask arithmetic
-(`m = -T.Cast("int32", cond)`, then `(a & m) | (b & ~m)`) issues **45% more
-instructions** and runs at **0.56x the cycles** —
-345,189 against 613,632, or
-**56.0x ASC instead of 99.6x**. Both spellings are in
+(`m = -T.Cast("int32", cond)`, then `(a & m) | (b & ~m)`) issues **37% fewer
+instructions** and runs at **0.48x the cycles** —
+269,370 against 562,280, or
+**43.7x ASC instead of 91.3x**. Both spellings are in
 the kernel behind a `branch_free` flag and the harness asserts their outputs are
 byte-identical.
 
 > **D1** — an instruction the frontend cannot name is not a style difference.
 > Of the
-> 99.6x, a factor of 1.78x is a code-generation
+> 91.3x, a factor of 2.09x is a code-generation
 > gap a GPU compiler would not have, since it predicates such a conditional into
-> a select; the remaining 56.0x is a software encoder standing in
+> a select; the remaining 43.7x is a software encoder standing in
 > for one convert instruction.
 
 ---
@@ -871,13 +868,13 @@ byte-identical.
 | `cast_back/04` | 6/6 | 6/7/6 | 2,016 | 2,048 | 6,983 | 1.02 | 3.46 |
 | `cast_back/05` | 16/8 | 18/11/13 | 2,296 | 2,584 | 10,152 | 1.13 | 4.42 |
 | `cast_back/06` | 14/14 | 21/22/16 | 2,272 | 2,528 | 9,275 | 1.11 | 4.08 |
-| `per_token/01` | 39/19 | 37/24/15 | 6,176 | 4,576 | 71,606 | 0.74 | 11.59 |
-| `per_token/02` | 45/14 | 43/20/17 | 4,608 | 4,688 | 71,008 | 1.02 | 15.41 |
-| `per_token/03` | 44/15 | 37/21/15 | 4,608 | 4,672 | 74,136 | 1.01 | 16.09 |
-| `per_token/04` | 37/17 | 34/23/15 | 6,160 | 4,784 | 613,632 | 0.78 | 99.62 |
-| `per_token/05` | 56/38 | 54/48/15 | 5,477 | 5,448 | 75,281 | 0.99 | 13.74 |
-| `per_token/06` | 39/30 | 57/44/32 | 6,864 | 4,576 | 71,606 | 0.67 | 10.43 |
-| `per_token/07` | 31/17 | 39/24/15 | 4,864 | 5,136 | 72,490 | 1.06 | 14.90 |
+| `per_token/01` | 39/19 | 37/24/16 | 6,176 | 4,576 | 8,204 | 0.74 | 1.33 |
+| `per_token/02` | 45/14 | 43/20/18 | 4,608 | 4,688 | 8,197 | 1.02 | 1.78 |
+| `per_token/03` | 44/15 | 37/21/16 | 4,608 | 4,672 | 9,893 | 1.01 | 2.15 |
+| `per_token/04` | 37/17 | 34/23/17 | 6,160 | 4,784 | 562,280 | 0.78 | 91.28 |
+| `per_token/05` | 56/38 | 54/48/16 | 5,477 | 5,448 | 10,897 | 0.99 | 1.99 |
+| `per_token/06` | 39/30 | 57/44/33 | 6,864 | 4,576 | 8,204 | 0.67 | 1.20 |
+| `per_token/07` | 31/17 | 39/24/16 | 4,864 | 5,136 | 8,502 | 1.06 | 1.75 |
 
 `/06` `full` emits `/01`'s kernel, hence the identical SIMT cycle count.
 
@@ -887,11 +884,11 @@ byte-identical.
 
 | variant | ops A/P | lines A/P/S | cyc A | cyc P | cyc S | P/A | S/A |
 |---|---|---|---:|---:|---:|---:|---:|
-| `per_block/01` | 21/22 | 21/25/18 | 1,086 | 924 | 19,276 | 0.85 | 17.75 |
-| `per_block/02` | 27/30 | 28/33/20 | 918 | 936 | 19,444 | 1.02 | 21.18 |
-| `per_block/03` | 28/26 | 29/29/19 | 1,625 | 1,040 | 27,256 | 0.64 | 16.77 |
-| `per_block/04` | 21/22 | 21/25/18 | 1,414 | 924 | 19,272 | 0.65 | 13.63 |
-| `per_block/05` | 29/31 | 33/37/28 | 918 | 940 | 19,444 | 1.02 | 21.18 |
+| `per_block/01` | 21/22 | 21/25/13 | 1,086 | 924 | 2,664 | 0.85 | 2.45 |
+| `per_block/02` | 27/30 | 28/33/15 | 918 | 936 | 3,130 | 1.02 | 3.41 |
+| `per_block/03` | 28/26 | 29/29/14 | 1,625 | 1,040 | 16,536 | 0.64 | 10.18 |
+| `per_block/04` | 21/22 | 21/25/13 | 1,414 | 924 | 3,044 | 0.65 | 2.15 |
+| `per_block/05` | 29/31 | 33/37/24 | 918 | 940 | 3,130 | 1.02 | 3.41 |
 | `per_channel/01` | 17/16 | 21/21/12 | 502 | 387 | 2,677 | 0.77 | 5.33 |
 | `per_channel/02` | 28/29 | 35/40/17 | 849 | 811 | 5,964 | 0.96 | 7.02 |
 | `per_channel/03` | 23/19 | 29/35/14 | 930 | 721 | 4,073 | 0.78 | 4.38 |
@@ -909,15 +906,15 @@ variant's `T.SimtVF` region unchanged.
 | | PTO vs ASC | SIMT vs ASC |
 |---|---|---|
 | vector operations | 74% | not comparable |
-| source lines | 89% | **53%** |
-| simulated cycles | **0.92x** (0.64x-1.13x) | 10.44x (3.20x-21.18x) |
+| source lines | 89% | **51%** |
+| simulated cycles | **0.92x** (0.64x-1.13x) | 3.73x (1.20x-10.18x) |
 
 SIMT has no comparable operation count: its arithmetic is plain operators, so
 the backend selects the instructions.
 
 - PTO uses fewer cycles on 9 of 22 variants, more on 6, within 2% on 7
-- The SIMT range excludes `per_token/04`; including it the maximum is 99.62x
-- SIMT costs under 6x on 8 of 22 variants and over 10x on 11
+- The SIMT range excludes `per_token/04`; including it the maximum is 91.28x
+- SIMT costs under 6x on 18 of 22 variants and over 10x on 11
 
 ---
 
@@ -929,12 +926,14 @@ the backend selects the instructions.
    implementations of one variant and are valid; absolute cycle counts are not
    comparable between variants.
 3. **Single core.** No multi-core scheduling, double buffering or cache hints.
-4. **The SIMT kernels are not tuned.** They use the first formulation a
-   thread-model implementation suggests, and A2 measures what that costs on one
-   variant: `T.reduce_max` in place of the serial scan takes `per_token/01` from
-   11.59x to **1.30x**. A separate SIMT-vs-SIMD suite sweeping several
-   strategies per kernel measured 0.33x-53x, including SIMT faster on some
-   grouped reductions.
+4. **The reductions are spelled for speed; nothing else is.** Every fold in
+   `per_token` and `per_block` is `T.reduce_absmax` (A2, A3); `per_channel`
+   scans, because its fold runs down the token axis where one thread per channel
+   already uses all 128 threads — 1.06x, measured — and because on its two
+   byte-packing variants the library call does not lower. The format work and
+   the `cast_back` family are untuned. A separate SIMT-vs-SIMD suite sweeping
+   several strategies per kernel measured 0.33x-53x, including SIMT faster on
+   some grouped reductions.
 5. **Line counts exclude helpers defined outside the VF region**, in all
    frontends. This understates SIMT by 18 lines on each of the two FP4 variants.
 
@@ -955,14 +954,15 @@ Measured on `per_token/01`, the same kernel built at three declared widths
 
 | `threads` | simulated cycles | vs 128 | correct |
 |---:|---:|---:|---|
-| 32 | 71,278 | 1.00x | yes |
-| 64 | 69,047 | 0.96x | yes |
-| 128 | 71,606 | 1.00x | yes |
+| 32 | 8,911 | 1.09x | yes |
+| 64 | **6,661** | **0.81x** | yes |
+| 128 | 8,204 | 1.00x | yes |
 
-**Lowering the declared thread count does not recover the cost.** Across a 4x
-range the spread is under 4%, so the penalty is not caused by declaring more
-threads than the reduction uses. It is the per-element execution model: ~37,000
-instructions at 1.95 cycles each, against 32 VF launches of vector work.
+**It is worth 19%, and every kernel here declares 128.** At `threads=64` this
+variant lands 1.08x ASC, 8% off. The same sweep on the serial-scan spelling the tier
+used to ship found all three widths within 4% of each other — the declared
+width only started to matter once the fold stopped wasting threads. Nothing in
+this deck is tuned on it: 128 throughout.
 
 ---
 
@@ -970,26 +970,27 @@ instructions at 1.95 cycles each, against 32 VF launches of vector work.
 
 **SIMT reduces source size where the SIMD frontends move data between lanes.**
 A group broadcast (B1, 16 lines to 6), a lane interleave (C1, 35 to 17) and a
-register gather (C2, 54 to 15), costing 3.28x, 7.02x and 13.74x cycles. In each
-the SIMD code is dominated by index arithmetic the thread model does not
-require, and at `per_channel/02` SIMT also deletes the 256-lane padding rule.
-Those ratios are the untuned spelling: A2 takes `per_token/01` from 11.59x to
-1.30x by changing one line, so they bound a port, not the model.
+register gather (C2, 54 to 16), costing 3.28x, 7.02x and 1.99x cycles — index
+arithmetic the thread model does not require, plus the 256-lane padding rule.
+
+**A `T.Parallel` must be as wide as its data, and that was most of the SIMT
+column.** Handing each fold to `T.reduce_absmax` instead of one thread per quant
+group took `per_token/01` from 11.59x to 1.33x and `per_block/01` from 17.75x to
+2.45x, output unchanged (A2, A3).
 
 **PTO simplifies where a segment count or a width replaces repetition** (A2,
 B2: 39 operations to 19 and 45 to 14) **and costs source length where there is
 nothing to factor out** (B3: 4 lines longer at an identical operation count).
 
 **Neither SIMD frontend has anything to simplify where the operation already
-maps onto the hardware.** When a channel occupies one lane (A1) or the value
-placed is a scalar (`per_block/01`), ASC and PTO use 17 and 16 operations and 21
-lines each, and SIMT's shorter source expresses the same three stages.
+maps onto the hardware** — a channel in one lane (A1), or a scalar scale
+(`per_block/01`): 17 operations against 16 and 21 lines each.
 
 **Where the hardware has an instruction, the frontend that can name it wins by
 a wide margin.** All three run on the same unit; only ASC and PTO have a call
 reaching the e2m1 convert, and FP4 output (D1) costs SIMT
-99.6x — 1.78x of it a code-generation gap
-(branch divergence), the remaining 56.0x a software encoder
+91.3x — 2.09x of it a code-generation gap
+(branch divergence), the remaining 43.7x a software encoder
 standing in for one instruction.
 
 ---
@@ -999,7 +1000,7 @@ standing in for one instruction.
 **SIMT** — when the kernel is dominated by data placement (packing, transposes,
 gathers) and development time is worth more than cycles. It is never faster
 here: the shorter source is bought with cycles.
-*`per_token/05` 54 lines to 15 at 13.74x · `per_channel/02` 35 to 17 at 7.02x · `cast_back/01` 16 to 6 at 3.28x*
+*`per_token/05` 54 lines to 16 at 1.99x · `per_channel/02` 35 to 17 at 7.02x · `cast_back/01` 16 to 6 at 3.28x*
 
 **PTO/VMI** — general production vector code, and anywhere a segment count or a
 width replaces repetition: 74% of ASC's operations at 0.92x of its

@@ -71,7 +71,7 @@ quantities.
 ## SIMT — mechanical, with one exactness argument worth keeping
 
 The modes are trace-time Python flags, so the port is mechanical in the same way
-[per_token/06](../per_token/06_split_requant.md) is. 28 lines against ASC's 33
+[per_token/06](../per_token/06_split_requant.md) is. 24 lines against ASC's 33
 and PTO's 37.
 
 The one thing worth reading closely is `cast_only`, because this page's strongest

@@ -33,22 +33,22 @@ wrong answer is worse than no number.
 | `cast_back/04_per_channel_sf` | 2,016 | 2,048 | 6,983 | 1.02x | 3.46x |
 | `cast_back/05_fp4_e2m1` | 2,296 | 2,584 | 10,152 | 1.13x | 4.42x |
 | `cast_back/06_col_major_compose` | 2,272 | 2,528 | 9,275 | 1.11x | 4.08x |
-| `per_block/01_raw_32x32` | 1,086 | 924 | 19,276 | **0.85x** | 17.75x |
-| `per_block/02_round_packed` | 918 | 936 | 19,444 | 1.02x | 21.18x |
-| `per_block/03_fp4_e2m1` | 1,625 | 1,040 | 27,256 | **0.64x** | 16.77x |
-| `per_block/04_col_major_tma` | 1,414 | 924 | 19,272 | **0.65x** | 13.63x |
-| `per_block/05_split_compose` | 918 | 940 | 19,444 | 1.02x | 21.18x |
+| `per_block/01_raw_32x32` | 1,086 | 924 | 2,664 | **0.85x** | 2.45x |
+| `per_block/02_round_packed` | 918 | 936 | 3,130 | 1.02x | 3.41x |
+| `per_block/03_fp4_e2m1` | 1,625 | 1,040 | 16,536 | **0.64x** | 10.18x |
+| `per_block/04_col_major_tma` | 1,414 | 924 | 3,044 | **0.65x** | 2.15x |
+| `per_block/05_split_compose` | 918 | 940 | 3,130 | 1.02x | 3.41x |
 | `per_channel/01_raw_32tokens` | 502 | 387 | 2,677 | **0.77x** | 5.33x |
 | `per_channel/02_round_packed_m` | 849 | 811 | 5,964 | **0.96x** | 7.02x |
 | `per_channel/03_requant_bf16` | 930 | 721 | 4,073 | **0.78x** | 4.38x |
 | `per_channel/04_compose` | 738 | 736 | 5,964 | 1.00x | 8.08x |
-| `per_token/01_raw_fp32sf` | 6,176 | 4,576 | 71,606 | **0.74x** | 11.59x |
-| `per_token/02_round_sf` | 4,608 | 4,688 | 71,008 | 1.02x | 15.41x |
-| `per_token/03_packed_ue8m0` | 4,608 | 4,672 | 74,136 | 1.01x | 16.09x |
-| `per_token/04_fp32_in_fp4_out` | 6,160 | 4,784 | 613,632 | **0.78x** | 99.62x |
-| `per_token/05_col_major_sf` | 5,477 | 5,448 | 75,281 | 0.99x | 13.74x |
-| `per_token/06_split_requant` | 6,864 | 4,576 | 71,606 | **0.67x** | 10.43x |
-| `per_token/07_bf16_fast_compose` | 4,864 | 5,136 | 72,490 | 1.06x | 14.90x |
+| `per_token/01_raw_fp32sf` | 6,176 | 4,576 | 8,204 | **0.74x** | 1.33x |
+| `per_token/02_round_sf` | 4,608 | 4,688 | 8,197 | 1.02x | 1.78x |
+| `per_token/03_packed_ue8m0` | 4,608 | 4,672 | 9,893 | 1.01x | 2.15x |
+| `per_token/04_fp32_in_fp4_out` | 6,160 | 4,784 | 562,280 | **0.78x** | 91.28x |
+| `per_token/05_col_major_sf` | 5,477 | 5,448 | 10,897 | 0.99x | 1.99x |
+| `per_token/06_split_requant` | 6,864 | 4,576 | 8,204 | **0.67x** | 1.20x |
+| `per_token/07_bf16_fast_compose` | 4,864 | 5,136 | 8,502 | 1.06x | 1.75x |
 
 Variants that do not run at the default `32x128`: `per_channel/02_round_packed_m` at `64x128`, `per_channel/04_compose` at `64x128`, `per_token/07_bf16_fast_compose` at `32x256`.
 
@@ -59,7 +59,7 @@ on one shape per variant, and a fraction of a percent is not a result.
 
 **PTO vs ASC**, over 22 variants: 0.64x (`per_block/03_fp4_e2m1`) to 1.13x (`cast_back/05_fp4_e2m1`), mean 0.92x.
 
-**SIMT vs ASC**, over 22 variants: 3.20x (`cast_back/02_packed_ue8m0`) to 99.62x (`per_token/04_fp32_in_fp4_out`), mean 14.50x.
+**SIMT vs ASC**, over 22 variants: 1.20x (`per_token/06_split_requant`) to 91.28x (`per_token/04_fp32_in_fp4_out`), mean 7.71x.
 
 ## PTO is faster than ASC on some variants
 
@@ -75,15 +75,15 @@ comparison is like-for-like.
 
 ## Reading the SIMT column
 
-SIMT is slower on every variant here, by between 3.20x (`cast_back/02_packed_ue8m0`) and 99.62x (`per_token/04_fp32_in_fp4_out`). Three things are
+SIMT is slower on every variant here, by between 1.20x (`per_token/06_split_requant`) and 91.28x (`per_token/04_fp32_in_fp4_out`). Three things are
 worth separating out.
 
 **The top of that range is one variant, and it decomposes.**
-`per_token/04_fp32_in_fp4_out` at 100x is the FP4 output: no FP4 store is reachable
+`per_token/04_fp32_in_fp4_out` at 91x is the FP4 output: no FP4 store is reachable
 from a `SimtVF` region, so an 18-line hand-written e2m1 encoder stands
 in for a hardware conversion the SIMD tiers simply name. Dropping that
-one row, the range is 3.20x to 21.18x with a mean
-of 10.44x (median 11.59x).
+one row, the range is 1.20x to 10.18x with a mean
+of 3.73x (median 3.41x).
 Read the headline mean with that in mind.
 
 That row was worth taking apart rather than filing as "encoders are
@@ -91,24 +91,25 @@ expensive", and it splits into two independent factors:
 
 | factor | measured |
 |---|---|
-| more instructions than its sibling SIMT variants | 124,294 against ~37,000 |
-| worse cycles per instruction | 4.94 against 1.90-2.01 |
+| more instructions than its sibling SIMT variants | 243,130 against 4,036-5,828 |
+| of those, pure control flow | 44,835 `SIMT_BRANCH` + 22,788 predicate sets |
 
 The second factor is **branch divergence**, and it is not inherent.
 `per_token/04_fp32_in_fp4_out` is the only variant in the ladder carrying a large number of
-`SIMT_START_DVG` / `SIMT_END_DVG` markers, because `T.if_then_else` on
-a data-dependent per-element condition lowers to a real branch rather
-than a predicated select. That variant therefore **ships both
-spellings**, the harness asserts they are byte-identical, and both are
-measured -- see "Alternative spellings" below for the numbers and
-`harness/probe/simt_divergence.py` for the controlled experiment.
+`SIMT_BRANCH` and `SIMT_START_DVG` / `SIMT_END_DVG` markers, because
+`T.if_then_else` on a data-dependent per-element condition lowers to a
+real branch rather than a predicated select. That variant therefore
+**ships both spellings**, the harness asserts they are byte-identical,
+and both are measured -- see "Alternative spellings" below for the
+numbers and `harness/probe/simt_divergence.py` for the controlled
+experiment.
 
-The short version: the branch-free spelling issues 45% **more**
-instructions and runs **1.78x fewer cycles (613,632 to 345,189)** -- 56.0x ASC rather than 99.6x -- and its cycles per instruction
-lands on the rest of the tier's 1.90-2.01 instead of 4.94.
+The short version: the branch-free spelling issues 37% **fewer**
+instructions and runs **2.09x fewer cycles (562,280 to 269,370)** -- 43.7x ASC rather than 91.3x -- because the instructions it
+drops are the branching itself.
 
 Two conclusions, and they pull in opposite directions, which is why
-both are stated. The 99.62x is a true measurement of the kernel as
+both are stated. The 91.28x is a true measurement of the kernel as
 written, and it is not a measurement artefact -- the trace audit
 confirms the right kernel with the right launch count. But that slice
 of it is a **codegen gap** rather than a cost of the thread model: on a
@@ -116,23 +117,37 @@ GPU the conditional would be predicated into a select and cost nothing.
 The default keeps the natural spelling deliberately, since the
 comparison asked for was the one a GPU programmer writes first.
 
-**The cost is not the arithmetic.** Scalar bit manipulation is
-essentially free; what SIMT gives up is lane occupancy. The small-group
-reductions are the extreme case: with `group_size = 32` a kernel that
-puts one thread on each quant group is using 4 threads out of 128.
+**What SIMT gives up is thread occupancy, and the width of a
+`T.Parallel` is the whole of it.** This table measures that directly,
+because the SIMT tier was re-spelled once already. Every reduction in
+`per_token` and `per_block` first shipped as one thread per quant group
+(or per tile row) with an inner `T.serial`, which on `group_size = 32`
+is 4 busy threads out of 128. Written instead as one thread per element
+plus `T.reduce_absmax`, `per_token/01` went from 71,606 cycles to
+8,204 -- 11.59x ASC to 1.33x -- and `per_block/01` from 19,276 to
+2,664. `harness/probe/simt_reduce_max.py` measures the two spellings of
+one kernel side by side and checks they are byte-identical. Nothing
+about the arithmetic changed; scalar bit manipulation is essentially
+free either way.
 
 **Shorter source and fewer cycles are different axes.** Across all 22
-variants SIMT is 53% of ASC's source lines inside the VF region
-(`python tools/vf_lines.py`). `per_token/05` is where the two axes
-separate most cleanly: it is the largest source-length win in the
-ladder — 15 lines against ASC's 54 — and it costs 13.74x the cycles.
-The thread model removes the lane-placement problem there, and leaves
-most of the vector unit idle doing it.
+variants SIMT is 51% of ASC's source lines inside the VF region
+(`python tools/vf_lines.py`). The two axes used to separate most
+clearly on `per_token/05`; with the reduction spelled right that row
+is now a win on both (16 lines against ASC's 54, at 1.99x). Where they
+still part company is `per_channel/04`: 17 lines against ASC's 46, and
+8.08x the cycles. The thread model removes the lane-placement problem
+there -- an interleaved byte pack that costs ASC a `vintlv` and a
+padded scratch row -- and leaves most of the vector unit idle doing it.
 
-**None of this was tuned.** The SIMT kernels are written the way a
-GPU programmer would write them first, which is the comparison that
-was wanted here. A tuned SIMT kernel lands somewhere else, and the
-next section says how far.
+**The reductions are spelled for speed; the format work is not.**
+After the re-spelling above, what remains of the SIMT gap is where a
+SIMD frontend *names* an instruction that the thread model has to
+write out: the e2m1 encoder (`per_token/04`, `per_block/03`), the
+UE8M0 byte pack (`per_channel/02`, `/04`) and the elementwise
+`cast_back` family, which has no reduction to win and sits at
+3.20-4.42x on scalar issue alone. None of those were tuned, and the
+next section says how far tuning moves such a kernel.
 
 ## Do not generalise this table past this sample
 
@@ -140,9 +155,10 @@ Every row here has SIMT slower, and it would be easy to read that as
 a law. It is not one, for two reasons.
 
 **These are 22 single-config quantization kernels, one shape each.**
-The reductions all have `group_size = 32`, which is the case that
-leaves the most threads idle. A kernel whose natural parallelism
-matches the thread count would not look like this.
+The reductions all have `group_size = 32`. That was the case that
+left the most threads idle until the fold was handed to
+`T.reduce_absmax`; a kernel whose natural parallelism matches the
+thread count differently would not look like this either way.
 
 **Tuning moves it by more than the gap on some variants.** A separate
 SIMT-versus-SIMD suite, measured on the same simulator and SoC but
@@ -215,8 +231,8 @@ variant.
 
 | variant | spelling | cycles | vs the default | vs ASC |
 |---|---|---:|---:|---:|
-| `per_token/04_fp32_in_fp4_out` | default (`T.if_then_else`) | 613,632 | 1.00x | 99.6x |
-| `per_token/04_fp32_in_fp4_out` | `branch_free` | **345,189** | **0.56x** | **56.0x** |
+| `per_token/04_fp32_in_fp4_out` | default (`T.if_then_else`) | 562,280 | 1.00x | 91.3x |
+| `per_token/04_fp32_in_fp4_out` | `branch_free` | **269,370** | **0.48x** | **43.7x** |
 
 `branch_free` is the e2m1 encoder's conditionals as mask arithmetic instead of `T.if_then_else`. It issues **more** instructions than the
 default and runs in fewer cycles, because `T.if_then_else` on a

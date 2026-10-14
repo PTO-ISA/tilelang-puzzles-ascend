@@ -74,9 +74,9 @@ sf_ub[0] = T.Cast("uint8", biased)
 inv_ub[0] = T.reinterpret("float32", (254 - biased) << 23)
 ```
 
-20 lines against ASC's 28 and PTO's 33 — and unlike variant 01, this is a genuine
-saving, because the thing being saved is width plumbing around arithmetic that was
-never vector work in the first place.
+15 lines against ASC's 28 and PTO's 33, and here the thing being saved is width
+plumbing around arithmetic that was never vector work in the first place —
+where variant 01's saving is the reduction itself collapsing into one call.
 
 This is the same observation [per_token/02](../per_token/02_round_sf.md) makes
 about the exponent trick, sharpened: there the trick ran on 4 lanes, here on 1,

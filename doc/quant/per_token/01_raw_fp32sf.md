@@ -129,19 +129,20 @@ this repo uses it compiles and is numerically exact.
 `harness/probe/vf_lane_limits.py` re-checks it, because which bodies lower is a
 property of the toolchain version rather than of the hardware.
 
-## SIMT — a reduction is a loop again, and two traps worth knowing
+## SIMT — the reduction is a library call, and two traps worth knowing
 
 This is the first variant with a reduction, and it is where SIMT's shape diverges
 most from the SIMD tiers. ASC reduces 32 of 64 lanes with four masked `vcmax`
-calls; PTO collapses those to one `vcmax(..., group=4)`. SIMT does neither: one
-thread takes one quant group and walks it serially.
+calls; PTO collapses those to one `vcmax(..., group=4)`. SIMT names neither a
+lane nor a group: it gives one thread each *channel* and asks for the fold.
 
 ```python
-for g in T.Parallel(num_groups):
-    amax_l[g] = E4M3_CLAMP_MIN               # seeding makes the clamp free
-    for j in T.serial(group_size):
-        v = T.Cast("float32", x_ub[g * group_size + j])
-        amax_l[g] = T.max(amax_l[g], T.abs(v))
+for g, j in T.Parallel(num_groups, group_size):
+    x_l[g, j] = T.Cast("float32", x_ub[g * group_size + j])
+T.reduce_absmax(x_l, amax_l, dim=1)          # the group is the fast axis
+
+for g in T.Parallel(num_groups):             # a fold cannot be seeded, so the
+    amax_l[g] = T.max(amax_l[g], E4M3_CLAMP_MIN)   # clamp is its own pass
     inv_l[g] = E4M3_MAX / amax_l[g]
     sf_l[g]  = amax_l[g] / E4M3_MAX
 
@@ -149,13 +150,11 @@ for i in T.Parallel(hidden):
     q_l[i] = T.Cast("float32", x_ub[i]) * inv_l[i // group_size]
 ```
 
-15 lines against ASC's 37 and PTO's 24. But read the cycle column before
-concluding anything: with `group_size = 32` this puts one thread on each quant
-group, so the reduction runs 4 threads out of 128, and the measured cost is an
-**11.59x** ASC's simulated VF cycles — an order of magnitude, and the median of
-the whole ladder; see
-[the cycle comparison](../../quant_vf_cycle_comparison.md). Short source, slow
-kernel, and the two facts have the same cause.
+16 lines against ASC's 37 and PTO's 24, at **1.33x** ASC's simulated VF cycles
+— see [the cycle comparison](../../quant_vf_cycle_comparison.md). Making the
+group the *fast* axis of the fragment is what turns the quant group into a
+reduction axis; it is the same reshape the CUDA reference performs before its own
+`T.reduce_absmax(..., dim=2)` (`TileKernels/tile_kernels/quant/per_token_cast_cuda.py`).
 
 ### Two traps this variant taught
 
@@ -168,31 +167,32 @@ correct and the rest are other tokens' data, which looks exactly like a broken
 reduction. Keep UB buffers **flat** and put the group structure in the index;
 shared buffers accept any index arithmetic.
 
-**Why a serial scan rather than `T.reduce_max`? It costs 8.94x, and that is
-measured.** The library call does not fail: `T.reduce_max(dim=1)` on a
-`(num_groups, group_size)` fragment compiles and gives the right answer
-(`harness/probe/simt_limits.py`), and `harness/probe/simt_reduce_max.py` runs
-both spellings of *this* kernel, checks them against the same oracle, confirms
-they are byte-identical, and measures each one:
+**Why not a serial scan? It costs 8.73x, and that is measured.** The obvious
+alternative — one thread per quant group, walking its own 32 channels with an
+inner `T.serial` — is shorter by a line, lets the accumulator be *seeded* with
+`E4M3_CLAMP_MIN` so the clamp is free, and is what this tier shipped first.
+`harness/probe/simt_reduce_max.py` builds both spellings of *this* kernel, checks
+them against the same oracle, confirms they are byte-identical, and measures
+each:
 
-| reduction spelling | VF_SIMT cycles | vs ASC's 6,176 | issued abs/reduce ops |
-|---|---:|---:|---:|
-| serial scan (what this tier ships) | 71,606 | 11.59x | 4,096 |
-| `T.reduce_max` | **8,012** | **1.30x** | 256 |
+| reduction spelling | VF_SIMT cycles | vs ASC's 6,176 |
+|---|---:|---:|
+| one thread per group, inner `T.serial` | 71,606 | 11.59x |
+| `T.reduce_absmax` (what this tier ships) | **8,204** | **1.33x** |
 
-The cause is thread occupancy. `T.Parallel(num_groups)` has extent 4 here, so
-the scan keeps 4 of 128 threads busy and issues its inner body 32 times over;
-`T.Parallel(num_groups, group_size)` gives every thread one element and leaves
-the fold to the backend.
+The cause is thread occupancy, not the library call. `T.Parallel(num_groups)` has
+extent 4 here, so the scan keeps 4 of 128 threads busy and issues its inner body
+32 times over; `T.Parallel(num_groups, group_size)` gives every thread one
+element and leaves the fold to the backend. The probe's scan arm reproduces this
+page's old published figure of 71,606 exactly, and its `T.reduce_absmax` arm
+reproduces the shipped kernel's 8,204 — which is what makes the 8.73x a
+comparison of spellings and nothing else.
 
-The scan is nonetheless what the tier ships, for two teaching reasons: the
-accumulator can be **seeded** with `E4M3_CLAMP_MIN`, which makes the clamp free,
-and every later variant needs somewhere to put the exponent arithmetic that
-follows the maximum. That uniformity is worth having in a ladder meant to be
-read in order — but it is not free, and the measured cycle counts in
-`doc/quant_vf_cycle_comparison.md` are the cost of a spelling, not a property of
-the thread model. Anyone porting this for speed should start from
-`T.reduce_max`.
+The one place the scan survives in this repo is
+[`per_channel`](../per_channel/01_raw_32tokens.md), where the reduction runs
+*down* the token axis: one thread per channel already uses all 128 threads, so
+there is no occupancy to recover, and the CUDA reference reduces that case with
+the same serial scan over rows.
 
 ### The rule that shapes every SIMT kernel here
 

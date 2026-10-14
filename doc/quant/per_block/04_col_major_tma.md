@@ -68,7 +68,7 @@ of indices on the final copy:
 T.copy(sf_ub[0:1], SfCm[kb, mb:mb + 1])
 ```
 
-18 lines against ASC's 21 and PTO's 25 — the same as variant 01 in every tier,
+13 lines against ASC's 21 and PTO's 25 — the same as variant 01 in every tier,
 which is the no-change result all three report.
 
 The contrast with [per_token/05](../per_token/05_col_major_sf.md) is worth

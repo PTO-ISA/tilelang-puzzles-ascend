@@ -48,15 +48,17 @@ def compile_kernel(hidden: int, group_size: int = CANONICAL_G):
 
                 # --- BEGIN SOLUTION hint="this is variant 03's body unchanged, at hidden=256 and num_groups=8. That is the honest answer: the SIMD tiers earn this variant by computing in bfloat16 so one instruction covers 256 values and `group=8` folds eight reductions into one op, but SIMT has no lane width to trade -- threads are the parallelism, T.copy widens bfloat16 to float32 on the way into a fragment, and a bfloat16 cross-thread reduction ICEs. Write the float32 path: reduce per group, exponent trick, store the biased exponent as a uint8, apply. The result is bit-identical because a power-of-two scale multiplies exactly in either precision."
                 with T.SimtVF(threads=THREADS):
+                    x_l = T.alloc_fragment((num_groups, group_size), T.float32)
+                    amax_l = T.alloc_fragment((num_groups,), T.float32)
                     q_l = T.alloc_fragment((hidden,), T.float32)
                     inv_l = T.alloc_fragment((num_groups,), T.float32)
 
+                    for g, j in T.Parallel(num_groups, group_size):
+                        x_l[g, j] = T.Cast("float32", x_ub[g * group_size + j])
+                    T.reduce_absmax(x_l, amax_l, dim=1)
+
                     for g in T.Parallel(num_groups):
-                        amax = T.alloc_var(T.float32)
-                        amax = E4M3_CLAMP_MIN
-                        for j in T.serial(group_size):
-                            v = T.Cast("float32", x_ub[g * group_size + j])
-                            amax = T.max(amax, T.abs(v))
+                        amax = T.max(amax_l[g], E4M3_CLAMP_MIN)
 
                         bits = T.reinterpret("int32", amax / E4M3_MAX)
                         biased = ((bits - 1) >> 23) + 1

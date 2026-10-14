@@ -45,9 +45,9 @@ ladder written that way, and
 So the interesting question is not whether the thread model exists on this chip
 but what it costs, and there is a measurement rather than an opinion:
 
-- **53% of ASC's source lines** across all 22 variants, inside the VF region.
-- **3.20x to 21.18x ASC's simulated VF cycles, mean 10.44x**, plus one outlier
-  at 99.62x where a hand-written FP4 encoder replaces a hardware convert — see
+- **51% of ASC's source lines** across all 22 variants, inside the VF region.
+- **1.20x to 10.18x ASC's simulated VF cycles, mean 3.73x**, plus one outlier
+  at 91.28x where a hand-written FP4 encoder replaces a hardware convert — see
   [`quant_vf_cycle_comparison.md`](quant_vf_cycle_comparison.md).
 
 Two specifics are worth carrying back to the GPU comparison.
@@ -59,16 +59,18 @@ lets any element go anywhere", the SIMT tier confirms it on this chip:
 `S.vgather2`, PTO nearly as much, and SIMT one subscript. The cost was never
 the chip; it was the choice to program the vector registers directly.
 
-**But the GPU-style spelling leaves the vector unit idle.** `per_token/05` also
-costs 13.74x ASC's cycles. With `group_size = 32`, a kernel that puts one thread
-on each quant group uses 4 threads out of 128. On a GPU the hardware scheduler
-hides a lot of that; here the cost is visible and large.
+**But the GPU-style spelling leaves the vector unit idle if you choose the wrong
+extent.** With `group_size = 32`, a kernel that puts one thread on each quant
+group uses 4 threads out of 128 — and that, not the thread model, is what the
+first version of the SIMT tier measured: `per_token/01` cost 11.59x ASC's cycles
+written that way and costs **1.33x** written as one thread per channel plus
+`T.reduce_absmax`. On a GPU the hardware scheduler hides a lot of such a choice;
+here the cost is visible and large, in both directions.
 
 The useful conclusion is not that one model wins. It is that **ease of expression
 and lane occupancy are separate axes**, and the NPU exposes the trade where the
 GPU mostly hides it. A GPU programmer coming to this chip can write `T.Parallel`
-and be correct quickly — and then has a measured reason to care about what the
-SIMD tiers are buying.
+and be correct quickly — and then has a measured reason to care how wide it is.
 
 ## What the NPU makes explicit that the GPU hides
 

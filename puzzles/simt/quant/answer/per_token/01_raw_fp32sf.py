@@ -40,21 +40,27 @@ def compile_kernel(hidden: int, group_size: int = CANONICAL_G):
             for token in T.serial(num_tokens):
                 T.copy(X[token, 0], x_ub)
 
-                # --- BEGIN SOLUTION hint="open `with T.SimtVF(threads=128):` and allocate float32 fragments shaped (num_groups, group_size) -- making the group the fast axis is what turns the quant group into a reduction axis. T.copy widens the bfloat16 input. Reduce with one thread per group -- T.Parallel(num_groups) with an inner T.serial(group_size) accumulating into amax_l[g], seeded at E4M3_CLAMP_MIN so the clamp is free -- and form sf and its reciprocal in the same body. T.reduce_max(dim=1) on a (num_groups, group_size) fragment also works here -- harness/probe/simt_limits.py confirms it -- but the explicit scan is what the rest of the tier is written against: it lets the accumulator be SEEDED with the clamp instead of clamping afterwards, and it is the same spelling the later variants need once the scale math grows. Then one T.Parallel(num_groups, group_size) applying inv_l[g] to x_l[g, j]; indexing a (num_groups,) fragment by [g] inside a 2-D Parallel is fine, since the one-pattern rule is per buffer. T.copy the fragments out to shared."
+                # --- BEGIN SOLUTION hint="open `with T.SimtVF(threads=128):` and allocate a float32 fragment shaped (num_groups, group_size) -- making the group the fast axis is what turns the quant group into a reduction axis, the same reshape the CUDA reference does before its own T.reduce_absmax. Fill it with one thread per CHANNEL -- T.Parallel(num_groups, group_size) widening x_ub -- and fold it with T.reduce_absmax(x_l, amax_l, dim=1). Do NOT write the reduction as T.Parallel(num_groups) with an inner T.serial: one thread per GROUP is 4 threads of 128, and it measures 8.73x slower (harness/probe/simt_reduce_max.py). Clamp after the fold, since a library reduction cannot be seeded, then form sf and its reciprocal. Then one T.Parallel(hidden) applying inv_l[i // group_size]; indexing a (num_groups,) fragment inside a differently-shaped Parallel is fine, since the one-pattern rule is per buffer. T.copy the fragments out to shared."
                 with T.SimtVF(threads=THREADS):
+                    x_l = T.alloc_fragment((num_groups, group_size), T.float32)
                     q_l = T.alloc_fragment((hidden,), T.float32)
                     amax_l = T.alloc_fragment((num_groups,), T.float32)
                     inv_l = T.alloc_fragment((num_groups,), T.float32)
                     sf_l = T.alloc_fragment((num_groups,), T.float32)
 
-                    # Pass 1: one thread per group, scanning its own 32 channels
-                    # straight out of UB. Seeding the accumulator with the clamp
-                    # makes the clamp free.
+                    # Pass 1: one thread per CHANNEL widens the token into a
+                    # (group, channel) fragment, and T.reduce_absmax folds the
+                    # fast axis. One thread per GROUP with an inner T.serial
+                    # also works and is 8.73x slower, because it leaves 124 of
+                    # the 128 threads idle: harness/probe/simt_reduce_max.py.
+                    for g, j in T.Parallel(num_groups, group_size):
+                        x_l[g, j] = T.Cast("float32", x_ub[g * group_size + j])
+                    T.reduce_absmax(x_l, amax_l, dim=1)
+
+                    # A library reduction cannot be seeded, so the clamp that
+                    # the scan got for free is a pass of its own.
                     for g in T.Parallel(num_groups):
-                        amax_l[g] = E4M3_CLAMP_MIN
-                        for j in T.serial(group_size):
-                            v = T.Cast("float32", x_ub[g * group_size + j])
-                            amax_l[g] = T.max(amax_l[g], T.abs(v))
+                        amax_l[g] = T.max(amax_l[g], E4M3_CLAMP_MIN)
                         inv_l[g] = E4M3_MAX / amax_l[g]
                         sf_l[g] = amax_l[g] / E4M3_MAX
 

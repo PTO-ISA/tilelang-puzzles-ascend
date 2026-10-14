@@ -134,7 +134,7 @@ and the reduction uses only the **exponent** of the maximum, which bfloat16
 represents exactly. The harness asserts exactly that, and the SIMT arm passes it
 for free by computing in float32 throughout.
 
-15 lines against ASC's 39 and PTO's 24 — a real number that nonetheless measures
+16 lines against ASC's 39 and PTO's 24 — a real number that nonetheless measures
 the wrong thing here, since the saving is variant 03's, not this variant's.
 
 ## What the harness checks

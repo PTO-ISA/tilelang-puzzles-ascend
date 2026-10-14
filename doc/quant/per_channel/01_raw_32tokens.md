@@ -121,6 +121,34 @@ No group arithmetic anywhere, in any tier. 12 lines against ASC's 21 and PTO's
 21 — the shortest of the three, but the saving is notation, not structure: the
 kernel has the same three stages and the same memory traffic in all three.
 
+### Why this family keeps the serial scan
+
+Every other SIMT reduction in the repo is a `T.reduce_absmax` call, because one
+thread per *quant group* leaves 124 of 128 threads idle and costs
+[8.73x](../per_token/01_raw_fp32sf.md). That argument does not apply here, and
+the difference is the axis:
+
+- **There is no occupancy to recover.** One thread per channel is 128 of 128
+  threads already. Writing the fold as `T.reduce_absmax(x_l, amax_l, dim=0)`
+  measures **2,530** cycles against the scan's **2,677** — 1.06x, on a
+  simulator, where this repo calls anything under 1.02x a draw — and costs one
+  line more, because the clamp can no longer be the accumulator's seed.
+- **The CUDA reference reduces this case the same way.** `per_token_cast_cuda.py`
+  and `per_block_cast_cuda.py` both fold with `T.reduce_absmax` / `T.reduce_max`;
+  `per_channel_cast_cuda.py` does not. It keeps a per-thread `amax_local[VEC_K]`
+  accumulated over a `T.serial(VEC_M)` walk down the rows, then folds across
+  threads through `amax_shared`. A column-wise maximum is a scan down rows on
+  that hardware too.
+- **On variants [02](02_round_packed_m.md) and [04](04_compose.md) the library
+  call does not lower at all.** Those write the scale as a UE8M0 *byte*, and with
+  the fold written as `T.reduce_absmax(dim=0)` the build fails with
+  `SimtVF cannot convert vector type uint8x2 to an Ascend type`. Reduced cases do
+  not reproduce it, so it is recorded as observed rather than diagnosed — see
+  [known-issues](../../known-issues.md).
+
+Keeping one spelling across the four variants matters more than 6% on the base
+variant, so the whole family scans.
+
 The rule this confirms, now from the thread side: **SIMT pays off where the SIMD
 tiers had to move data between lanes.** When the data already lines up with the
 lanes, there is nothing for the thread model to buy.
