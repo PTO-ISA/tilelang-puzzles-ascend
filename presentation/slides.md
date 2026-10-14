@@ -824,7 +824,7 @@ mant = bits & 0x7FFFFF
 | `per_token/04` | 6,160 | 4,784 (0.78x) | 562,280 (91.28x) | 34 / 23 / 17 |
 
 The result is bit-exact against the PyTorch reference packer. `per_block/03`
-carries the same encoder at 16.77x.
+carries the same encoder at 10.18x.
 
 ---
 
@@ -853,8 +853,37 @@ byte-identical.
 > Of the
 > 91.3x, a factor of 2.09x is a code-generation
 > gap a GPU compiler would not have, since it predicates such a conditional into
-> a select; the remaining 43.7x is a software encoder standing in
-> for one convert instruction.
+> a select; the rest is a software encoder standing in for one instruction.
+
+---
+
+## D1 `per_token/04`: the convert is reachable, from outside the region
+
+`T.Cast` to FP4 cannot work inside the region: the chip has no scalar FP4 type,
+and the convert is a *vector* instruction over `vector_f4e2m1x2`. Nine spellings
+fail (`harness/probe/simt_fp4_convert.py`). The kernel can still leave the
+region for that one instruction:
+
+```python
+with T.SimdVF():
+    for pair in T.serial(hidden // PAIR):
+        S.vsts(q_ub[pair * PAIR],
+               S.vcvt(S.vld(bf_ub[pair * PAIR]),
+                      T.float4_e2m1fn),
+               dist="PK4_B32")
+```
+
+| `per_token/04`, SIMT | cycles | vs ASC |
+|---|---:|---:|
+| the 18-line e2m1 encoder | 562,280 | 91.3x |
+| three lines of `T.SimdVF` | **7,778** | **1.26x** |
+
+**72.3x**, byte-identical, harness-verified; shipped behind
+`hw_convert=`, not the default.
+
+> **D1, continued** — "the frontend cannot name the instruction" is about the
+> *region*, not the kernel. The thread model keeps the index arithmetic; the
+> vector model keeps the one instruction that only exists as a vector.
 
 ---
 
@@ -914,7 +943,7 @@ the backend selects the instructions.
 
 - PTO uses fewer cycles on 9 of 22 variants, more on 6, within 2% on 7
 - The SIMT range excludes `per_token/04`; including it the maximum is 91.28x
-- SIMT costs under 6x on 18 of 22 variants and over 10x on 11
+- SIMT costs under 3x on 8 of 22 variants and over 10x on 2
 
 ---
 
@@ -930,8 +959,10 @@ the backend selects the instructions.
    `per_token` and `per_block` is `T.reduce_absmax` (A2, A3); `per_channel`
    scans, because its fold runs down the token axis where one thread per channel
    already uses all 128 threads — 1.06x, measured — and because on its two
-   byte-packing variants the library call does not lower. The format work and
-   the `cast_back` family are untuned. A separate SIMT-vs-SIMD suite sweeping
+   byte-packing variants the library call does not lower. The `cast_back` family
+   is untuned, and so is the format work *inside the region* — D1 measures what
+   leaving the region for one instruction is worth (72.29x on `per_token/04`),
+   and the ladder does not take it. A separate SIMT-vs-SIMD suite sweeping
    several strategies per kernel measured 0.33x-53x, including SIMT faster on
    some grouped reductions.
 5. **Line counts exclude helpers defined outside the VF region**, in all

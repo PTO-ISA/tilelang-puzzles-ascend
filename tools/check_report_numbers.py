@@ -119,9 +119,14 @@ def build_claims(cycles: dict, static: dict) -> list[tuple[str, str]]:
 
     # --- individual figures quoted in prose ----------------------------
     bf = cycles["simt/per_token/04_fp32_in_fp4_out+branch_free"]["cycles"]
+    hw = cycles["simt/per_token/04_fp32_in_fp4_out+hw_convert"]["cycles"]
     fp4 = c("simt", "per_token/04_fp32_in_fp4_out")
     claims += [
         ("branch-free cycles", f"**{bf:,.0f}**"),
+        # the third spelling: the e2m1 encoder replaced by a SimdVF convert
+        ("hw_convert cycles", f"| three lines of `T.SimdVF` | **{hw:,.0f}** | "
+                              f"**{hw / c('asc', 'per_token/04_fp32_in_fp4_out'):.2f}x** |"),
+        ("hw_convert speed-up", f"**{fp4 / hw:.2f}x**, bit-exact"),
         ("branch-free vs ASC",
          f"{bf / c('asc', 'per_token/04_fp32_in_fp4_out'):.1f}x ASC rather than "
          f"{fp4 / c('asc', 'per_token/04_fp32_in_fp4_out'):.1f}x"),

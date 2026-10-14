@@ -301,11 +301,22 @@ them **1.33x** and **2.45x** with byte-identical output;
 side (**8.73x**). `per_channel` keeps the scan, because its fold runs down the
 token axis where one thread per channel already uses all 128.
 
-`simt/per_token/04` ships **two spellings** of its encoder — the natural
-`T.if_then_else` and a branch-free mask form — because `T.if_then_else` lowers to
-a divergent branch here and the mask form is **2.09x faster while issuing 37%
-fewer instructions** (562,280 cycles down to 269,370). Both are checked by the harness to be byte-identical and
-both are measured. It is the clearest lesson in the tier, and a codegen gap
+`simt/per_token/04` ships **three spellings** of its output stage, all three
+checked by the harness to be byte-identical and all three measured. The default
+hand-writes the e2m1 encoder; `branch_free=True` respells its conditionals as
+mask arithmetic, which is **2.09x faster while issuing 37% fewer instructions**
+(562,280 cycles down to 269,370), because `T.if_then_else` lowers to a divergent
+branch here.
+
+The third is the interesting one. No `T.Cast` to FP4 lowers inside a `SimtVF`
+region — an fp4 element is four bits and the chip's only FP4 types are the
+vector ones, so a per-thread scalar has nothing to convert into, and
+`harness/probe/simt_fp4_convert.py` records the nine spellings that fail. But a
+kernel may hold a `T.SimtVF` region *and* a `T.SimdVF` region, so
+`hw_convert=True` does the reduction and the scales in the thread model and the
+convert in three lines of the vector model: **69.9x fewer cycles** (543,827 to
+7,778 in the probe), bit-exact. It is not the default, because the SIMT column
+measures what the thread model costs on its own. It is the clearest lesson in the tier, and a codegen gap
 rather than a cost of the thread model: a GPU compiler predicates that
 conditional into a select.
 
@@ -318,7 +329,7 @@ conditional into a select.
 README.md
 presentation/                   the standalone style-and-performance report
   quant_kernel_style_compare.md   SIMT vs PTO vs ASC: code size and measured cycles
-  quant_kernel_style_compare.pdf  the same argument as a 37-slide Beamer deck
+  quant_kernel_style_compare.pdf  the same argument as a 38-slide Beamer deck
   slides.md                       deck source (Marp dialect; generated)
   plots/                          charts, generated from perf/quant_vf_cycles.json
   optional/                       the same deck via Marp; see its README
@@ -419,6 +430,7 @@ python harness/probe/simt_limits.py             # what a T.SimtVF region can low
 python harness/probe/simt_limits.py --run       # ...and what it silently gets wrong
 python harness/probe/simt_thread_count.py      # does a smaller SIMT thread count help?
 python harness/probe/simt_reduce_max.py        # T.reduce_absmax vs a thread-per-group scan: 8.73x
+python harness/probe/simt_fp4_convert.py       # why no T.Cast reaches FP4, and the 69.9x way round
 python tools/vf_trace_audit.py                 # is each measured trace the quant kernel?
 ```
 

@@ -10,6 +10,7 @@ Run them after any tilelang / ptoas version bump:
 python harness/probe/vf_lane_limits.py          # compile-only, ~10s
 python harness/probe/vf_lane_limits.py --run    # + numerical check under the simulator
 python harness/probe/simt_reduce_max.py         # both reduction spellings, verified
+python harness/probe/simt_fp4_convert.py        # the hand encoder vs a SimdVF convert
 ```
 
 Two of them answer *performance* questions rather than "does it lower", and
@@ -18,6 +19,7 @@ their numbers are quoted in the deck and the report:
 | probe | question | answer |
 |---|---|---|
 | `simt_reduce_max.py` | is `T.reduce_absmax` better than a thread-per-group serial scan? | **yes, 8.73x** — 8,204 cycles against 71,606, byte-identical output. The tier was re-spelled; see below |
+| `simt_fp4_convert.py` | can a `SimtVF` region produce FP4, and what does the hand-written encoder cost? | **no, and 69.9x.** Nine spellings of a `T.Cast` to fp4 all fail — there is no scalar FP4 type on this chip. Leaving the region for a three-line `T.SimdVF` convert measures 7,778 cycles against 543,827, bit-exact |
 | `simt_thread_count.py` | does declaring fewer SIMT threads help? | **on the shipped fold, yes: 64 threads is 0.81x of 128** (6,661 against 8,204) — it was within 4% on the serial scan this tier used to ship |
 
 ## Measured 2026-10-07 on tilelang 0.1.15 + ptoas vmi 0.1.9

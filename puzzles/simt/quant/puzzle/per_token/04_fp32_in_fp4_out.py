@@ -3,11 +3,16 @@
 import torch
 import tilelang
 import tilelang.ascend.language as T
+from tilelang.ascend.language import simd as S
 
 from harness import status
 from harness.consts import CANONICAL_G, E2M1_CLAMP_MIN, E2M1_MAX
 
 THREADS = 128
+# bfloat16 lanes consumed by one packed-FP4 convert-and-store, as the SIMD
+# tiers use it: two float32 registers' worth. Only the hw_convert spelling
+# needs it.
+PAIR = 128
 
 
 def e2m1_nibble(v, branch_free: bool = False):
@@ -29,18 +34,19 @@ def e2m1_nibble(v, branch_free: bool = False):
     of 23 or more already yields 0.
 
     ``branch_free`` picks between two spellings of the three conditionals, and
-    nothing else. Both are bit-exact; they differ by **1.75x in cycles**.
+    nothing else. Both are bit-exact; they differ by **2.09x in cycles**.
 
     * ``False`` (the default, and what the ladder measures) uses
       ``T.if_then_else``, which is what a GPU programmer writes first. On this
       toolchain it lowers to a *real branch*, so threads whose values fall on
       different sides of the condition serialize: this variant is the only one
-      in the ladder with a large number of ``SIMT_START_DVG`` markers in its
-      trace, and it pays 4.95 cycles per instruction against the rest of the
-      tier's 1.90-2.01.
+      in the ladder whose trace carries ``SIMT_BRANCH`` and
+      ``SIMT_START_DVG`` markers in quantity -- 44,835 branches, where every
+      other SIMT kernel here has none.
     * ``True`` builds a 0/all-ones mask with ``-T.Cast("int32", cond)`` and
-      selects arithmetically. It issues **45% more instructions and runs 1.75x
-      fewer cycles**, because the divergence disappears entirely.
+      selects arithmetically. It issues **37% fewer instructions and runs 2.09x
+      fewer cycles** (562,280 to 269,370), because the instructions it drops
+      are the branching itself.
 
     The branch-free arm is safe only because both sides can always be evaluated:
     the shift is already clamped to 31, so ``mant_pre >> sh`` cannot be
@@ -89,30 +95,49 @@ def e2m1_nibble(v, branch_free: bool = False):
 
 @tilelang.jit(target="ascend")
 def compile_kernel(hidden: int, group_size: int = CANONICAL_G,
-                   branch_free: bool = False):
+                   branch_free: bool = False, hw_convert: bool = False):
     """Quantize float32 -> packed FP4 e2m1 with one FP32 scale per 32 channels.
 
     ``branch_free`` is a trace-time flag threaded into ``e2m1_nibble``; it
     changes no result, only how the encoder's conditionals are spelled. See that
     function's docstring, and `doc/quant/per_token/04_fp32_in_fp4_out.md` for
     the measurement.
+
+    ``hw_convert`` is a different kind of flag, and the reason it exists is the
+    most useful thing in this variant. It does **not** make the SimtVF region
+    reach the FP4 convert -- nothing can, because an fp4 element is four bits
+    and the toolchain's only FP4 types are the vector ones
+    (`vector_f4e2m1x2`), so a per-thread scalar has nothing to convert into
+    (`harness/probe/simt_fp4_convert.py` records the nine spellings that fail).
+    It leaves the region instead: the thread model does the reduction, the
+    scales and the round-to-odd, and a three-line ``T.SimdVF`` block does the
+    one instruction it owns. Same kernel, same results, **69.9x** fewer cycles.
+
+    The default stays ``False`` because the SIMT tier measures what the thread
+    model costs on its own, and a kernel that drops into ``T.SimdVF`` is no
+    longer answering that question. Both spellings ship and both are verified.
     """
     assert hidden % group_size == 0 and group_size == 32
     num_groups = hidden // group_size
     num_tokens = T.dynamic("num_tokens")
 
+    # The output dtype follows the spelling. With the hand-written encoder the
+    # kernel packs the nibbles itself, so it says uint8; with the hardware
+    # convert it declares float4_e2m1fn, exactly as the ASC and PTO tiers do.
+    # Both are the same bytes, and launch() hands back the same uint8 view.
+    out_dtype = T.float4_e2m1fn if hw_convert else T.uint8
+    out_cols = hidden if hw_convert else hidden // 2
+
     @T.prim_func
     def per_token_cast(
         X: T.Tensor((num_tokens, hidden), T.float32),
-        # uint8, two nibbles per byte. ASC and PTO declare float4_e2m1fn and let
-        # the hardware convert write the nibbles; a SimtVF region has no such
-        # convert, so the packing is explicit and the dtype says so.
-        Q: T.Tensor((num_tokens, hidden // 2), T.uint8),
+        Q: T.Tensor((num_tokens, out_cols), out_dtype),
         Sf: T.Tensor((num_tokens, num_groups), T.float32),
     ):
         with T.Kernel(1):
             x_ub = T.alloc_shared((hidden,), T.float32)
-            q_ub = T.alloc_shared((hidden // 2,), T.uint8)
+            q_ub = T.alloc_shared((out_cols,), out_dtype)
+            bf_ub = T.alloc_shared((hidden,), T.bfloat16)
             sf_ub = T.alloc_shared((num_groups,), T.float32)
 
             for token in T.serial(num_tokens):
@@ -128,7 +153,7 @@ def compile_kernel(hidden: int, group_size: int = CANONICAL_G,
                 #       float32 -> e2m1 convert and only pre-round to bfloat16
                 #       with a sticky bit. Read its docstring too: it holds BOTH
                 #       spellings of the three conditionals, and the branch-free
-                #       one is 1.75x faster for reasons worth knowing. Give each
+                #       one is 2.09x faster for reasons worth knowing. Give each
                 #       thread ONE OUTPUT BYTE: T.Parallel(hidden // 2), encode
                 #       x_ub[2*p] and x_ub[2*p+1], and pack them as lo | (hi <<
                 #       4), low nibble first. Both halves live in the same quant
@@ -148,18 +173,24 @@ def compile_kernel(hidden: int, group_size: int = CANONICAL_G,
     return per_token_cast
 
 
-def launch(x: torch.Tensor, branch_free: bool = False):
-    """``branch_free=True`` selects the faster, bit-identical encoder spelling.
+def launch(x: torch.Tensor, branch_free: bool = False, hw_convert: bool = False):
+    """Two additive flags, each selecting a bit-identical alternative spelling.
 
-    The keyword is additive and defaults to the shipped behaviour, so the
-    harness's ``launch(x)`` is the same call it makes on every other tier. The
-    harness does exercise both arms and asserts they agree byte for byte.
+    ``branch_free=True`` respells the encoder's conditionals as mask arithmetic.
+    ``hw_convert=True`` drops the encoder entirely and converts in a three-line
+    ``T.SimdVF`` block. Both default to the shipped behaviour, so the harness's
+    ``launch(x)`` is the same call it makes on every other tier -- and the
+    harness exercises all three arms and asserts they agree byte for byte.
     """
     m, hidden = x.shape
     q = torch.empty((m, hidden // 2), dtype=torch.uint8, device=x.device)
+    if hw_convert:                      # the same bytes, declared as fp4
+        q = q.view(torch.float4_e2m1fn_x2)
     sf = torch.empty((m, hidden // CANONICAL_G), dtype=torch.float32, device=x.device)
-    compile_kernel(hidden, branch_free=branch_free)(x, q, sf)
+    compile_kernel(hidden, branch_free=branch_free, hw_convert=hw_convert)(x, q, sf)
     status.assert_on_device("per_token 04", q, sf)
+    if hw_convert:                      # back to the byte view the harness wants
+        q = q.view(torch.uint8)
     return q.view(torch.int8), sf
 
 if __name__ == "__main__":        # not a script -- see the module docstring

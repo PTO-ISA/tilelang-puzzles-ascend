@@ -14,9 +14,10 @@ exponent_asc, puzzles/asc/quant/answer/per_token/02_round_sf.py, 63-71
 exponent_pto, puzzles/pto/quant/answer/per_token/02_round_sf.py, 35-44
 exponent_simt, puzzles/simt/quant/answer/per_token/02_round_sf.py, 52-60
 fp4_asc, puzzles/asc/quant/answer/per_token/04_fp32_in_fp4_out.py, 73-78
+fp4_hwcvt_simt, puzzles/simt/quant/answer/per_token/04_fp32_in_fp4_out.py, 193-198
 fp4_pto, puzzles/pto/quant/answer/per_token/04_fp32_in_fp4_out.py, 31-33
 fp4_pto_call, puzzles/pto/quant/answer/per_token/04_fp32_in_fp4_out.py, 79-80
-fp4_simt, puzzles/simt/quant/answer/per_token/04_fp32_in_fp4_out.py, 55-60
+fp4_simt, puzzles/simt/quant/answer/per_token/04_fp32_in_fp4_out.py, 61-66
 interleave_asc, puzzles/asc/quant/answer/per_channel/02_round_packed_m.py, 88-95
 interleave_pto, puzzles/pto/quant/answer/per_channel/02_round_packed_m.py, 94-101
 interleave_simt, puzzles/simt/quant/answer/per_channel/02_round_packed_m.py, 74-76
