@@ -24,6 +24,7 @@ outdtype_pto, puzzles/pto/quant/answer/cast_back/01_e4m3_fp32sf.py, 70-73
 pad_asc, puzzles/asc/quant/answer/per_channel/02_round_packed_m.py, 41-41
 pad_pto, puzzles/pto/quant/answer/per_channel/02_round_packed_m.py, 41-41
 pad_simt, puzzles/simt/quant/answer/per_channel/02_round_packed_m.py, 44-44
+reduce_max_simt, harness/probe/simt_reduce_max.py, 114-117
 segreduce_asc, puzzles/asc/quant/answer/per_token/01_raw_fp32sf.py, 59-70
 segreduce_pto, puzzles/pto/quant/answer/per_token/01_raw_fp32sf.py, 54-56
 segreduce_simt, puzzles/simt/quant/answer/per_token/01_raw_fp32sf.py, 53-59
@@ -33,7 +34,8 @@ transpose_asc, puzzles/asc/quant/answer/per_token/05_col_major_sf.py, 50-56
 transpose_asc_gather, puzzles/asc/quant/answer/per_token/05_col_major_sf.py, 115-116
 transpose_pto, puzzles/pto/quant/answer/per_token/05_col_major_sf.py, 50-59
 transpose_pto_gather, puzzles/pto/quant/answer/per_token/05_col_major_sf.py, 111-112
-transpose_simt, puzzles/simt/quant/answer/per_token/05_col_major_sf.py, 62-63
+transpose_simt, puzzles/simt/quant/answer/per_token/05_col_major_sf.py, 50-63
+transpose_simt_decl, puzzles/simt/quant/answer/per_token/05_col_major_sf.py, 38-39
 ue8m0_asc, puzzles/asc/quant/answer/cast_back/02_packed_ue8m0.py, 49-53
 ue8m0_pto, puzzles/pto/quant/answer/cast_back/02_packed_ue8m0.py, 52-56
 ue8m0_simt, puzzles/simt/quant/answer/cast_back/02_packed_ue8m0.py, 42-46

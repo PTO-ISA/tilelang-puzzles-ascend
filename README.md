@@ -310,7 +310,7 @@ conditional into a select.
 README.md
 presentation/                   the standalone style-and-performance report
   quant_kernel_style_compare.md   SIMT vs PTO vs ASC: code size and measured cycles
-  quant_kernel_style_compare.pdf  the same argument as a 35-slide Beamer deck
+  quant_kernel_style_compare.pdf  the same argument as a 37-slide Beamer deck
   slides.md                       deck source (Marp dialect; generated)
   plots/                          charts, generated from perf/quant_vf_cycles.json
   optional/                       the same deck via Marp; see its README
@@ -410,6 +410,7 @@ python harness/probe/fp8_out_idx.py             # whether out_idx can allocate F
 python harness/probe/simt_limits.py             # what a T.SimtVF region can lower
 python harness/probe/simt_limits.py --run       # ...and what it silently gets wrong
 python harness/probe/simt_thread_count.py      # does a smaller SIMT thread count help?
+python harness/probe/simt_reduce_max.py        # T.reduce_max vs the serial scan: 8.94x
 python tools/vf_trace_audit.py                 # is each measured trace the quant kernel?
 ```
 
