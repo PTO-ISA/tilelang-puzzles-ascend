@@ -31,6 +31,10 @@ from typing import NamedTuple
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "presentation" / "snippets"
 ANS = "puzzles/{tier}/quant/answer/{variant}.py"
+# One pseudo-tier: a fragment quoted from a probe rather than from a ladder
+# kernel. Probes run and assert like anything else, so a fragment cut from one
+# is still code that executed -- which is the only property that matters here.
+PROBE = "harness/probe/{variant}.py"
 
 
 class Cut(NamedTuple):
@@ -88,10 +92,14 @@ SNIPPETS: dict[str, Cut] = {
                          r"lane = V\.vci\(T\.int32\(0\), size=LANES\)", 10),
     "transpose_pto_gather": Cut("pto", "per_token/05_col_major_sf",
                                 r"V\.vstore\(V\.vgather\(sf_dense_ub", 2),
-    # one statement, with the comment that says what it replaces: the rest of
-    # this T.Parallel body is per_token/02's, quoted whole at B2.
+    # the whole T.Parallel body, so that g, biased and the store's two indices
+    # are all defined where the reader can see them
     "transpose_simt": Cut("simt", "per_token/05_col_major_sf",
-                          r"# The whole column-major config: a different index\.", 2),
+                          r"for g in T\.Parallel\(num_groups\):", 14),
+    # ...and the declaration that makes the store a transpose: the buffer is
+    # (groups, tokens) where the input is read token by token.
+    "transpose_simt_decl": Cut("simt", "per_token/05_col_major_sf",
+                               r"# Already transposed: one column per token", 2),
 
     # -- pattern 4: where PTO is already clean ------------------------------
     "chanreduce_asc": Cut("asc", "per_channel/01_raw_32tokens",
@@ -139,6 +147,10 @@ SNIPPETS: dict[str, Cut] = {
     "fp4_simt": Cut("simt", "per_token/04_fp32_in_fp4_out",
                     r'bits = T\.reinterpret\("int32", v\)', 6),
 
+    # -- A2's alternative reduction, measured by the probe it comes from -----
+    "reduce_max_simt": Cut("probe", "simt_reduce_max",
+                           r"for g, j in T\.Parallel\(num_groups, group_size\):", 4),
+
     # -- pattern 8: the static/dynamic inversion ----------------------------
     # Both per_block loops repeat `for chunk in ...`, so start the search at
     # the reduction pass's own first line.
@@ -157,7 +169,8 @@ SNIPPETS: dict[str, Cut] = {
 
 def resolve(name: str) -> tuple[Path, int, int, str]:
     cut = SNIPPETS[name]
-    path = ROOT / ANS.format(tier=cut.tier, variant=cut.variant)
+    tmpl = PROBE if cut.tier == "probe" else ANS
+    path = ROOT / tmpl.format(tier=cut.tier, variant=cut.variant)
     lines = path.read_text().splitlines()
 
     start, stop = 0, len(lines)

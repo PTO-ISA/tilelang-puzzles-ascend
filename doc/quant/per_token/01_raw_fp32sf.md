@@ -171,13 +171,31 @@ correct and the rest are other tokens' data, which looks exactly like a broken
 reduction. Keep UB buffers **flat** and put the group structure in the index;
 shared buffers accept any index arithmetic.
 
-**Why a serial scan rather than `T.reduce_max`?** Not because the library call
-fails — `T.reduce_max(dim=1)` on a `(num_groups, group_size)` fragment compiles
-and gives the right answer, and `harness/probe/simt_limits.py` checks that it
-still does. The scan is used because the accumulator can be **seeded** with
-`E4M3_CLAMP_MIN`, which makes the clamp free, and because every later variant
-needs somewhere to put the exponent arithmetic that follows the maximum. Writing
-it the same way throughout the tier is worth more than one shorter line here.
+**Why a serial scan rather than `T.reduce_max`? It costs 8.94x, and that is
+measured.** The library call does not fail: `T.reduce_max(dim=1)` on a
+`(num_groups, group_size)` fragment compiles and gives the right answer
+(`harness/probe/simt_limits.py`), and `harness/probe/simt_reduce_max.py` runs
+both spellings of *this* kernel, checks them against the same oracle, confirms
+they are byte-identical, and measures each one:
+
+| reduction spelling | VF_SIMT cycles | vs ASC's 6,176 | issued abs/reduce ops |
+|---|---:|---:|---:|
+| serial scan (what this tier ships) | 71,606 | 11.59x | 4,096 |
+| `T.reduce_max` | **8,012** | **1.30x** | 256 |
+
+The cause is thread occupancy. `T.Parallel(num_groups)` has extent 4 here, so
+the scan keeps 4 of 128 threads busy and issues its inner body 32 times over;
+`T.Parallel(num_groups, group_size)` gives every thread one element and leaves
+the fold to the backend.
+
+The scan is nonetheless what the tier ships, for two teaching reasons: the
+accumulator can be **seeded** with `E4M3_CLAMP_MIN`, which makes the clamp free,
+and every later variant needs somewhere to put the exponent arithmetic that
+follows the maximum. That uniformity is worth having in a ladder meant to be
+read in order — but it is not free, and the measured cycle counts in
+`doc/quant_vf_cycle_comparison.md` are the cost of a spelling, not a property of
+the thread model. Anyone porting this for speed should start from
+`T.reduce_max`.
 
 ### The rule that shapes every SIMT kernel here
 
