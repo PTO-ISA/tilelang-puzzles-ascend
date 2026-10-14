@@ -95,7 +95,7 @@ SNIPPETS: dict[str, Cut] = {
     # the whole T.Parallel body, so that g, biased and the store's two indices
     # are all defined where the reader can see them
     "transpose_simt": Cut("simt", "per_token/05_col_major_sf",
-                          r"for g in T\.Parallel\(num_groups\):", 14),
+                          r"for g in T\.Parallel\(num_groups\):", 10),
     # ...and the declaration that makes the store a transpose: the buffer is
     # (groups, tokens) where the input is read token by token.
     "transpose_simt_decl": Cut("simt", "per_token/05_col_major_sf",
@@ -118,7 +118,10 @@ SNIPPETS: dict[str, Cut] = {
                          after=r"pass 1: segmented reduce",
                          before=r"T\.simd\.mem_bar"),
     "segreduce_simt": Cut("simt", "per_token/01_raw_fp32sf",
-                          r"for g in T\.Parallel\(num_groups\):", 7),
+                          r"for g, j in T\.Parallel\(num_groups, group_size\):", 3),
+    # the fold's own pass, which is what ASC and PTO are cut to above
+    "segscale_simt": Cut("simt", "per_token/01_raw_fp32sf",
+                         r"for g in T\.Parallel\(num_groups\):", 4),
 
     # -- pattern 5b: width as an argument -----------------------------------
     "exponent_asc": Cut("asc", "per_token/02_round_sf",
@@ -127,7 +130,7 @@ SNIPPETS: dict[str, Cut] = {
                         r"one = V\.vbrc\(T\.uint32\(1\), size=lanes\)", 10),
     # spans the BEGIN SOLUTION marker, which resolve() drops
     "exponent_simt": Cut("simt", "per_token/02_round_sf",
-                         r"for g in T\.Parallel\(num_groups\):", 12),
+                         r"for g in T\.Parallel\(num_groups\):", 9),
 
     # -- pattern 6: where PTO costs you -------------------------------------
     "ue8m0_asc": Cut("asc", "cast_back/02_packed_ue8m0",
@@ -147,9 +150,11 @@ SNIPPETS: dict[str, Cut] = {
     "fp4_simt": Cut("simt", "per_token/04_fp32_in_fp4_out",
                     r'bits = T\.reinterpret\("int32", v\)', 6),
 
-    # -- A2's alternative reduction, measured by the probe it comes from -----
-    "reduce_max_simt": Cut("probe", "simt_reduce_max",
-                           r"for g, j in T\.Parallel\(num_groups, group_size\):", 4),
+    # -- A2's REJECTED reduction, cut from the probe that priced it ---------
+    "scan_simt": Cut("probe", "simt_reduce_max",
+                     r"for g in T\.Parallel\(num_groups\):", 5,
+                     after=r"if spelling == \"scan\":",
+                     before=r"inv_l\[g\] = E4M3_MAX"),
 
     # -- pattern 8: the static/dynamic inversion ----------------------------
     # Both per_block loops repeat `for chunk in ...`, so start the search at
@@ -159,7 +164,11 @@ SNIPPETS: dict[str, Cut] = {
                            after=r"mask_chunks = S\.pset",
                            before=r"S\.mem_bar"),
     "blockreduce_simt": Cut("simt", "per_block/01_raw_32x32",
-                            r"# level 1: one thread per row of the tile", 8),
+                            r"for i, j in T\.Parallel\(bm, bk\):", 3,
+                            after=r"One reduction, not two",
+                            before=r"for _z in T\.Parallel"),
+    "blockscale_simt": Cut("simt", "per_block/01_raw_32x32",
+                           r"for _z in T\.Parallel\(1\):", 4),
     "blockreduce_pto": Cut("pto", "per_block/01_raw_32x32",
                            r"for chunk in T\.serial\(num_chunks\):", 4,
                            after=r"one1 = V\.create_mask",

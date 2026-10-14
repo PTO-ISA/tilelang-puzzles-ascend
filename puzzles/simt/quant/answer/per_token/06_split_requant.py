@@ -50,6 +50,8 @@ def compile_kernel(hidden: int, mode: str = "full", group_size: int = CANONICAL_
 
                 # --- BEGIN SOLUTION hint="gate the passes on the mode, the same way the SIMD tiers do -- `mode` is a Python string read at trace time, so an `if` here chooses what gets emitted, not what gets executed. requant first dequantizes into val_ub with one T.Parallel(hidden) doing val_ub[i] = T.Cast('float32', x_ub[i]) * xsf_ub[i // group_size], which is the whole of variant cast_back/01. sf_only emits the reduction and the scale only; cast_only skips the reduction and uses inv = 1.0 / xsf_ub[g]. Everything else is variant 01. Read the dequantized values back out of val_ub rather than a fragment: the two passes index it differently, and only shared buffers may be touched with more than one index pattern."
                 with T.SimtVF(threads=THREADS):
+                    x_l = T.alloc_fragment((num_groups, group_size), T.float32)
+                    amax_l = T.alloc_fragment((num_groups,), T.float32)
                     q_l = T.alloc_fragment((hidden,), T.float32)
                     inv_l = T.alloc_fragment((num_groups,), T.float32)
                     sf_l = T.alloc_fragment((num_groups,), T.float32)
@@ -63,15 +65,15 @@ def compile_kernel(hidden: int, mode: str = "full", group_size: int = CANONICAL_
                                          * xsf_ub[i // group_size])
 
                     if need_amax:
+                        for g, j in T.Parallel(num_groups, group_size):
+                            if mode == "requant":
+                                x_l[g, j] = val_ub[g * group_size + j]
+                            else:
+                                x_l[g, j] = T.Cast("float32", x_ub[g * group_size + j])
+                        T.reduce_absmax(x_l, amax_l, dim=1)
+
                         for g in T.Parallel(num_groups):
-                            amax = T.alloc_var(T.float32)
-                            amax = E4M3_CLAMP_MIN
-                            for j in T.serial(group_size):
-                                if mode == "requant":
-                                    v = val_ub[g * group_size + j]
-                                else:
-                                    v = T.Cast("float32", x_ub[g * group_size + j])
-                                amax = T.max(amax, T.abs(v))
+                            amax = T.max(amax_l[g], E4M3_CLAMP_MIN)
                             inv_l[g] = E4M3_MAX / amax
                             sf_l[g] = amax / E4M3_MAX
                     elif sf_is_input:

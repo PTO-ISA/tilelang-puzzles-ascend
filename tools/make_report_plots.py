@@ -164,8 +164,10 @@ def draw(s: dict) -> None:
     ax.set_yticks(range(22))
     ax.set_yticklabels([names[i] for i in order])
     ax.set_xlabel("PTO cycles / ASC cycles  (simulated VF cycles)")
-    ax.set_title("PTO is faster on 9 of 22 variants, slower on 6, "
-                 "within 2% on 7")
+    _pf = sum(1 for x in vals if x < 0.98)
+    _ps = sum(1 for x in vals if x > 1.02)
+    ax.set_title(f"PTO is faster on {_pf} of 22 variants, slower on {_ps}, "
+                 f"within 2% on {22 - _pf - _ps}")
     ax.set_xlim(0, 1.25)
     for y, x in enumerate(vals):
         ax.text(x + 0.012, y, f"{x:.2f}", va="center", fontsize=8)
@@ -184,8 +186,9 @@ def draw(s: dict) -> None:
     ax.set_yticks(range(22))
     ax.set_yticklabels([names[i] for i in order])
     ax.set_xlabel("SIMT cycles / ASC cycles, log scale  (simulated VF cycles)")
-    ax.set_title("SIMT costs 3.2x-21.2x; per_token/04 (red) is 99.6x, "
-                 "a hand-written FP4 encoder")
+    rest = [v for i, v in zip(order, vals) if s["variants"][i] != FP4]
+    ax.set_title(f"SIMT costs {min(rest):.1f}x-{max(rest):.1f}x; per_token/04 "
+                 f"(red) is {max(vals):.1f}x, a hand-written FP4 encoder")
     for y, x in enumerate(vals):
         ax.text(x * 1.06, y, f"{x:.1f}", va="center", fontsize=8)
     ax.set_xlim(1, 400)

@@ -132,26 +132,32 @@ is what it is.
 
 ### `T.if_then_else` lowers to a divergent branch, not a select
 
-This one costs **1.78x** on `simt/per_token/04`, and it is the reason that
-variant measures 99.6x ASC's simulated VF cycles while the rest of the SIMT
-tier sits between 3.2x and 21.2x.
+This one costs **2.09x** on `simt/per_token/04`, and it is the reason that
+variant measures 91.3x ASC's simulated VF cycles while the rest of the SIMT
+tier sits between 1.2x and 10.2x.
 
 Measured on that variant, which ships both spellings and whose two arms the
-harness asserts are byte-identical:
+harness asserts are byte-identical. Every column comes from the same place --
+the kernel's own trace, counted by `tools/vf_trace_audit.py` over every
+vector-pipe instruction line in `core0.veccore0.instr_log.dump`:
 
-| spelling | cycles | instructions | cycles/instr | divergence markers |
+| spelling | cycles | instructions | cycles/instr | `SIMT_*_DVG` / `SIMT_BRANCH` |
 |---|---:|---:|---:|---:|
-| `T.if_then_else(c, a, b)` | 613,632 | 124,294 | 4.94 | 5,864 |
-| `(a & m) \| (b & ~m)`, `m = -T.Cast("int32", c)` | **345,189** | 179,908 | **1.92** | **0** |
+| `T.if_then_else(c, a, b)` | 562,280 | 243,130 | 2.31 | 1,408 / 44,835 |
+| `(a & m) \| (b & ~m)`, `m = -T.Cast("int32", c)` | **269,370** | **152,260** | **1.77** | **0 / 0** |
 
-The branch-free form issues **45% more instructions and runs 1.78x fewer
-cycles**. Its 1.92 cycles per instruction is what every other SIMT `per_token`
-variant achieves (1.90-2.01); the conditional form's 4.94 is the divergence
-penalty and nothing else.
+The branch-free form issues **37% fewer instructions and runs 2.09x fewer
+cycles**: the branchy spelling's extra instructions *are* the branching --
+44,835 `SIMT_BRANCH` and 22,788 integer predicate sets that the mask form does
+not emit at all.
 
 `harness/probe/simt_divergence.py` is the controlled experiment: it rebuilds the
-encoder standalone, reproduces the instruction counts to the digit, and gets
-cycles within 2% (615,170 and 351,956, ratio 1.75x).
+encoder standalone and reproduces the mechanism (615,170 against 351,956 cycles,
+5,864 divergence markers against 0). Its instruction counts do not match the
+whole kernel's, and cannot: a divergent branch issues every path it takes, so the
+conditional arm's count depends on its input, and the probe's input is not the
+harness's. The mask arm has no branches and is the stable side of the
+comparison.
 
 The trace names the mechanism directly: `SIMT_START_DVG` / `SIMT_END_DVG`
 markers appear only where `T.if_then_else` is used on a data-dependent
@@ -180,12 +186,38 @@ variant separately for the same reason.
 
 ### A single-thread `T.Parallel(1)` diverges too, by definition
 
-`per_block/01`, `/02`, `/04` and `/05` each show 68 divergence markers and the
-worst cycles-per-instruction in the SIMT tier (7.14). That is the level-2
-reduction, where one thread folds the per-row partials while 127 sit idle. It is
-inherent to reducing to a scalar rather than a spelling problem, and the
-absolute cost is small here (those kernels run 4 VF launches, not 32), but it is
-the same mechanism.
+`per_block/01`, `/02`, `/04` and `/05` each show 48 markers (32 `SIMT_*_DVG`
+plus 16 `SIMT_BRANCH`): the one-thread pass that clamps the tile maximum and
+forms the two scales, where 127 threads sit idle. The absolute cost is now
+small -- those kernels run at 1.54-1.76 cycles per instruction, in line with
+the rest of the tier.
+
+It was **not** small when the whole reduction lived in that pass. These variants
+originally folded 32 per-row partials there, which measured 68 markers, 7.14
+cycles per instruction -- the worst in the tier -- and 19,276 cycles against
+2,664 now. The lesson is the one `simt_reduce_max.py` makes on `per_token/01`:
+put the work in a `T.Parallel` as wide as the data and let `T.reduce_absmax` do
+the fold. A single-thread pass is fine for three scalar operations and ruinous
+for a loop.
+
+### `T.reduce_absmax(dim=0)` and a `uint8` store do not mix
+
+`per_channel/02` and `/04` write their scale as a UE8M0 **byte**. Spelling their
+column-wise fold as `T.reduce_absmax(x_l, amax_l, dim=0)` -- which is correct
+and fractionally faster on `per_channel/01`, where the scale is float32 -- fails
+to lower:
+
+```
+SimtVF cannot convert vector type uint8x2 to an Ascend type
+```
+
+Reduced reproductions do not fail: a `(32, 128)` fold followed by a `uint8`
+store, with or without a 2-D destination and with or without the byte-pack pass,
+compiles. So this is recorded as **observed in context, not diagnosed**, and it
+is one of the reasons the whole `per_channel` family keeps the serial scan --
+see [`per_channel/01`](quant/per_channel/01_raw_32tokens.md) for the other two,
+which are that there is no thread occupancy to recover there and that the CUDA
+reference scans the same axis the same way.
 
 ## Frontend rules that produce confusing errors
 

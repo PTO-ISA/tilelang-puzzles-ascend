@@ -1,23 +1,22 @@
-"""Does `T.reduce_max` beat the explicit serial scan in a SimtVF region?
+"""What does the reduction spelling cost in a SimtVF region? 8.73x.
 
     python -m harness.probe.simt_reduce_max scan        # one spelling
     python -m harness.probe.simt_reduce_max reduce
     python -m harness.probe.simt_reduce_max             # both, verify only
 
-Every SIMT variant in `puzzles/simt/quant/` finds its group maximum with one
-thread per group and an inner `T.serial`:
+Every SIMT variant in `puzzles/simt/quant/` used to find its group maximum with
+one thread per group and an inner `T.serial`:
 
     for g in T.Parallel(num_groups):
         amax[g] = E4M3_CLAMP_MIN
         for j in T.serial(group_size):
             amax[g] = T.max(amax[g], T.abs(x_ub[g * group_size + j]))
 
-tilelang also has `T.reduce_max`, which is shorter and looks like the natural
-thing to reach for. `harness/probe/simt_limits.py` already established that it
-compiles and returns the right answer on this shape; what was never measured is
-what it costs. This probe runs both spellings of `per_token/01`'s reduction as
+That is one line shorter than the library call and lets the clamp ride along as
+the accumulator's seed, which is why it was written that way. This probe is what
+established the price. It runs both spellings of `per_token/01`'s reduction as
 the first device op of their process, so `msprof op simulator` profiles the
-kernel itself, and `tools/vf_cycles.py` sums the VF_SIMT rows of each trace.
+kernel itself, and sums the VF_SIMT rows of each trace.
 
 Both arms compute the same thing and are checked against the same torch oracle
 before any cycle number is reported.
@@ -26,18 +25,25 @@ Measured, SoC Ascend950PR_9599, M=32 K=128 G=32, one VF launch per token in
 both arms (`call_count=32`), both within the harness's FP8 tolerance and
 byte-identical to each other:
 
-    spelling            VF_SIMT cycles   vs ASC's 6,176   issued abs/reduce ops
-    serial scan             71,606           11.59x               4,096
-    T.reduce_max             8,012            1.30x                 256
+    spelling                      VF_SIMT cycles   vs ASC's 6,176   instructions
+    one thread per group, serial      71,606           11.59x          36,676
+    T.reduce_absmax                    8,204            1.33x           4,036
 
-**The reduction spelling is worth 8.94x on this variant**, and the shipped
-`puzzles/simt/quant/answer/per_token/01_raw_fp32sf.py` uses the slower one.
+**The reduction spelling is worth 8.73x on this variant**, so the SIMT tier was
+re-spelled: `per_token/01-07` and `per_block/01-05` now fold with
+`T.reduce_absmax`, and the numbers in `perf/quant_vf_cycles.json` are the
+library call's. The reduce arm here reproduces the shipped kernel's 8,204
+exactly, and the scan arm reproduces the figure that was published before it.
+
 The mechanism is thread occupancy, not the library call: `T.Parallel(num_groups)`
 with an inner `T.serial(group_size)` keeps 4 of 128 threads busy and issues the
-inner body 32 times over, while `T.Parallel(num_groups, group_size)` plus
-`T.reduce_max` has every thread take one element and leaves the fold to the
-backend. `tools/vf_trace_audit.py` on the two traces shows the difference
-directly: 4,096 reduce/abs instructions against 256.
+inner body 32 times over, while `T.Parallel(num_groups, group_size)` plus a fold
+has every thread take one element. `tools/vf_trace_audit.py` on the two traces
+shows it directly -- 4,096 reduce/abs instructions against 384.
+
+`per_channel` is the one family that still scans, and for measured reasons:
+its fold runs down the token axis, where one thread per channel already uses all
+128 threads. See `doc/quant/per_channel/01_raw_32tokens.md`.
 
 Reproduce:
 
@@ -97,8 +103,9 @@ def compile_kernel(hidden: int, spelling: str, group_size: int = G):
                     sf_l = T.alloc_fragment((num_groups,), T.float32)
 
                     if spelling == "scan":
-                        # the shipped tier: one thread per group, seeded with
-                        # the clamp so the clamp costs nothing
+                        # one thread per group, seeded with the clamp so the
+                        # clamp costs nothing. This is what the tier shipped
+                        # before this probe was written.
                         for g in T.Parallel(num_groups):
                             amax_l[g] = E4M3_CLAMP_MIN
                             for j in T.serial(group_size):
@@ -107,14 +114,14 @@ def compile_kernel(hidden: int, spelling: str, group_size: int = G):
                             inv_l[g] = E4M3_MAX / amax_l[g]
                             sf_l[g] = amax_l[g] / E4M3_MAX
                     else:
-                        # T.reduce_max over a (num_groups, group_size) fragment.
-                        # The clamp cannot be folded into a seed here, so it is
-                        # a separate max afterwards.
+                        # The shipped tier: one thread per CHANNEL, then
+                        # T.reduce_absmax over the (num_groups, group_size)
+                        # fragment. The clamp cannot be folded into a seed
+                        # here, so it is a separate max afterwards.
                         a_l = T.alloc_fragment((num_groups, group_size), T.float32)
                         for g, j in T.Parallel(num_groups, group_size):
-                            a_l[g, j] = T.abs(
-                                T.Cast("float32", x_ub[g * group_size + j]))
-                        T.reduce_max(a_l, amax_l, dim=1)
+                            a_l[g, j] = T.Cast("float32", x_ub[g * group_size + j])
+                        T.reduce_absmax(a_l, amax_l, dim=1)
                         for g in T.Parallel(num_groups):
                             amax_l[g] = T.max(amax_l[g], E4M3_CLAMP_MIN)
                             inv_l[g] = E4M3_MAX / amax_l[g]

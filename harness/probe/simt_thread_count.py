@@ -4,16 +4,24 @@
     python harness/probe/simt_thread_count.py --threads 32 # one arm
 
 Every SIMT kernel in this repo declares `THREADS = 128`. On `per_token/01` at
-`K=128, group_size=32` the two passes inside the `T.SimtVF` region want
-different widths:
+`K=128, group_size=32` the passes inside the `T.SimtVF` region want different
+widths:
 
-    for g in T.Parallel(num_groups):   # extent 4   -- the reduction
-    for i in T.Parallel(hidden):       # extent 128 -- the apply
+    for g, j in T.Parallel(num_groups, group_size):  # extent 128 -- the fold
+    for g in T.Parallel(num_groups):                 # extent 4   -- the scales
+    for i in T.Parallel(hidden):                     # extent 128 -- the apply
 
-The reduction therefore occupies 4 of the 128 declared threads. The published
-caveat said that is where the SIMT cycle cost comes from, which is an assertion
-about a number nobody had measured. This probe measures it: same kernel, same
-results, only `T.SimtVF(threads=...)` changes.
+So one short pass remains, and the question is whether declaring fewer threads
+helps it. This probe measures it: same kernel, same results, only
+`T.SimtVF(threads=...)` changes.
+
+It is measured against the **shipped** spelling, which folds with
+`T.reduce_absmax`. The sweep was first run against the serial scan this tier
+used to ship -- one thread per group, extent 4 -- and found 32/64/128 threads
+within 4% of each other (71,278 / 69,047 / 71,606 cycles). That was the right
+answer to the wrong question: the way to recover those threads was to widen the
+`T.Parallel`, not to narrow the region. See
+`harness/probe/simt_reduce_max.py`, which measures the 8.73x.
 
 `T.SimtVF` accepts any positive thread count (tilelang 0.1.15,
 `threads: int | list | tuple = 128`), so lowering it is legal; whether it is
@@ -70,16 +78,18 @@ def build(hidden: int, threads: int, group_size: int = CANONICAL_G):
             for token in T.serial(num_tokens):
                 T.copy(X[token, 0], x_ub)
                 with T.SimtVF(threads=threads):
+                    x_l = T.alloc_fragment((num_groups, group_size), T.float32)
                     q_l = T.alloc_fragment((hidden,), T.float32)
                     amax_l = T.alloc_fragment((num_groups,), T.float32)
                     inv_l = T.alloc_fragment((num_groups,), T.float32)
                     sf_l = T.alloc_fragment((num_groups,), T.float32)
 
+                    for g, j in T.Parallel(num_groups, group_size):
+                        x_l[g, j] = T.Cast("float32", x_ub[g * group_size + j])
+                    T.reduce_absmax(x_l, amax_l, dim=1)
+
                     for g in T.Parallel(num_groups):
-                        amax_l[g] = E4M3_CLAMP_MIN
-                        for j in T.serial(group_size):
-                            v = T.Cast("float32", x_ub[g * group_size + j])
-                            amax_l[g] = T.max(amax_l[g], T.abs(v))
+                        amax_l[g] = T.max(amax_l[g], E4M3_CLAMP_MIN)
                         inv_l[g] = E4M3_MAX / amax_l[g]
                         sf_l[g] = amax_l[g] / E4M3_MAX
 
@@ -144,7 +154,7 @@ def main() -> int:
         return 0
 
     print(f"per_token/01 (SIMT), M={M} K={K} group_size={CANONICAL_G}: "
-          f"reduction extent 4, apply extent {K}\n")
+          f"fold extent {K}, scale extent 4, apply extent {K}\n")
     rows = [r for r in (measure(t) for t in ARMS) if r]
     if not rows:
         return 1

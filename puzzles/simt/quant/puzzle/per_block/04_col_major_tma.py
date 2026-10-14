@@ -42,7 +42,6 @@ def compile_kernel(hidden: int, block: tuple = (BLOCK_MN, BLOCK_K)):
         with T.Kernel(1):
             x_ub = T.alloc_shared((bm, bk), T.bfloat16)
             q_ub = T.alloc_shared((bm, bk), T.float8_e4m3fn)
-            row_ub = T.alloc_shared((bm,), T.float32)
             sf_ub = T.alloc_shared((1,), T.float32)
             inv_ub = T.alloc_shared((1,), T.float32)
 
@@ -50,12 +49,12 @@ def compile_kernel(hidden: int, block: tuple = (BLOCK_MN, BLOCK_K)):
                 for kb in T.serial(num_k_blocks):
                     T.copy(X[mb * bm, kb * bk], x_ub)
 
-                    # TODO: paste variant 01's VF body unchanged -- the three
-                    #       levels, the clamp, the two divisions and the apply are
-                    #       all the same. That is the lesson: a tile scale is one
-                    #       scalar, so a transposed layout costs nothing in any of
-                    #       the three vector styles. The whole change is outside
-                    #       this region: SfCm is declared (num_k_blocks,
+                    # TODO: paste variant 01's VF body unchanged -- the flat
+                    #       reduction, the clamp, the two divisions and the apply
+                    #       are all the same. That is the lesson: a tile scale is
+                    #       one scalar, so a transposed layout costs nothing in
+                    #       any of the three vector styles. The whole change is
+                    #       outside this region: SfCm is declared (num_k_blocks,
                     #       num_m_blocks) and the final copy is T.copy(sf_ub[0:1],
                     #       SfCm[kb, mb:mb + 1]) -- a swapped pair of indices.
                     #       Contrast per_token/05, where the same config lands on

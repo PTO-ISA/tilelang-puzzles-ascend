@@ -42,18 +42,19 @@ def compile_kernel(hidden: int, group_size: int = CANONICAL_G,
                 for sub in T.serial(token_block):
                     T.copy(X[blk * token_block + sub, 0], x_ub)
 
-                    # TODO: as variant 02 for the maths -- one thread per group
-                    #       scanning its 32 channels out of UB, then the
-                    #       power-of-two exponent trick per element: bits =
-                    #       T.reinterpret('int32', amax/E4M3_MAX); biased = ((bits
-                    #       - 1) >> 23) + 1; sf = T.reinterpret('float32', biased
-                    #       << 23) and inv = T.reinterpret('float32', (254 -
-                    #       biased) << 23). The config itself is then free: store
-                    #       the scale at sf_out_ub[g, sub] instead of a
-                    #       token-major slot. There is no transpose and no gather
-                    #       -- compare the ASC file, which builds a lane-index
-                    #       vector with S.vci and permutes a whole block through
-                    #       S.vgather2 because a register's lanes cannot move.
+                    # TODO: as variant 02 for the maths -- one thread per channel
+                    #       into a (group, channel) fragment,
+                    #       T.reduce_absmax(dim=1), then the power-of-two exponent
+                    #       trick per group: bits = T.reinterpret('int32',
+                    #       amax/E4M3_MAX); biased = ((bits - 1) >> 23) + 1; sf =
+                    #       T.reinterpret('float32', biased << 23) and inv =
+                    #       T.reinterpret('float32', (254 - biased) << 23). The
+                    #       config itself is then free: store the scale at
+                    #       sf_out_ub[g, sub] instead of a token-major slot. There
+                    #       is no transpose and no gather -- compare the ASC file,
+                    #       which builds a lane-index vector with S.vci and
+                    #       permutes a whole block through S.vgather2 because a
+                    #       register's lanes cannot move.
                     raise NotImplementedError("simt/per_token/05_col_major_sf: implement per_token_cast")
 
                     T.copy(q_ub, Q[blk * token_block + sub, 0])

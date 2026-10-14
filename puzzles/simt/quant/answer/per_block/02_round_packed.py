@@ -36,7 +36,6 @@ def compile_kernel(hidden: int, block: tuple = (BLOCK_MN, BLOCK_K)):
         with T.Kernel(1):
             x_ub = T.alloc_shared((bm, bk), T.bfloat16)
             q_ub = T.alloc_shared((bm, bk), T.float8_e4m3fn)
-            row_ub = T.alloc_shared((bm,), T.float32)
             sf_ub = T.alloc_shared((1,), T.uint8)
             inv_ub = T.alloc_shared((1,), T.float32)
 
@@ -44,23 +43,18 @@ def compile_kernel(hidden: int, block: tuple = (BLOCK_MN, BLOCK_K)):
                 for kb in T.serial(num_k_blocks):
                     T.copy(X[mb * bm, kb * bk], x_ub)
 
-                    # --- BEGIN SOLUTION hint="variant 01's three levels, with the division in level 2 replaced by the exponent trick and the result stored as a byte: bits = T.reinterpret('int32', tile / E4M3_MAX); biased = ((bits - 1) >> 23) + 1; sf_ub[0] = T.Cast('uint8', biased) and inv_ub[0] = T.reinterpret('float32', (254 - biased) << 23). Compare the SIMD tiers, which must do this on a one-lane vector -- every constant becomes a V.vbrc(..., size=1) and the byte store needs a convert (PTO) or a reinterpret plus a PK4_B32 store mode (ASC). A scalar scale is a scalar here."
+                    # --- BEGIN SOLUTION hint="variant 01's single T.reduce_absmax and its two passes, with the division in the second replaced by the exponent trick and the result stored as a byte: bits = T.reinterpret('int32', tile / E4M3_MAX); biased = ((bits - 1) >> 23) + 1; sf_ub[0] = T.Cast('uint8', biased) and inv_ub[0] = T.reinterpret('float32', (254 - biased) << 23). Compare the SIMD tiers, which must do this on a one-lane vector -- every constant becomes a V.vbrc(..., size=1) and the byte store needs a convert (PTO) or a reinterpret plus a PK4_B32 store mode (ASC). A scalar scale is a scalar here."
                     with T.SimtVF(threads=THREADS):
+                        flat_l = T.alloc_fragment((1, bm * bk), T.float32)
+                        tile_l = T.alloc_fragment((1,), T.float32)
                         q_l = T.alloc_fragment((bm, bk), T.float32)
 
-                        for t in T.Parallel(bm):
-                            amax = T.alloc_var(T.float32)
-                            amax = E4M3_CLAMP_MIN
-                            for j in T.serial(bk):
-                                amax = T.max(amax,
-                                             T.abs(T.Cast("float32", x_ub[t, j])))
-                            row_ub[t] = amax
+                        for i, j in T.Parallel(bm, bk):
+                            flat_l[0, i * bk + j] = T.Cast("float32", x_ub[i, j])
+                        T.reduce_absmax(flat_l, tile_l, dim=1)
 
                         for _z in T.Parallel(1):
-                            tile = T.alloc_var(T.float32)
-                            tile = E4M3_CLAMP_MIN
-                            for t in T.serial(bm):
-                                tile = T.max(tile, row_ub[t])
+                            tile = T.max(tile_l[0], E4M3_CLAMP_MIN)
                             # ceil(log2(tile/448)) + 127, from the exponent field
                             bits = T.reinterpret("int32", tile / E4M3_MAX)
                             biased = ((bits - 1) >> 23) + 1

@@ -40,15 +40,17 @@ def compile_kernel(hidden: int, group_size: int = CANONICAL_G):
 
                 # --- BEGIN SOLUTION hint="variant 02 again, but keep the biased exponent instead of rebuilding a float from it. `biased` is already the UE8M0 byte value, so write it straight into a uint8 shared buffer with sf_ub[g] = T.Cast('uint8', biased) -- a store to shared, which is exempt from the one-index-pattern rule that fragments obey. There is no reinterpret and no packed store mode: the buffer's dtype is the packing. The inverse scale is still rebuilt as T.reinterpret('float32', (254 - biased) << 23)."
                 with T.SimtVF(threads=THREADS):
+                    x_l = T.alloc_fragment((num_groups, group_size), T.float32)
+                    amax_l = T.alloc_fragment((num_groups,), T.float32)
                     q_l = T.alloc_fragment((hidden,), T.float32)
                     inv_l = T.alloc_fragment((num_groups,), T.float32)
 
+                    for g, j in T.Parallel(num_groups, group_size):
+                        x_l[g, j] = T.Cast("float32", x_ub[g * group_size + j])
+                    T.reduce_absmax(x_l, amax_l, dim=1)
+
                     for g in T.Parallel(num_groups):
-                        amax = T.alloc_var(T.float32)
-                        amax = E4M3_CLAMP_MIN
-                        for j in T.serial(group_size):
-                            v = T.Cast("float32", x_ub[g * group_size + j])
-                            amax = T.max(amax, T.abs(v))
+                        amax = T.max(amax_l[g], E4M3_CLAMP_MIN)
 
                         bits = T.reinterpret("int32", amax / E4M3_MAX)
                         biased = ((bits - 1) >> 23) + 1

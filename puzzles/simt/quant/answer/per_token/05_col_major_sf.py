@@ -42,17 +42,19 @@ def compile_kernel(hidden: int, group_size: int = CANONICAL_G,
                 for sub in T.serial(token_block):
                     T.copy(X[blk * token_block + sub, 0], x_ub)
 
-                    # --- BEGIN SOLUTION hint="as variant 02 for the maths -- one thread per group scanning its 32 channels out of UB, then the power-of-two exponent trick per element: bits = T.reinterpret('int32', amax/E4M3_MAX); biased = ((bits - 1) >> 23) + 1; sf = T.reinterpret('float32', biased << 23) and inv = T.reinterpret('float32', (254 - biased) << 23). The config itself is then free: store the scale at sf_out_ub[g, sub] instead of a token-major slot. There is no transpose and no gather -- compare the ASC file, which builds a lane-index vector with S.vci and permutes a whole block through S.vgather2 because a register's lanes cannot move."
+                    # --- BEGIN SOLUTION hint="as variant 02 for the maths -- one thread per channel into a (group, channel) fragment, T.reduce_absmax(dim=1), then the power-of-two exponent trick per group: bits = T.reinterpret('int32', amax/E4M3_MAX); biased = ((bits - 1) >> 23) + 1; sf = T.reinterpret('float32', biased << 23) and inv = T.reinterpret('float32', (254 - biased) << 23). The config itself is then free: store the scale at sf_out_ub[g, sub] instead of a token-major slot. There is no transpose and no gather -- compare the ASC file, which builds a lane-index vector with S.vci and permutes a whole block through S.vgather2 because a register's lanes cannot move."
                     with T.SimtVF(threads=THREADS):
+                        x_l = T.alloc_fragment((num_groups, group_size), T.float32)
+                        amax_l = T.alloc_fragment((num_groups,), T.float32)
                         q_l = T.alloc_fragment((hidden,), T.float32)
                         inv_l = T.alloc_fragment((num_groups,), T.float32)
 
+                        for g, j in T.Parallel(num_groups, group_size):
+                            x_l[g, j] = T.Cast("float32", x_ub[g * group_size + j])
+                        T.reduce_absmax(x_l, amax_l, dim=1)
+
                         for g in T.Parallel(num_groups):
-                            amax = T.alloc_var(T.float32)
-                            amax = E4M3_CLAMP_MIN
-                            for j in T.serial(group_size):
-                                v = T.Cast("float32", x_ub[g * group_size + j])
-                                amax = T.max(amax, T.abs(v))
+                            amax = T.max(amax_l[g], E4M3_CLAMP_MIN)
 
                             # ceil(log2(amax/448)) from the exponent field, then
                             # both scales rebuilt by writing an exponent back.
