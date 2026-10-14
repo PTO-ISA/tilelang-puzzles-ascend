@@ -64,19 +64,26 @@ def drive_per_token_06(mod, mode: str):
 
 
 def drive_per_token_04(mod, mode: str):
-    """per_token/04, whose two modes are two spellings of the e2m1 encoder.
+    """per_token/04, whose three modes are three spellings of its output stage.
 
     Unlike the two variants above, this one's launch() runs no device op first,
     so the harness path measures it correctly. It is driven only because the
-    *alternative* spelling has no harness entry point of its own -- the harness
-    calls launch(x), which is the default arm.
+    *alternative* spellings have no harness entry point of their own -- the
+    harness calls launch(x), which is the default arm.
+
+    ``hw_convert`` declares its output as fp4 rather than packed uint8, which is
+    the same bytes under a different name, so the buffer is allocated once and
+    viewed.
     """
     ng = K // CANONICAL_G
     x = torch.randn(M, K, dtype=torch.float32) * 3.0
     q = torch.empty((M, K // 2), dtype=torch.uint8)
+    if mode == "hw_convert":
+        q = q.view(torch.float4_e2m1fn_x2)
     sf = torch.empty((M, ng), dtype=torch.float32)
     args = [t.npu() for t in (x, q, sf)]
-    mod.compile_kernel(K, branch_free=(mode == "branch_free"))(*args)
+    mod.compile_kernel(K, branch_free=(mode == "branch_free"),
+                       hw_convert=(mode == "hw_convert"))(*args)
     return args
 
 

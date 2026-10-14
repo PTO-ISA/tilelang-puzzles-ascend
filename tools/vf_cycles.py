@@ -66,6 +66,9 @@ EXTRA = {
     "simt/per_token/04_fp32_in_fp4_out": [
         ("branch_free", "the e2m1 encoder's conditionals as mask arithmetic "
                         "instead of `T.if_then_else`"),
+        ("hw_convert", "no encoder at all: the kernel leaves the SimtVF region "
+                       "for a three-line `T.SimdVF` block holding the one "
+                       "instruction the thread model cannot name"),
     ],
 }
 EXTRA_SEP = "+"
@@ -120,9 +123,12 @@ def sum_vf_cycles(out_dir: Path) -> dict:
     simt = {n: v for n, v in grouped.items() if n.lower() in SIMT_NAMES}
     simd = {n: v for n, v in grouped.items() if n.lower() in SIMD_NAMES}
     chosen, kind = (simt, "SIMT") if simt else (simd, "SIMD")
-    if simt and simd:  # should not happen for one kernel; keep the bigger half
-        if sum(v[0] for v in simd.values()) > sum(v[0] for v in simt.values()):
-            chosen, kind = simd, "SIMD"
+    if simt and simd:
+        # A HYBRID kernel: one that opens a T.SimtVF region and a T.SimdVF
+        # region, which `simt/per_token/04` does in its hw_convert spelling to
+        # reach the FP4 convert. Its cost is the sum of both launch kinds, not
+        # the larger of them -- both run, on the same core, for the same token.
+        chosen, kind = {**simt, **simd}, "SIMT+SIMD"
     res.update(kind=kind,
                instr=",".join(sorted(chosen)),
                cycles=sum(v[0] for v in chosen.values()),
@@ -446,11 +452,18 @@ def write_report(records: dict) -> None:
         # If that worst row ships an alternative spelling, quote its measured
         # effect rather than a remembered one.
         alt_ratio, alt_vs_asc = "fewer cycles", "lower"
+        hw_ratio, hw_vs_asc = None, None
         base_id = f"simt/{hi_n}"
         for mode, _why in EXTRA.get(base_id, []):
             alt = records.get(f"{base_id}{EXTRA_SEP}{mode}", {})
             base = records.get(base_id, {})
             asc_c = records.get(f"asc/{hi_n}", {}).get("cycles")
+            if mode == "hw_convert" and alt.get("cycles") and base.get("cycles"):
+                # a different claim entirely -- not a respelling of the encoder
+                # but its removal, so it is quoted separately below
+                hw_ratio = base["cycles"] / alt["cycles"]
+                hw_vs_asc = alt["cycles"] / asc_c if asc_c else None
+                continue
             if alt.get("cycles") and base.get("cycles"):
                 alt_ratio = (f"{base['cycles'] / alt['cycles']:.2f}x fewer "
                              f"cycles ({base['cycles']:,.0f} to "
@@ -494,6 +507,23 @@ def write_report(records: dict) -> None:
             f"instructions and runs **{alt_ratio}** -- "
             f"{alt_vs_asc} rather than {hi:.1f}x -- because the instructions it",
             "drops are the branching itself.",
+            "",
+            "**And the encoder itself is optional.** No `T.Cast` to FP4 lowers",
+            "inside a `SimtVF` region -- an fp4 element is four bits, the",
+            "toolchain's only FP4 types are the vector ones, and a per-thread",
+            "scalar has nothing to convert into",
+            "(`harness/probe/simt_fp4_convert.py` records the nine spellings",
+            "that fail). But the *kernel* can leave the region for that one",
+            "instruction: a three-line `T.SimdVF` block in place of the",
+            "eighteen-line encoder, same bytes, "
+            + (f"**{hw_ratio:.1f}x fewer cycles**" if hw_ratio
+               else "measured separately")
+            + (f" and {hw_vs_asc:.2f}x ASC rather than {hi:.1f}x."
+               if hw_vs_asc else "."),
+            "That spelling ships in the same file behind `hw_convert=` and is",
+            "in the table below. It is **not** what the SIMT column measures,",
+            "because a kernel that drops into `T.SimdVF` is no longer answering",
+            "what the thread model costs on its own.",
             "",
             "Two conclusions, and they pull in opposite directions, which is why",
             f"both are stated. The {hi:.2f}x is a true measurement of the kernel as",
@@ -657,34 +687,50 @@ def write_report(records: dict) -> None:
             "They are kept out of the table above, which stays one row per",
             "variant.",
             "",
-            "| variant | spelling | cycles | vs the default | vs ASC |",
+            "| variant | spelling | cycles | speed-up | vs ASC |",
             "|---|---|---:|---:|---:|",
         ]
+        f = lambda v: "—" if v is None else f"{v:,.0f}"
+        # one default row per variant, however many alternatives it has
+        seen: set[str] = set()
         for base, mode, why, rec in alts:
             tier, kernel, stem = base.split("/")
-            parent = records.get(base, {})
             asc = records.get(f"asc/{kernel}/{stem}", {}).get("cycles")
-            d = parent.get("cycles")
+            d = records.get(base, {}).get("cycles")
             c = rec.get("cycles")
-            f = lambda v: "—" if v is None else f"{v:,.0f}"
-            vs_d = f"{c / d:.2f}x" if c and d else "—"
-            vs_a = f"{c / asc:.1f}x" if c and asc else "—"
-            lines += [
-                f"| `{kernel}/{stem}` | default (`T.if_then_else`) | {f(d)} | "
-                f"1.00x | {f'{d / asc:.1f}x' if d and asc else '—'} |",
-                f"| `{kernel}/{stem}` | `{mode}` | **{f(c)}** | **{vs_d}** | "
-                f"**{vs_a}** |",
-            ]
+            if base not in seen:
+                seen.add(base)
+                lines.append(
+                    f"| `{kernel}/{stem}` | the shipped default | {f(d)} | "
+                    f"1.00x | {f'{d / asc:.1f}x' if d and asc else '—'} |")
+            lines.append(
+                f"| `{kernel}/{stem}` | `{mode}` | **{f(c)}** | "
+                f"**{f'{d / c:.2f}x' if c and d else '—'}** | "
+                f"**{f'{c / asc:.2f}x' if c and asc else '—'}** |")
         lines += [
             "",
-            f"`{alts[0][1]}` is {why}. It issues **more** instructions than the",
-            "default and runs in fewer cycles, because `T.if_then_else` on a",
-            "data-dependent per-element condition lowers to a real branch on this",
-            "toolchain while the mask form lowers to a select. The default keeps",
-            "the conditional deliberately: this ladder measures the spelling a GPU",
-            "programmer reaches for first. `harness/probe/simt_divergence.py` is",
-            "the controlled experiment, and `doc/known-issues.md` records it as a",
-            "codegen gap rather than a property of the thread model.",
+            "What each one is:",
+            "",
+        ]
+        for _base, mode, why, _rec in alts:
+            lines.append(f"* **`{mode}`** -- {why}.")
+        lines += [
+            "",
+            "`branch_free` issues **fewer** instructions than the default and",
+            "runs in fewer cycles, because `T.if_then_else` on a data-dependent",
+            "per-element condition lowers to a real branch on this toolchain",
+            "while the mask form lowers to a select; the instructions it drops",
+            "are the branching. `hw_convert` is not a respelling of the encoder",
+            "but its removal, and it is the larger effect by far.",
+            "",
+            "The default keeps the hand-written conditional encoder",
+            "deliberately: the SIMT column measures what the thread model costs",
+            "on its own, and both alternatives change that question --",
+            "`branch_free` by writing what a GPU compiler would have emitted,",
+            "`hw_convert` by leaving the region. All three are verified",
+            "byte-identical by the harness. `harness/probe/simt_divergence.py`",
+            "and `harness/probe/simt_fp4_convert.py` are the controlled",
+            "experiments, and `doc/known-issues.md` records both.",
             "",
         ]
     lines += [

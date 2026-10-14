@@ -87,6 +87,7 @@ A = dict(ops=f"{tot('op')/tot('oa'):.0%}", lp=f"{tot('lp')/tot('la'):.0%}",
          nmean=f"{sum(nofp4)/len(nofp4):.2f}x",
          smax=f"{max(sr):.2f}x")
 bf = d["simt/per_token/04_fp32_in_fp4_out+branch_free"]["cycles"]
+hw = d["simt/per_token/04_fp32_in_fp4_out+hw_convert"]["cycles"]
 
 # the aggregate table, split across two slides so neither overflows a frame
 HDR = ["| variant | ops A/P | lines A/P/S | cyc A | cyc P | cyc S | P/A | S/A |",
@@ -192,6 +193,8 @@ F = dict(
     pto_longer=sum(1 for v in st if st[v]["lp"] > st[v]["la"]),
     simt_shorter=sum(1 for v in st if st[v]["ls"] < st[v]["la"]),
     simt_below6=sum(1 for v in st if c("simt", v) / c("asc", v) < 6),
+    simt_below3=sum(1 for v in st if c("simt", v) / c("asc", v) < 3),
+    simt_above10=sum(1 for v in st if c("simt", v) / c("asc", v) > 10),
     t05_rank=_simt_sorted.index("per_token/05_col_major_sf") + 1,
     biggest_op_cut=_biggest_op_cut.split("_")[0].replace("/", "/"),
     bf_ratio=bf / c("simt", "per_token/04_fp32_in_fp4_out"),
@@ -201,6 +204,9 @@ F = dict(
     bf_vs_asc=bf / c("asc", "per_token/04_fp32_in_fp4_out"),
     fp4_vs_asc=c("simt", "per_token/04_fp32_in_fp4_out")
     / c("asc", "per_token/04_fp32_in_fp4_out"),
+    # the hardware convert, reached by leaving the SimtVF region for 3 lines
+    hw_speedup=c("simt", "per_token/04_fp32_in_fp4_out") / hw,
+    hw_vs_asc=hw / c("asc", "per_token/04_fp32_in_fp4_out"),
 )
 
 
@@ -733,7 +739,7 @@ subnormal renormalization, guard/round/sticky and saturation:
 {meas("per_token/04_fp32_in_fp4_out")}
 
 The result is bit-exact against the PyTorch reference packer. `per_block/03`
-carries the same encoder at 16.77x.
+carries the same encoder at {c("simt","per_block/03_fp4_e2m1")/c("asc","per_block/03_fp4_e2m1"):.2f}x.
 
 ---
 
@@ -762,8 +768,30 @@ byte-identical.
 > Of the
 > {F['fp4_vs_asc']:.1f}x, a factor of {F['bf_speedup']:.2f}x is a code-generation
 > gap a GPU compiler would not have, since it predicates such a conditional into
-> a select; the remaining {F['bf_vs_asc']:.1f}x is a software encoder standing in
-> for one convert instruction.
+> a select; the rest is a software encoder standing in for one instruction.
+
+---
+
+## D1 `per_token/04`: the convert is reachable, from outside the region
+
+`T.Cast` to FP4 cannot work inside the region: the chip has no scalar FP4 type,
+and the convert is a *vector* instruction over `vector_f4e2m1x2`. Nine spellings
+fail (`harness/probe/simt_fp4_convert.py`). The kernel can still leave the
+region for that one instruction:
+
+{code("fp4_hwcvt_simt")}
+
+| `per_token/04`, SIMT | cycles | vs ASC |
+|---|---:|---:|
+| the 18-line e2m1 encoder | {c("simt","per_token/04_fp32_in_fp4_out"):,.0f} | {F['fp4_vs_asc']:.1f}x |
+| three lines of `T.SimdVF` | **{hw:,.0f}** | **{F['hw_vs_asc']:.2f}x** |
+
+**{F['hw_speedup']:.1f}x**, byte-identical, harness-verified; shipped behind
+`hw_convert=`, not the default.
+
+> **D1, continued** — "the frontend cannot name the instruction" is about the
+> *region*, not the kernel. The thread model keeps the index arithmetic; the
+> vector model keeps the one instruction that only exists as a vector.
 
 ---
 
@@ -799,7 +827,7 @@ the backend selects the instructions.
 
 - PTO uses fewer cycles on {A['pwin']} of 22 variants, more on 6, within 2% on 7
 - The SIMT range excludes `per_token/04`; including it the maximum is {A['smax']}
-- SIMT costs under 6x on {F['simt_below6']} of 22 variants and over 10x on 11
+- SIMT costs under 3x on {F['simt_below3']} of 22 variants and over 10x on {F['simt_above10']}
 
 ---
 
@@ -815,8 +843,10 @@ the backend selects the instructions.
    `per_token` and `per_block` is `T.reduce_absmax` (A2, A3); `per_channel`
    scans, because its fold runs down the token axis where one thread per channel
    already uses all 128 threads — 1.06x, measured — and because on its two
-   byte-packing variants the library call does not lower. The format work and
-   the `cast_back` family are untuned. A separate SIMT-vs-SIMD suite sweeping
+   byte-packing variants the library call does not lower. The `cast_back` family
+   is untuned, and so is the format work *inside the region* — D1 measures what
+   leaving the region for one instruction is worth (72.29x on `per_token/04`),
+   and the ladder does not take it. A separate SIMT-vs-SIMD suite sweeping
    several strategies per kernel measured 0.33x-53x, including SIMT faster on
    some grouped reductions.
 5. **Line counts exclude helpers defined outside the VF region**, in all

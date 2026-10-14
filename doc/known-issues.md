@@ -66,24 +66,58 @@ Not a bug — there is no such instruction. FP4 output must go
 float32 → bfloat16 → e2m1, and the intermediate must be **rounded to odd** or
 double rounding biases the result. See `per_token/04`.
 
-### No FP4 store from a `T.SimtVF` region
+### No FP4 value exists inside a `T.SimtVF` region
 
 ```
 InternalError: Check failed: index_lanes * buffer_lanes == value_dtype_lanes
 (2 vs. 1) : Cannot store value with 1, expected value with 2
-(1 index lanes * 2 buffer elements)
+(1 index lanes * 2 buffer element lanes)
 ```
 
-The entry above is about the *conversion*; this is about the *store*. An FP4
-buffer holds two elements per byte, so a scalar store cannot address one, and the
-packed-FP4 convert the SIMD tiers reach through `vcvt` is not on the SIMT
-surface at all.
+The entry above is about the *conversion*; this is about there being nothing to
+convert into. `harness/probe/simt_fp4_convert.py` tried nine spellings — a
+scalar `T.Cast` to `float4_e2m1fn`, a `T.vectorized(2)` pair, an fp4 fragment at
+2, 4, 8 and 16 codes per thread, a `T.copy` of a float32 fragment into fp4
+storage, an explicit `T.Cast("float4_e2m1fnx2", ...)`, and a reinterpret of a
+code as a byte. All nine fail before codegen, with three errors: the one above,
+`Cannot match type float4_e2m1fnx2 vs float4_e2m1fnx4`, and
+`reinterpret expects source and target to have the same number of bits`.
 
-**Workaround:** declare the output `uint8` and encode the nibbles by hand, one
-output **byte** per thread so the pack needs no exchange between threads. The
-result is bit-exact against the torch packer. It costs 18 lines against PTO's
-4-operation round-to-odd, which is the honest price of the thread model here —
-see `per_token/04` and `per_block/03`, and `doc/tiers/simt.md`.
+The cause is not the frontend. An fp4 element is **four bits**, so fp4 storage
+is retyped to `float4_e2m1fnx2` — one byte, two codes — before Ascend codegen
+(`src/ascend/transform/rewrite_fp4_to_fp4x2.cc`), and every store into it needs
+`index_lanes * 2` lanes. SIMT code is per-thread *scalar* code with one lane to
+offer. Underneath, the toolchain agrees: in `include/pto/npu/a5/` the only FP4
+types are `vector_f4e2m1x2` / `float4_e2m1x2_t`, and the conversion is
+`vcvt(vector_f4e2m1x2, vector_bf16, preg, ROUND_R, PART_P0)` — a vector
+instruction over a vector-only type. **There is no scalar FP4 type**, which is a
+property of the hardware's data types rather than a gap to be filled.
+
+**Workaround 1, and what the ladder ships:** declare the output `uint8` and
+encode the nibbles by hand, one output **byte** per thread so the pack needs no
+exchange between threads. Bit-exact against the torch packer, 18 lines against
+PTO's 4-operation round-to-odd, and the honest price of staying inside the
+thread model — see `per_token/04` and `per_block/03`, and `doc/tiers/simt.md`.
+
+**Workaround 2, and the cheap one:** leave the region for that one instruction.
+A `T.SimtVF` region and a `T.SimdVF` region can live in the same kernel, so the
+thread model can do the reduction, the scales and the round-to-odd, and three
+lines of `T.SimdVF` can do the convert:
+
+```python
+with T.SimdVF():
+    for pair in T.serial(hidden // PAIR):
+        S.vsts(q_ub[pair * PAIR],
+               S.vcvt(S.vld(bf_ub[pair * PAIR]), T.float4_e2m1fn),
+               dist="PK4_B32")
+```
+
+Measured on `per_token/04`, both arms bit-exact against the torch packer and
+byte-identical to each other: **543,827 cycles against 7,778** (6,050 `VF_SIMT`
+plus 1,728 `VF`), a **69.9x** difference, and 1.26x ASC rather than 88x. It
+ships in that variant behind `hw_convert=`, and the harness verifies it; it is
+deliberately **not** the default, because the SIMT column measures what the
+thread model costs on its own. `harness/probe/simt_fp4_convert.py` has both.
 
 ### bfloat16 does not compute inside a `T.SimtVF` region
 

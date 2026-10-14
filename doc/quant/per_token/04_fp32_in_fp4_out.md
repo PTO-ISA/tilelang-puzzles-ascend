@@ -202,7 +202,40 @@ predicated into a select, so the natural conditional costs nothing. So about a
 2.09x slice of this variant's gap is a **codegen gap, not a cost of the thread
 model**, and `doc/known-issues.md` records it as such.
 
-### Both spellings ship
+### The encoder is optional, and that is worth 72.29x
+
+Can a `SimtVF` region produce FP4 directly? No, and the reason is worth knowing
+before reaching for `T.Cast`. `harness/probe/simt_fp4_convert.py` tried nine
+spellings — a scalar cast, a `T.vectorized(2)` pair, an fp4 fragment at 2, 4, 8
+and 16 codes per thread, a `T.copy` from a float32 fragment, an explicit
+`T.Cast("float4_e2m1fnx2", ...)` and a reinterpret of one code as a byte — and
+all nine fail before codegen. An fp4 element is four bits, so fp4 storage is
+retyped to `float4_e2m1fnx2` (one byte, two codes) and every store into it needs
+two lanes, where per-thread scalar code has one. The toolchain has **no scalar
+FP4 type at all**: the conversion is `vcvt(vector_f4e2m1x2, vector_bf16, ...)`,
+a vector instruction over a vector-only type.
+
+The kernel can leave the region for it, though — a `T.SimtVF` region and a
+`T.SimdVF` region coexist in one kernel:
+
+```python
+with T.SimdVF():
+    for pair in T.serial(hidden // PAIR):
+        S.vsts(q_ub[pair * PAIR],
+               S.vcvt(S.vld(bf_ub[pair * PAIR]), T.float4_e2m1fn),
+               dist="PK4_B32")
+```
+
+Three lines in place of eighteen, and **562,280 cycles down to 7,778** — 1.26x
+ASC rather than 91.3x. Bit-exact against the torch packer, byte-identical to the
+other two spellings, and the harness checks all three.
+
+It is **not** the default. This tier measures what the thread model costs on its
+own, and a kernel that drops into `T.SimdVF` for its hardest instruction is no
+longer answering that. What it does answer — can a mixed kernel have both? — is
+worth the slide it gets in the deck.
+
+### All three spellings ship
 
 The variant file carries both, behind a trace-time flag:
 
@@ -211,6 +244,7 @@ def e2m1_nibble(v, branch_free: bool = False): ...
 
 launch(x)                      # the natural conditional -- what the ladder measures
 launch(x, branch_free=True)    # the mask form -- 2.09x fewer cycles
+launch(x, hw_convert=True)     # no encoder: a SimdVF vcvt -- 72.29x fewer
 ```
 
 The default stays the conditional on purpose: this ladder wants the spelling a
