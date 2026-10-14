@@ -324,18 +324,40 @@ V.vstore(V.vgather(sf_dense_ub[0, base], idx, gmask),
          sf_out_ub[base, 0])
 ```
 
-In SIMT the transposed layout is simply the index the scale is stored at. There
-is no index vector, no gather, and no block of scales held back to be permuted.
-The fragment is one statement because the rest of its `T.Parallel(num_groups)`
-body is section 5.2's, unchanged — the configuration changes which index this
-store uses and nothing else:
+In SIMT the transposed layout is simply the index the scale is stored at. The
+output buffer is declared with its axes already swapped — groups down, tokens
+across — while the input is still read one token at a time:
 
-*source:* `puzzles/simt/quant/answer/per_token/05_col_major_sf.py:62-63`
+*source:* `puzzles/simt/quant/answer/per_token/05_col_major_sf.py:38-39`
+
+<!-- snippet: transpose_simt_decl -->
+```python
+# Already transposed: one column per token of the current block.
+sf_out_ub = T.alloc_shared((num_groups, token_block), T.float32)
+```
+
+and the store writes straight into the transposed slot. `sub` is the token
+index, from the `T.serial(token_block)` loop outside the region; `g` is the
+thread's group; everything above the last line is section 5.2's body unchanged:
+
+*source:* `puzzles/simt/quant/answer/per_token/05_col_major_sf.py:50-63`
 
 <!-- snippet: transpose_simt -->
 ```python
-# The whole column-major config: a different index.
-sf_out_ub[g, sub] = T.reinterpret("float32", biased << 23)
+for g in T.Parallel(num_groups):
+    amax = T.alloc_var(T.float32)
+    amax = E4M3_CLAMP_MIN
+    for j in T.serial(group_size):
+        v = T.Cast("float32", x_ub[g * group_size + j])
+        amax = T.max(amax, T.abs(v))
+
+    # ceil(log2(amax/448)) from the exponent field, then
+    # both scales rebuilt by writing an exponent back.
+    bits = T.reinterpret("int32", amax / E4M3_MAX)
+    biased = ((bits - 1) >> 23) + 1
+    inv_l[g] = T.reinterpret("float32", (254 - biased) << 23)
+    # The whole column-major config: a different index.
+    sf_out_ub[g, sub] = T.reinterpret("float32", biased << 23)
 ```
 
 | | ASC | PTO | SIMT |
@@ -524,7 +546,38 @@ for g in T.Parallel(num_groups):
 **This is the one pattern where both axes agree.** PTO halves the operation
 count *and* uses 0.74x the cycles. SIMT costs 11.59x here: with
 `group_size = 32` and `hidden = 128` there are four groups, so the reduction
-occupies **4 of the 128 declared threads**.
+occupies **4 of the 128 declared threads** — and issues its inner body 32 times
+over.
+
+That is a property of the spelling, not of the thread model, and the difference
+is large. `T.reduce_max` gives every thread one element and leaves the fold to
+the backend:
+
+*source:* `harness/probe/simt_reduce_max.py:114-117`
+
+<!-- snippet: reduce_max_simt -->
+```python
+for g, j in T.Parallel(num_groups, group_size):
+    a_l[g, j] = T.abs(
+        T.Cast("float32", x_ub[g * group_size + j]))
+T.reduce_max(a_l, amax_l, dim=1)
+```
+
+`harness/probe/simt_reduce_max.py` builds both spellings of this kernel, checks
+each against the same oracle, confirms they are byte-identical, and measures
+each as the first device op of its own process:
+
+| reduction spelling | VF_SIMT cycles | vs ASC's 6,176 | abs/reduce instructions |
+|---|---:|---:|---:|
+| serial scan — what this tier ships | 71,606 | 11.59x | 4,096 |
+| `T.reduce_max` | **8,012** | **1.30x** | 256 |
+
+**One line is worth 8.94x here.** The tier ships the scan throughout because the
+accumulator can be seeded with the clamp, which makes the clamp free, and
+because every later variant needs somewhere to put the exponent arithmetic that
+follows the maximum — uniformity worth having in a ladder meant to be read in
+order. It is not free, and section 11 states the consequence: **every SIMT cycle
+count in this report is the serial-scan spelling.**
 
 ### 5.2 Width as an argument
 
@@ -1007,8 +1060,11 @@ Stated plainly, because they bound every conclusion above.
    within-variant and valid; cycle counts are not comparable between rows.
 3. **Single core, no scheduling.** `T.Kernel(1)` throughout, so nothing here
    speaks to multi-core behaviour, double buffering or cache hints.
-4. **The SIMT kernels are deliberately untuned.** They are written the way a GPU
-   programmer writes them first, which was the comparison wanted. A separate
+4. **The SIMT kernels are deliberately untuned, and section 5.1 measures what
+   that costs.** They are written the way a GPU programmer writes them first,
+   which was the comparison wanted; replacing the serial scan with
+   `T.reduce_max` takes `per_token/01` from **11.59x to 1.30x**, without
+   changing a result. Every SIMT number here is the untuned spelling. A separate
    SIMT-versus-SIMD suite on the same simulator, sweeping several SIMT strategies
    per kernel, found ratios from **0.33x to 53x** — that is, SIMT *winning* by 3x
    on some grouped reductions. In one case the strategy choice alone moved an
@@ -1033,7 +1089,10 @@ express "store it transposed", or an interleave instruction plus a padded scratc
 row to express "write two bytes". There SIMT is a third of the code and removes
 a class of index error. Elsewhere its shorter source expresses the same stages
 and the same memory traffic, at 3.20x to 21.18x the cycles — under 6x on 8 of
-the 22 variants and over 10x on 11.
+the 22 variants and over 10x on 11. Those ratios are the untuned spelling: on
+`per_token/01`, swapping the serial scan for `T.reduce_max` moves 11.59x to
+1.30x (section 5.1), so they bound how a thread-model *port* performs, not how
+the thread model performs.
 
 **Where the SIMD frontends have nothing to simplify.** When the operation maps onto
 the hardware as written. If the data already lines up with the lanes

@@ -9,7 +9,16 @@ Run them after any tilelang / ptoas version bump:
 ```bash
 python harness/probe/vf_lane_limits.py          # compile-only, ~10s
 python harness/probe/vf_lane_limits.py --run    # + numerical check under the simulator
+python harness/probe/simt_reduce_max.py         # both reduction spellings, verified
 ```
+
+Two of them answer *performance* questions rather than "does it lower", and
+their numbers are quoted in the deck and the report:
+
+| probe | question | answer |
+|---|---|---|
+| `simt_thread_count.py` | does declaring fewer SIMT threads help? | no — 32/64/128 threads are within 4% (71,278 / 69,047 / 71,606 cycles), all correct |
+| `simt_reduce_max.py` | is `T.reduce_max` better than the tier's serial scan? | **yes, 8.94x** — 8,012 cycles against 71,606, byte-identical output |
 
 ## Measured 2026-10-07 on tilelang 0.1.15 + ptoas vmi 0.1.9
 
