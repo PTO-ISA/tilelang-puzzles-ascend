@@ -559,51 +559,51 @@
  },
  "simt/per_block/01_raw_32x32": {
   "call_count": 4,
-  "cycles": 19276.0,
+  "cycles": 2664.0,
   "instr": "VF_SIMT",
   "kind": "SIMT",
   "method": "harness",
   "result": "PASS",
   "shape": "32x128",
   "soc": "Ascend950PR_9599",
-  "us": 10.72
+  "us": 1.4900000000000002
  },
  "simt/per_block/02_round_packed": {
   "call_count": 4,
-  "cycles": 19444.0,
+  "cycles": 3130.0,
   "instr": "VF_SIMT",
   "kind": "SIMT",
   "method": "harness",
   "result": "PASS",
   "shape": "32x128",
   "soc": "Ascend950PR_9599",
-  "us": 10.8
+  "us": 1.73
  },
  "simt/per_block/03_fp4_e2m1": {
   "call_count": 4,
-  "cycles": 27256.0,
+  "cycles": 16536.0,
   "instr": "VF_SIMT",
   "kind": "SIMT",
   "method": "harness",
   "result": "PASS",
   "shape": "32x128",
   "soc": "Ascend950PR_9599",
-  "us": 15.16
+  "us": 9.18
  },
  "simt/per_block/04_col_major_tma": {
   "call_count": 4,
-  "cycles": 19272.0,
+  "cycles": 3044.0,
   "instr": "VF_SIMT",
   "kind": "SIMT",
   "method": "harness",
   "result": "PASS",
   "shape": "32x128",
   "soc": "Ascend950PR_9599",
-  "us": 10.72
+  "us": 1.69
  },
  "simt/per_block/05_split_compose": {
   "call_count": 4,
-  "cycles": 19444.0,
+  "cycles": 3130.0,
   "instr": "VF_SIMT",
   "kind": "SIMT",
   "method": "driver",
@@ -612,7 +612,7 @@
   "result": "PASS",
   "shape": "32x128",
   "soc": "Ascend950PR_9599",
-  "us": 10.8
+  "us": 1.73
  },
  "simt/per_channel/01_raw_32tokens": {
   "call_count": 1,
@@ -660,51 +660,51 @@
  },
  "simt/per_token/01_raw_fp32sf": {
   "call_count": 32,
-  "cycles": 71606.0,
+  "cycles": 8204.0,
   "instr": "VF_SIMT",
   "kind": "SIMT",
   "method": "harness",
   "result": "PASS",
   "shape": "32x128",
   "soc": "Ascend950PR_9599",
-  "us": 39.779999
+  "us": 4.56
  },
  "simt/per_token/02_round_sf": {
   "call_count": 32,
-  "cycles": 71008.0,
+  "cycles": 8197.0,
   "instr": "VF_SIMT",
   "kind": "SIMT",
   "method": "harness",
   "result": "PASS",
   "shape": "32x128",
   "soc": "Ascend950PR_9599",
-  "us": 39.450001
+  "us": 4.55
  },
  "simt/per_token/03_packed_ue8m0": {
   "call_count": 32,
-  "cycles": 74136.0,
+  "cycles": 9893.0,
   "instr": "VF_SIMT",
   "kind": "SIMT",
   "method": "harness",
   "result": "PASS",
   "shape": "32x128",
   "soc": "Ascend950PR_9599",
-  "us": 41.189999
+  "us": 5.5
  },
  "simt/per_token/04_fp32_in_fp4_out": {
   "call_count": 32,
-  "cycles": 613632.0,
+  "cycles": 562280.0,
   "instr": "VF_SIMT",
   "kind": "SIMT",
   "method": "harness",
   "result": "PASS",
   "shape": "32x128",
   "soc": "Ascend950PR_9599",
-  "us": 340.910004
+  "us": 312.380005
  },
  "simt/per_token/04_fp32_in_fp4_out+branch_free": {
   "call_count": 32,
-  "cycles": 345189.0,
+  "cycles": 269370.0,
   "instr": "VF_SIMT",
   "kind": "SIMT",
   "method": "driver",
@@ -713,22 +713,22 @@
   "result": "PASS",
   "shape": "32x128",
   "soc": "Ascend950PR_9599",
-  "us": 191.770004
+  "us": 149.649994
  },
  "simt/per_token/05_col_major_sf": {
   "call_count": 32,
-  "cycles": 75281.0,
+  "cycles": 10897.0,
   "instr": "VF_SIMT",
   "kind": "SIMT",
   "method": "harness",
   "result": "PASS",
   "shape": "32x128",
   "soc": "Ascend950PR_9599",
-  "us": 41.819998
+  "us": 6.05
  },
  "simt/per_token/06_split_requant": {
   "call_count": 32,
-  "cycles": 71606.0,
+  "cycles": 8204.0,
   "instr": "VF_SIMT",
   "kind": "SIMT",
   "method": "driver",
@@ -737,17 +737,17 @@
   "result": "PASS",
   "shape": "32x128",
   "soc": "Ascend950PR_9599",
-  "us": 39.779999
+  "us": 4.56
  },
  "simt/per_token/07_bf16_fast_compose": {
   "call_count": 32,
-  "cycles": 72490.0,
+  "cycles": 8502.0,
   "instr": "VF_SIMT",
   "kind": "SIMT",
   "method": "harness",
   "result": "PASS",
   "shape": "32x256",
   "soc": "Ascend950PR_9599",
-  "us": 40.27
+  "us": 4.72
  }
 }

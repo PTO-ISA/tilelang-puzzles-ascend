@@ -66,7 +66,6 @@ def compile_kernel(hidden: int, block: tuple = (BLOCK_MN, BLOCK_K)):
         with T.Kernel(1):
             x_ub = T.alloc_shared((bm, bk), T.bfloat16)
             q_ub = T.alloc_shared((bm, bk // 2), T.uint8)
-            row_ub = T.alloc_shared((bm,), T.float32)
             sf_ub = T.alloc_shared((1,), T.float32)
             inv_ub = T.alloc_shared((1,), T.float32)
 
@@ -74,20 +73,21 @@ def compile_kernel(hidden: int, block: tuple = (BLOCK_MN, BLOCK_K)):
                 for kb in T.serial(num_k_blocks):
                     T.copy(X[mb * bm, kb * bk], x_ub)
 
-                    # TODO: levels 1 and 2 are variant 01's with E2M1_MAX /
-                    #       E2M1_CLAMP_MIN in place of the e4m3 constants. The
-                    #       output is the work, and it is where SIMT LOSES: ASC
-                    #       and PTO finish with a hardware float32 -> e2m1 convert
-                    #       and only have to pre-round to bfloat16 with a sticky
-                    #       bit, four operations; no such convert is reachable
-                    #       here, so e2m1_nibble(v) above does the whole encode by
-                    #       hand. Read it. Then give each thread one output BYTE
-                    #       -- T.Parallel(bm, bk // 2), encoding x_ub[i, 2*j] and
-                    #       x_ub[i, 2*j+1] and packing them lo | (hi << 4), low
-                    #       nibble first -- so the pack needs no exchange between
-                    #       threads. Write the byte to a shared uint8 tile; a
-                    #       fragment would reject the second index pattern on
-                    #       x_ub, shared does not.
+                    # TODO: the reduction and the scale are variant 01's -- the
+                    #       flat T.reduce_absmax and then the clamp -- with
+                    #       E2M1_MAX / E2M1_CLAMP_MIN in place of the e4m3
+                    #       constants. The output is the work, and it is where
+                    #       SIMT LOSES: ASC and PTO finish with a hardware float32
+                    #       -> e2m1 convert and only have to pre-round to bfloat16
+                    #       with a sticky bit, four operations; no such convert is
+                    #       reachable here, so e2m1_nibble(v) above does the whole
+                    #       encode by hand. Read it. Then give each thread one
+                    #       output BYTE -- T.Parallel(bm, bk // 2), encoding
+                    #       x_ub[i, 2*j] and x_ub[i, 2*j+1] and packing them lo |
+                    #       (hi << 4), low nibble first -- so the pack needs no
+                    #       exchange between threads. Write the byte to a shared
+                    #       uint8 tile; a fragment would reject the second index
+                    #       pattern on x_ub, shared does not.
                     raise NotImplementedError("simt/per_block/03_fp4_e2m1: implement per_block_cast")
 
                     T.copy(q_ub, Q[mb * bm, kb * bk // 2])

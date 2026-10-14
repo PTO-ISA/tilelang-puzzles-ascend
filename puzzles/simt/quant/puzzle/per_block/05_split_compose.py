@@ -42,7 +42,6 @@ def compile_kernel(hidden: int, mode: str = "full",
         with T.Kernel(1):
             x_ub = T.alloc_shared((bm, bk), T.bfloat16)
             q_ub = T.alloc_shared((bm, bk), T.float8_e4m3fn)
-            row_ub = T.alloc_shared((bm,), T.float32)
             sf_ub = T.alloc_shared((1,), T.uint8)
             inv_ub = T.alloc_shared((1,), T.float32)
 
@@ -54,15 +53,16 @@ def compile_kernel(hidden: int, mode: str = "full",
 
                     # TODO: gate the stages on the mode -- `mode` is a Python
                     #       string read at trace time, so these `if`s choose what
-                    #       is emitted. need_amax emits variant 02's two reduction
-                    #       levels and the exponent trick, writing the byte to
-                    #       sf_ub[0]. cast_only instead reads the byte it was
-                    #       handed: biased = T.Cast('int32', sf_ub[0]). Either way
-                    #       the inverse is inv_ub[0] = T.reinterpret('float32',
-                    #       (254 - biased) << 23) -- exact, because negating a
-                    #       power of two's exponent is exact, which is why the
-                    #       harness can demand that cast_only be bit-identical to
-                    #       the fused path. need_quant emits the apply.
+                    #       is emitted. need_amax emits variant 02's reduction --
+                    #       the flat T.reduce_absmax -- and the exponent trick,
+                    #       writing the byte to sf_ub[0]. cast_only instead reads
+                    #       the byte it was handed: biased = T.Cast('int32',
+                    #       sf_ub[0]). Either way the inverse is inv_ub[0] =
+                    #       T.reinterpret('float32', (254 - biased) << 23) --
+                    #       exact, because negating a power of two's exponent is
+                    #       exact, which is why the harness can demand that
+                    #       cast_only be bit-identical to the fused path.
+                    #       need_quant emits the apply.
                     raise NotImplementedError("simt/per_block/05_split_compose: implement per_block_cast")
 
                     if need_quant:

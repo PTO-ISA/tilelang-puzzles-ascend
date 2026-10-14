@@ -92,7 +92,7 @@ Note that this is a store to **shared**, not to a fragment. That is deliberate:
 shared buffers are exempt from the one-index-pattern rule, so writing a
 per-group byte from a thread indexed by group needs no staging.
 
-15 lines against ASC's 37 and PTO's 21.
+16 lines against ASC's 37 and PTO's 21.
 
 ## What the harness checks
 

@@ -10,9 +10,9 @@ description: >-
 
 # Writing technical slides
 
-Rules derived from four reviews of a benchmark deck, where the content was
-correct and first the writing, then the structure, was rejected. Every rule
-below has a before/after taken from those reviews.
+Rules derived from five reviews of a benchmark deck, where the content was
+correct and first the writing, then the structure, then the subject itself was
+rejected. Every rule below has a before/after taken from those reviews.
 
 The underlying test: **a reader should not be able to delete a sentence without
 losing a fact.**
@@ -248,6 +248,36 @@ interesting: **nothing in that frontend's surface reaches it**.
 The fix is usually one more clause, and it is the clause a reader working on
 that frontend needs. Where a probe establishes the limit, cite it.
 
+## 18. If a measurement says the subject is written wrong, fix the subject
+
+The fifth review asked whether a library primitive would beat the hand-written
+reduction the deck was presenting. It did, by 8.73x. The first response was to
+*report* that: a new slide, a measured table, and a sentence saying every number
+in the deck was the slower spelling. The review's answer was that a deck is not
+a place to publish a known-worse implementation with a footnote.
+
+| rejected | replacement |
+|---|---|
+| a caveat slide saying "the SIMT numbers are the untuned spelling" | re-spell the 12 kernels, re-measure all of them, and publish the new numbers |
+| "anyone porting this for speed should start from `T.reduce_max`" | the shipped code starts from it |
+
+Two things make this rule practical rather than a counsel of perfection.
+
+**The cost of the re-measurement is the deciding factor, not the cost of the
+edit.** Re-spelling was an afternoon; re-measuring 12 kernels under a simulator
+and re-deriving 60 published claims is what has to be budgeted. Say so, with the
+number, rather than describing the change as cheap.
+
+**Keep the rejected spelling, measured, where the choice is instructive.** The
+scan is still in a probe, still verified byte-identical to the shipped fold, and
+the deck shows it on one slide as what the 8.73x was measured against. That is
+different from shipping it.
+
+And when an exception survives, it needs the same standard of evidence as the
+rule: the one kernel family here that kept the serial scan did so for three
+measured reasons -- no occupancy to recover (1.06x), the vendor's own reference
+scans the same axis, and on two variants the library call does not compile.
+
 ## Quick self-check before shipping
 
 1. Does every title name a subject and a finding?
@@ -268,3 +298,5 @@ that frontend needs. Where a probe establishes the limit, cite it.
 14. Does any slide drop one implementation without saying why?
 15. Does any claim about hardware say "no instruction" when it means "no call in
     this frontend reaches the instruction"?
+16. Is the deck presenting an implementation a measurement has already shown to
+    be the wrong one? Fix the implementation, and keep the loser in a probe.

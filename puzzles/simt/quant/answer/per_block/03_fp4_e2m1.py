@@ -66,7 +66,6 @@ def compile_kernel(hidden: int, block: tuple = (BLOCK_MN, BLOCK_K)):
         with T.Kernel(1):
             x_ub = T.alloc_shared((bm, bk), T.bfloat16)
             q_ub = T.alloc_shared((bm, bk // 2), T.uint8)
-            row_ub = T.alloc_shared((bm,), T.float32)
             sf_ub = T.alloc_shared((1,), T.float32)
             inv_ub = T.alloc_shared((1,), T.float32)
 
@@ -74,21 +73,16 @@ def compile_kernel(hidden: int, block: tuple = (BLOCK_MN, BLOCK_K)):
                 for kb in T.serial(num_k_blocks):
                     T.copy(X[mb * bm, kb * bk], x_ub)
 
-                    # --- BEGIN SOLUTION hint="levels 1 and 2 are variant 01's with E2M1_MAX / E2M1_CLAMP_MIN in place of the e4m3 constants. The output is the work, and it is where SIMT LOSES: ASC and PTO finish with a hardware float32 -> e2m1 convert and only have to pre-round to bfloat16 with a sticky bit, four operations; no such convert is reachable here, so e2m1_nibble(v) above does the whole encode by hand. Read it. Then give each thread one output BYTE -- T.Parallel(bm, bk // 2), encoding x_ub[i, 2*j] and x_ub[i, 2*j+1] and packing them lo | (hi << 4), low nibble first -- so the pack needs no exchange between threads. Write the byte to a shared uint8 tile; a fragment would reject the second index pattern on x_ub, shared does not."
+                    # --- BEGIN SOLUTION hint="the reduction and the scale are variant 01's -- the flat T.reduce_absmax and then the clamp -- with E2M1_MAX / E2M1_CLAMP_MIN in place of the e4m3 constants. The output is the work, and it is where SIMT LOSES: ASC and PTO finish with a hardware float32 -> e2m1 convert and only have to pre-round to bfloat16 with a sticky bit, four operations; no such convert is reachable here, so e2m1_nibble(v) above does the whole encode by hand. Read it. Then give each thread one output BYTE -- T.Parallel(bm, bk // 2), encoding x_ub[i, 2*j] and x_ub[i, 2*j+1] and packing them lo | (hi << 4), low nibble first -- so the pack needs no exchange between threads. Write the byte to a shared uint8 tile; a fragment would reject the second index pattern on x_ub, shared does not."
                     with T.SimtVF(threads=THREADS):
-                        for t in T.Parallel(bm):
-                            amax = T.alloc_var(T.float32)
-                            amax = E2M1_CLAMP_MIN
-                            for j in T.serial(bk):
-                                amax = T.max(amax,
-                                             T.abs(T.Cast("float32", x_ub[t, j])))
-                            row_ub[t] = amax
+                        flat_l = T.alloc_fragment((1, bm * bk), T.float32)
+                        tile_l = T.alloc_fragment((1,), T.float32)
+                        for i, j in T.Parallel(bm, bk):
+                            flat_l[0, i * bk + j] = T.Cast("float32", x_ub[i, j])
+                        T.reduce_absmax(flat_l, tile_l, dim=1)
 
                         for _z in T.Parallel(1):
-                            tile = T.alloc_var(T.float32)
-                            tile = E2M1_CLAMP_MIN
-                            for t in T.serial(bm):
-                                tile = T.max(tile, row_ub[t])
+                            tile = T.max(tile_l[0], E2M1_CLAMP_MIN)
                             sf_ub[0] = tile / E2M1_MAX
                             inv_ub[0] = E2M1_MAX / tile
 

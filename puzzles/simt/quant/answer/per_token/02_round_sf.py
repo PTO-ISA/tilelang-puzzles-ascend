@@ -39,16 +39,18 @@ def compile_kernel(hidden: int, group_size: int = CANONICAL_G):
                 T.copy(X[token, 0], x_ub)
 
                 with T.SimtVF(threads=THREADS):
+                    x_l = T.alloc_fragment((num_groups, group_size), T.float32)
+                    amax_l = T.alloc_fragment((num_groups,), T.float32)
                     q_l = T.alloc_fragment((hidden,), T.float32)
                     inv_l = T.alloc_fragment((num_groups,), T.float32)
                     sf_l = T.alloc_fragment((num_groups,), T.float32)
 
+                    for g, j in T.Parallel(num_groups, group_size):
+                        x_l[g, j] = T.Cast("float32", x_ub[g * group_size + j])
+                    T.reduce_absmax(x_l, amax_l, dim=1)
+
                     for g in T.Parallel(num_groups):
-                        amax = T.alloc_var(T.float32)
-                        amax = E4M3_CLAMP_MIN
-                        for j in T.serial(group_size):
-                            v = T.Cast("float32", x_ub[g * group_size + j])
-                            amax = T.max(amax, T.abs(v))
+                        amax = T.max(amax_l[g], E4M3_CLAMP_MIN)
 
                         # --- BEGIN SOLUTION hint="everything else here is variant 01. The new idea is the four lines that replace its two divisions: ceil(log2(amax/448)) read straight out of the float32 exponent field. bits = T.reinterpret('int32', amax / E4M3_MAX); biased = ((bits - 1) >> 23) + 1 is that exponent, still biased by 127; then rebuild each scale by writing an exponent back -- T.reinterpret('float32', biased << 23) for sf, and T.reinterpret('float32', (254 - biased) << 23) for its reciprocal, since 254 - biased negates the unbiased exponent. No lane count and no broadcast of constants: compare the ASC file's six vector ops, or PTO's compute_scale macro, which only has to BE a macro so that `size=` can be threaded through it."
                         bits = T.reinterpret("int32", amax / E4M3_MAX)

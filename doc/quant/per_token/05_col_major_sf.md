@@ -126,7 +126,7 @@ sf_out_ub[g, sub] = T.reinterpret("float32", biased << 23)
 
 No lane index, no index vector, no gather, and no block of scales held back to be
 permuted — `sf_out_ub` is already `(num_groups, token_block)`, so the per-block
-store is one contiguous `T.copy`. 15 lines against ASC's 54 and PTO's 48, the
+store is one contiguous `T.copy`. 16 lines against ASC's 54 and PTO's 48, the
 largest source-length gap in the ladder.
 
 And it costs **13.74x ASC's simulated VF cycles** — see
@@ -137,7 +137,7 @@ by the widest margin in the ladder, is also one of the most expensive to run.
 tiers are a trade rather than a ranking.
 
 (The worst ratio in the ladder is not here but at
-[`per_token/04`](04_fp32_in_fp4_out.md), at 99.62x, for a completely different
+[`per_token/04`](04_fp32_in_fp4_out.md), at 91.28x, for a completely different
 reason: a hand-written encoder standing in for a hardware instruction.)
 
 A measurement detail that confirms the two kernels are doing the same work: ASC

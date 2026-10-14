@@ -17,8 +17,8 @@ their numbers are quoted in the deck and the report:
 
 | probe | question | answer |
 |---|---|---|
-| `simt_thread_count.py` | does declaring fewer SIMT threads help? | no — 32/64/128 threads are within 4% (71,278 / 69,047 / 71,606 cycles), all correct |
-| `simt_reduce_max.py` | is `T.reduce_max` better than the tier's serial scan? | **yes, 8.94x** — 8,012 cycles against 71,606, byte-identical output |
+| `simt_reduce_max.py` | is `T.reduce_absmax` better than a thread-per-group serial scan? | **yes, 8.73x** — 8,204 cycles against 71,606, byte-identical output. The tier was re-spelled; see below |
+| `simt_thread_count.py` | does declaring fewer SIMT threads help? | **on the shipped fold, yes: 64 threads is 0.81x of 128** (6,661 against 8,204) — it was within 4% on the serial scan this tier used to ship |
 
 ## Measured 2026-10-29 on tilelang 0.1.15 + ptoas 0.70
 
@@ -82,22 +82,33 @@ the wrong numbers that prompted the claim came from the row above it.
 python harness/probe/simt_divergence.py          # both arms, ~16 min
 ```
 
-Measured 2026-10-12, same pin, `Ascend950PR_9599`, M=32 K=128. The same e2m1
-encoder, with only its three conditionals respelled; both arms bit-exact against
-the torch packer:
+Measured 2026-10-12 and re-measured 2026-10-14 to the digit, same pin,
+`Ascend950PR_9599`, M=32 K=128. The same e2m1 encoder, with only its three
+conditionals respelled; both arms bit-exact against the torch packer:
 
 | spelling | cycles | instructions | cycles/instr | divergence markers |
 |---|---:|---:|---:|---:|
 | `T.if_then_else` (shipped) | 615,170 | 124,294 | 4.95 | 5,864 |
 | mask arithmetic | **351,956** | 179,908 | **1.96** | **0** |
 
-The branch-free form issues 45% **more** instructions and runs **1.75x fewer
-cycles**, because `T.if_then_else` on a data-dependent per-element condition
-lowers to a real branch instead of a predicated select. 1.96 cycles per
-instruction is what every other SIMT `per_token` variant achieves.
+In this standalone encoder the branch-free form issues 45% **more** instructions
+and still runs **1.75x fewer cycles**, because `T.if_then_else` on a
+data-dependent per-element condition lowers to a real branch instead of a
+predicated select.
 
-This is why `simt/per_token/04` measures 99.6x ASC while the rest of the SIMT
-tier sits between 3.2x and 21.2x — and why roughly a 1.75x slice of that gap is
+The same comparison on the **whole variant** (`doc/known-issues.md`,
+`doc/quant/per_token/04_fp32_in_fp4_out.md`) reports 562,280 against 269,370
+cycles, a 2.09x gap, and there the branch-free arm issues **fewer**
+instructions, 152,260 against 243,130. Both are real and they are not
+comparable: a divergent branch issues every path it takes, so the conditional
+arm's instruction count depends on the data, and this probe's input is not the
+harness's. The mask arm, which has no branches at all, is the stable one. What
+both measurements agree on is the mechanism and its sign — removing the branches
+removes the divergence (5,864 markers to 0 here, 1,408 to 0 in the variant) and
+the cycles follow.
+
+This is why `simt/per_token/04` measures 91.3x ASC while the rest of the SIMT
+tier sits between 1.2x and 10.2x — and why roughly a 2.09x slice of that gap is
 a codegen gap rather than a cost of the thread model. See
 `doc/known-issues.md`.
 

@@ -14,14 +14,17 @@ THREADS = 128
 def compile_kernel(hidden: int, block: tuple = (BLOCK_MN, BLOCK_K)):
     """Quantize bfloat16 -> FP8 e4m3 with one FP32 scale per `block` tile.
 
-    One scale for 1024 values means a reduction all the way down to a scalar,
-    and this is the shape a GPU programmer reaches for: a partial per thread
-    into shared memory, then one thread finishing the job. The SIMD tiers do
-    exactly the same two levels for the same reason -- a vector reduction stops
-    at one value per register, so the partials have to meet in UB.
+    One scale for 1024 values means a reduction all the way down to a scalar.
+    The SIMD tiers need two levels for it -- a vector reduction stops at one
+    value per register, so the partials have to meet in UB -- and so does the
+    shape a GPU programmer reaches for first: a partial per thread into shared
+    memory, then one thread finishing the job.
 
-    The honest reading of this variant is that SIMT buys nothing here. The
-    structure is identical; only the spelling of a maximum changes.
+    Neither is written here. `T.reduce_absmax` over the tile laid out as a
+    single row does the whole fold in one call, and that is both shorter than
+    the two-level scan and 7.24x fewer cycles, because the scan's second level
+    runs on one thread of 128. `harness/probe/simt_reduce_max.py` measures the
+    same choice on `per_token/01`.
     """
     bm, bk = block
     assert bm == 32 and bk == 32, "Ascend per_block granularity is 32x32"
@@ -41,7 +44,6 @@ def compile_kernel(hidden: int, block: tuple = (BLOCK_MN, BLOCK_K)):
             # 32 tokens by 32 channels, so T.copy's 2-D region is what we want.
             x_ub = T.alloc_shared((bm, bk), T.bfloat16)
             q_ub = T.alloc_shared((bm, bk), T.float8_e4m3fn)
-            row_ub = T.alloc_shared((bm,), T.float32)     # per-row partials
             sf_ub = T.alloc_shared((1,), T.float32)
             inv_ub = T.alloc_shared((1,), T.float32)
 
@@ -49,20 +51,23 @@ def compile_kernel(hidden: int, block: tuple = (BLOCK_MN, BLOCK_K)):
                 for kb in T.serial(num_k_blocks):
                     T.copy(X[mb * bm, kb * bk], x_ub)
 
-                    # TODO: a two-level reduction, the same two levels the SIMD
-                    #       tiers need. (1) T.Parallel(bm): each thread scans its
-                    #       own row of bk out of the UB tile and writes the
-                    #       partial to row_ub[t]. (2) T.Parallel(1): one thread
-                    #       folds the bm partials into the tile maximum, seeded at
-                    #       E4M3_CLAMP_MIN, and writes sf = amax/448 and inv =
-                    #       448/amax into one-element shared buffers -- a scalar
-                    #       result belongs in shared, not in a fragment. (3)
-                    #       T.Parallel(bm, bk): apply, reading the single
-                    #       inv_ub[0] that every thread shares. Note there is no
-                    #       index arithmetic anywhere in this variant: the tile is
-                    #       already the reduction domain, so SIMT's advantage over
-                    #       SIMD is nil here and the structures match line for
-                    #       line.
+                    # TODO: ONE reduction, not the two levels the SIMD tiers need.
+                    #       (1) T.Parallel(bm, bk) copies the tile into a fragment
+                    #       declared (1, bm * bk) -- a single row, so the whole
+                    #       tile is one reduction axis -- and
+                    #       T.reduce_absmax(flat_l, tile_l, dim=1) folds it. Do
+                    #       not write the GPU shape of a partial per row into
+                    #       row_ub and then one thread folding the partials: it is
+                    #       longer and 7.24x slower, because that second level
+                    #       runs on 1 thread of 128. (2) T.Parallel(1) clamps
+                    #       tile_l[0] at E4M3_CLAMP_MIN -- a library reduction
+                    #       cannot be seeded -- and writes sf = amax/448 and inv =
+                    #       448/amax into one-element shared buffers, since a
+                    #       scalar result belongs in shared rather than a
+                    #       fragment. (3) T.Parallel(bm, bk): apply, reading the
+                    #       single inv_ub[0] that every thread shares. Note there
+                    #       is no index arithmetic anywhere in this variant: the
+                    #       tile is already the reduction domain.
                     raise NotImplementedError("simt/per_block/01_raw_32x32: implement per_block_cast")
 
                     T.copy(q_ub, Q[mb * bm, kb * bk])

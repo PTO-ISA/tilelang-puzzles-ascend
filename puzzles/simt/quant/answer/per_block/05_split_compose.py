@@ -42,7 +42,6 @@ def compile_kernel(hidden: int, mode: str = "full",
         with T.Kernel(1):
             x_ub = T.alloc_shared((bm, bk), T.bfloat16)
             q_ub = T.alloc_shared((bm, bk), T.float8_e4m3fn)
-            row_ub = T.alloc_shared((bm,), T.float32)
             sf_ub = T.alloc_shared((1,), T.uint8)
             inv_ub = T.alloc_shared((1,), T.float32)
 
@@ -52,26 +51,22 @@ def compile_kernel(hidden: int, mode: str = "full",
                     if mode == "cast_only":
                         T.copy(SfIn[mb, kb], sf_ub[0:1])
 
-                    # --- BEGIN SOLUTION hint="gate the stages on the mode -- `mode` is a Python string read at trace time, so these `if`s choose what is emitted. need_amax emits variant 02's two reduction levels and the exponent trick, writing the byte to sf_ub[0]. cast_only instead reads the byte it was handed: biased = T.Cast('int32', sf_ub[0]). Either way the inverse is inv_ub[0] = T.reinterpret('float32', (254 - biased) << 23) -- exact, because negating a power of two's exponent is exact, which is why the harness can demand that cast_only be bit-identical to the fused path. need_quant emits the apply."
+                    # --- BEGIN SOLUTION hint="gate the stages on the mode -- `mode` is a Python string read at trace time, so these `if`s choose what is emitted. need_amax emits variant 02's reduction -- the flat T.reduce_absmax -- and the exponent trick, writing the byte to sf_ub[0]. cast_only instead reads the byte it was handed: biased = T.Cast('int32', sf_ub[0]). Either way the inverse is inv_ub[0] = T.reinterpret('float32', (254 - biased) << 23) -- exact, because negating a power of two's exponent is exact, which is why the harness can demand that cast_only be bit-identical to the fused path. need_quant emits the apply."
                     with T.SimtVF(threads=THREADS):
+                        flat_l = T.alloc_fragment((1, bm * bk), T.float32)
+                        tile_l = T.alloc_fragment((1,), T.float32)
                         q_l = T.alloc_fragment((bm, bk), T.float32)
 
                         if need_amax:
-                            for t in T.Parallel(bm):
-                                amax = T.alloc_var(T.float32)
-                                amax = E4M3_CLAMP_MIN
-                                for j in T.serial(bk):
-                                    amax = T.max(
-                                        amax, T.abs(T.Cast("float32", x_ub[t, j])))
-                                row_ub[t] = amax
+                            for i, j in T.Parallel(bm, bk):
+                                flat_l[0, i * bk + j] = T.Cast("float32",
+                                                               x_ub[i, j])
+                            T.reduce_absmax(flat_l, tile_l, dim=1)
 
                         for _z in T.Parallel(1):
                             biased = T.alloc_var(T.int32)
                             if need_amax:
-                                tile = T.alloc_var(T.float32)
-                                tile = E4M3_CLAMP_MIN
-                                for t in T.serial(bm):
-                                    tile = T.max(tile, row_ub[t])
+                                tile = T.max(tile_l[0], E4M3_CLAMP_MIN)
                                 bits = T.reinterpret("int32", tile / E4M3_MAX)
                                 biased = ((bits - 1) >> 23) + 1
                                 sf_ub[0] = T.Cast("uint8", biased)

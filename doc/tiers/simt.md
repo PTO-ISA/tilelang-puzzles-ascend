@@ -102,9 +102,9 @@ Stated plainly, because it makes the rest trustworthy.
 | file | what happens |
 |---|---|
 | `cast_back/04` | nothing. The SIMD tiers are getting a refund here (the broadcast disappears when there is one scale per channel); SIMT never paid it, so its line count does not move |
-| `per_block/01`, `/04` | a draw. A tile scale is a scalar, so no tier has lane-placement work to do; the two-level reduction has the same shape in all three |
+| `per_block/01`, `/04` | mostly a draw: a tile scale is a scalar, so no tier has lane-placement work to do. SIMT does get one structural win — a fragment's shape lets the whole 32x32 tile fold in a single `T.reduce_absmax`, where both SIMD tiers need two levels |
 | `per_channel/01` | a draw, and the mirror of why PTO draws here: a channel is a lane for SIMD and a thread for SIMT, so the data already lines up either way |
-| `per_token/04`, `per_block/03` | **SIMT is decisively worse.** No FP4 convert is reachable from a `SimtVF` region, so the e2m1 encode is written out by hand: 18 lines against PTO's 4-operation round-to-odd. `per_token/04` ships both a natural and a branch-free spelling of that encoder, 1.78x apart — see below |
+| `per_token/04`, `per_block/03` | **SIMT is decisively worse.** No FP4 convert is reachable from a `SimtVF` region, so the e2m1 encode is written out by hand: 18 lines against PTO's 4-operation round-to-odd. `per_token/04` ships both a natural and a branch-free spelling of that encoder, 2.09x apart — see below |
 | `per_token/07`, `per_channel/04` | the variant's *lesson* does not port. Both exist to show bfloat16 doubling the lane count; SIMT has no lane width to trade, so its body is an earlier variant's at a larger size |
 | `cast_back/05` | PTO wins. A format conversion is one thing the hardware does, so the tier that can name it directly should be shortest |
 
@@ -117,13 +117,24 @@ python tools/vf_lines.py        # static: lines per tier, ops for ASC/PTO
 python tools/vf_cycles.py --all # measured: simulated VF cycles per tier
 ```
 
-Across all 22 variants SIMT is **53% of ASC's source lines** inside the VF
-region, and it costs **3.20x to 99.62x ASC's simulated VF cycles**. The top of
+Across all 22 variants SIMT is **51% of ASC's source lines** inside the VF
+region, and it costs **1.20x to 91.28x ASC's simulated VF cycles**. The top of
 that range is one special case — `per_token/04`, where an 18-line hand-written
 e2m1 encoder stands in for a hardware conversion — and setting it aside the
-range is **3.20x to 21.18x, mean 10.44x**. The full per-variant table, with
+range is **1.20x to 10.18x, mean 3.73x**. The full per-variant table, with
 absolute cycle counts and the method, is in
 [`quant_vf_cycle_comparison.md`](../quant_vf_cycle_comparison.md).
+
+Those numbers are the *second* spelling of every reduction in the tier. Written
+the obvious way — one thread per quant group, or per tile row, with an inner
+`T.serial` — `per_token/01` measured 11.59x and `per_block/01` 17.75x; handing
+the fold to `T.reduce_absmax`, which is how the CUDA reference writes it, makes
+them 1.33x and 2.45x with byte-identical output. `harness/probe/simt_reduce_max.py`
+measures the two spellings side by side. **The width of a `T.Parallel` is the
+single biggest thing to get right in a SIMT kernel here.** The exception is
+`per_channel`, whose fold runs down the token axis where one thread per channel
+already fills the region — it keeps the scan, as the CUDA reference does for the
+same axis.
 
 Two caveats on the line count, both of which make SIMT look better than it is.
 `tools/vf_lines.py` counts only what is inside the VF region, so PTO's `@T.macro`
@@ -145,27 +156,26 @@ The measurements do not support reading it as one line.
 - **PTO is sometimes faster than ASC, not merely close.** On `per_token/01` PTO
   uses about three quarters of ASC's cycles. "Most verbose is fastest" is not
   what the simulator says.
-- **`per_token/05` is where the two axes most clearly separate**: it is
-  simultaneously the variant where SIMT's source is shortest relative to ASC's
-  and the variant where its cycle ratio is worst. Both facts have the same
-  cause — the thread model removes the lane-placement problem, and leaves most of
-  the vector unit idle doing it.
+- **The two axes separate, but not where they used to.** `per_token/05` has the
+  shortest SIMT source relative to ASC's and, with its reduction re-spelled,
+  costs only 1.99x; the clearest remaining split is `per_channel/04`, at 17
+  lines against 46 and 8.08x the cycles. The thread model removes the
+  lane-placement problem and still runs one element per thread.
 - **Short source and fast kernel are not two readings of one axis.** They are two
   axes, and the four tiers are a trade rather than a ranking.
 
-### One variant ships two spellings, 1.78x apart
+### One variant ships two spellings, 2.09x apart
 
 `per_token/04` is the exception to "one kernel per variant", and the reason is
 worth knowing before you write any SIMT code here.
 
 `T.if_then_else` on a data-dependent per-element condition lowers to a **real
 branch** on this toolchain, not a predicated select. In that variant's encoder
-there are three such conditionals, and the cost is 4.94 cycles per instruction
-against the rest of the tier's 1.90–2.01 — it is the only variant in the ladder
-whose trace carries a large number of `SIMT_START_DVG` markers. Respelling the
+there are three such conditionals, and the trace carries 44,835 `SIMT_BRANCH`
+instructions where no other variant in the ladder carries any. Respelling the
 conditionals as mask arithmetic (`m = -T.Cast("int32", cond)`, then
-`(a & m) | (b & ~m)`) issues **45% more instructions and runs 1.78x fewer
-cycles**: 613,632 down to 345,189, which is 56.0x ASC instead of 99.6x.
+`(a & m) | (b & ~m)`) issues **37% fewer instructions and runs 2.09x fewer
+cycles**: 562,280 down to 269,370, which is 43.7x ASC instead of 91.3x.
 
 Both are in the file behind `branch_free=`, both are checked by the harness to
 be byte-identical, and both are measured in

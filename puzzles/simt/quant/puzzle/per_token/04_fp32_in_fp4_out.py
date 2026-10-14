@@ -120,25 +120,26 @@ def compile_kernel(hidden: int, group_size: int = CANONICAL_G,
 
                 # TODO: float32 input needs no widening, and E2M1_MAX is 6.0 --
                 #       the reduction and the scale are variant 01's, with
-                #       E2M1_CLAMP_MIN as the seed. The output is the work. The
-                #       e2m1_nibble(v, branch_free) helper is ALREADY WRITTEN
-                #       above this region: read it, because it is the torch tier's
-                #       bit-exact packer on scalars, and it is what the SIMD tiers
-                #       DO NOT have to write -- they own a float32 -> e2m1 convert
-                #       and only pre-round to bfloat16 with a sticky bit. Read its
-                #       docstring too: it holds BOTH spellings of the three
-                #       conditionals, and the branch-free one is 1.75x faster for
-                #       reasons worth knowing. Give each thread ONE OUTPUT BYTE:
-                #       T.Parallel(hidden // 2), encode x_ub[2*p] and x_ub[2*p+1],
-                #       and pack them as lo | (hi << 4), low nibble first. Both
-                #       halves live in the same quant group, so the scale index is
-                #       p // (group_size // 2). Writing a byte per thread rather
-                #       than a nibble per thread is what keeps the pack free of
-                #       any cross-thread exchange; indexing the shared x_ub twice
-                #       is allowed, where a fragment would reject the second
-                #       pattern. Thread `branch_free` straight through to the
-                #       helper -- it is a trace-time Python flag, so only one
-                #       spelling is ever emitted.
+                #       E2M1_CLAMP_MIN clamping the fold's result. The output is
+                #       the work. The e2m1_nibble(v, branch_free) helper is
+                #       ALREADY WRITTEN above this region: read it, because it is
+                #       the torch tier's bit-exact packer on scalars, and it is
+                #       what the SIMD tiers DO NOT have to write -- they own a
+                #       float32 -> e2m1 convert and only pre-round to bfloat16
+                #       with a sticky bit. Read its docstring too: it holds BOTH
+                #       spellings of the three conditionals, and the branch-free
+                #       one is 1.75x faster for reasons worth knowing. Give each
+                #       thread ONE OUTPUT BYTE: T.Parallel(hidden // 2), encode
+                #       x_ub[2*p] and x_ub[2*p+1], and pack them as lo | (hi <<
+                #       4), low nibble first. Both halves live in the same quant
+                #       group, so the scale index is p // (group_size // 2).
+                #       Writing a byte per thread rather than a nibble per thread
+                #       is what keeps the pack free of any cross-thread exchange;
+                #       indexing the shared x_ub twice is allowed, where a
+                #       fragment would reject the second pattern. Thread
+                #       `branch_free` straight through to the helper -- it is a
+                #       trace-time Python flag, so only one spelling is ever
+                #       emitted.
                 raise NotImplementedError("simt/per_token/04_fp32_in_fp4_out: implement per_token_cast")
 
                 T.copy(q_ub, Q[token, 0])

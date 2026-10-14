@@ -97,14 +97,14 @@ intra-warp or through shared memory, and inserts the synchronisation. Here you
 choose the reduction's lane extent with a predicate, place its result in Unified
 Buffer yourself, and write the barriers. Same three lines of maths.
 
-The [SIMT tier](../../tiers/simt.md) narrows that gap, and measuring it is
-instructive. `T.reduce_max(..., dim=1)` works on this chip inside a
-`T.SimtVF` region — `harness/probe/simt_limits.py` checks that it does — so the
-GPU spelling is available. What it costs is lane occupancy: with
-`group_size = 32` a kernel that puts one thread on each quant group runs 4
-threads out of 128, and `per_token` is where the measured SIMT cycle ratios are
-worst in the whole ladder. The library call is not the expensive part; the
-mapping from work to hardware is.
+The [SIMT tier](../../tiers/simt.md) closes that gap, and the SIMT kernels here
+are written with the same library call: `T.reduce_absmax(..., dim=1)` over a
+`(num_groups, group_size)` fragment, which is the CUDA reference's spelling after
+its `T.reshape`. What *does* cost is the mapping from work to hardware, and this
+family is where it was measured: writing the same reduction as one thread per
+quant group with an inner `T.serial` runs 4 threads out of 128 and costs
+**8.73x** more cycles (`harness/probe/simt_reduce_max.py`). The library call is
+not the expensive part — choosing the wrong extent for `T.Parallel` is.
 
 Three further contrasts are sharpest in this kernel:
 
