@@ -95,49 +95,37 @@ def e2m1_nibble(v, branch_free: bool = False):
 
 @tilelang.jit(target="ascend")
 def compile_kernel(hidden: int, group_size: int = CANONICAL_G,
-                   branch_free: bool = False, hw_convert: bool = False):
+                   branch_free: bool = False):
     """Quantize float32 -> packed FP4 e2m1 with one FP32 scale per 32 channels.
+
+    This is the tier's kernel: everything inside one ``T.SimtVF`` region,
+    including the e2m1 encode, which is what makes it the most expensive row in
+    the ladder. ``compile_hybrid_kernel`` below is the same algorithm with that
+    one encode handed to the vector unit, and it is 72.29x cheaper; this
+    function stays pure SIMT because the tier exists to measure what the thread
+    model costs on its own.
 
     ``branch_free`` is a trace-time flag threaded into ``e2m1_nibble``; it
     changes no result, only how the encoder's conditionals are spelled. See that
     function's docstring, and `doc/quant/per_token/04_fp32_in_fp4_out.md` for
     the measurement.
-
-    ``hw_convert`` is a different kind of flag, and the reason it exists is the
-    most useful thing in this variant. It does **not** make the SimtVF region
-    reach the FP4 convert -- nothing can, because an fp4 element is four bits
-    and the toolchain's only FP4 types are the vector ones
-    (`vector_f4e2m1x2`), so a per-thread scalar has nothing to convert into
-    (`harness/probe/simt_fp4_convert.py` records the nine spellings that fail).
-    It leaves the region instead: the thread model does the reduction, the
-    scales and the round-to-odd, and a three-line ``T.SimdVF`` block does the
-    one instruction it owns. Same kernel, same results, **69.9x** fewer cycles.
-
-    The default stays ``False`` because the SIMT tier measures what the thread
-    model costs on its own, and a kernel that drops into ``T.SimdVF`` is no
-    longer answering that question. Both spellings ship and both are verified.
     """
     assert hidden % group_size == 0 and group_size == 32
     num_groups = hidden // group_size
     num_tokens = T.dynamic("num_tokens")
 
-    # The output dtype follows the spelling. With the hand-written encoder the
-    # kernel packs the nibbles itself, so it says uint8; with the hardware
-    # convert it declares float4_e2m1fn, exactly as the ASC and PTO tiers do.
-    # Both are the same bytes, and launch() hands back the same uint8 view.
-    out_dtype = T.float4_e2m1fn if hw_convert else T.uint8
-    out_cols = hidden if hw_convert else hidden // 2
-
     @T.prim_func
     def per_token_cast(
         X: T.Tensor((num_tokens, hidden), T.float32),
-        Q: T.Tensor((num_tokens, out_cols), out_dtype),
+        # uint8, two nibbles per byte. ASC and PTO declare float4_e2m1fn and let
+        # the hardware convert write the nibbles; a SimtVF region has no such
+        # convert, so the packing is explicit and the dtype says so.
+        Q: T.Tensor((num_tokens, hidden // 2), T.uint8),
         Sf: T.Tensor((num_tokens, num_groups), T.float32),
     ):
         with T.Kernel(1):
             x_ub = T.alloc_shared((hidden,), T.float32)
-            q_ub = T.alloc_shared((out_cols,), out_dtype)
-            bf_ub = T.alloc_shared((hidden,), T.bfloat16)
+            q_ub = T.alloc_shared((hidden // 2,), T.uint8)
             sf_ub = T.alloc_shared((num_groups,), T.float32)
 
             for token in T.serial(num_tokens):
@@ -173,24 +161,103 @@ def compile_kernel(hidden: int, group_size: int = CANONICAL_G,
     return per_token_cast
 
 
+# --- BEGIN ALT hw_convert ---------------------------------------------------
+# A SECOND SPELLING of this variant, kept in its own function rather than behind
+# an `if` inside the one above: the two differ in their output stage and in
+# their output dtype, and reading either should not mean stepping over the
+# other. tools/vf_lines.py skips everything up to END ALT, because only one of
+# the two is ever emitted and the published line counts are of the tier's own
+# kernel. The harness asserts the two produce byte-identical results.
+
+@tilelang.jit(target="ascend")
+def compile_hybrid_kernel(hidden: int, group_size: int = CANONICAL_G):
+    """The same quantization, with the e2m1 encode done by the vector unit.
+
+    No `T.Cast` to FP4 lowers inside a `T.SimtVF` region, and none can: an fp4
+    element is four bits, so fp4 storage is retyped to `float4_e2m1fnx2` and
+    every store into it needs two lanes, where per-thread scalar code has one.
+    Underneath, this toolchain's only FP4 types are the **vector** ones
+    (`vector_f4e2m1x2`), and the conversion is a vector instruction over them --
+    there is no scalar FP4 type to convert into at all.
+    `harness/probe/simt_fp4_convert.py` records the nine spellings that fail.
+
+    What a kernel *can* do is leave the region for that one instruction. A
+    `T.SimtVF` region and a `T.SimdVF` region live in the same kernel here: the
+    thread model keeps the reduction, the scales and the round-to-odd, and three
+    lines of the vector model do the convert. Byte-identical output, **72.29x**
+    fewer simulated VF cycles (562,280 to 7,778, or 1.26x ASC rather than
+    91.3x), and eighteen lines of hand-written encoder deleted.
+
+    It is reached through ``launch(x, hw_convert=True)`` and is **not** the
+    default, because the SIMT tier measures what the thread model costs on its
+    own. See `doc/quant/per_token/04_fp32_in_fp4_out.md`.
+    """
+    assert hidden % group_size == 0 and group_size == 32
+    num_groups = hidden // group_size
+    num_tokens = T.dynamic("num_tokens")
+
+    @T.prim_func
+    def per_token_cast_hybrid(
+        X: T.Tensor((num_tokens, hidden), T.float32),
+        # float4_e2m1fn, as the ASC and PTO tiers declare it: the hardware
+        # convert writes the nibbles, so the kernel does not pack bytes.
+        Q: T.Tensor((num_tokens, hidden), T.float4_e2m1fn),
+        Sf: T.Tensor((num_tokens, num_groups), T.float32),
+    ):
+        with T.Kernel(1):
+            x_ub = T.alloc_shared((hidden,), T.float32)
+            bf_ub = T.alloc_shared((hidden,), T.bfloat16)
+            q_ub = T.alloc_shared((hidden,), T.float4_e2m1fn)
+            sf_ub = T.alloc_shared((num_groups,), T.float32)
+
+            for token in T.serial(num_tokens):
+                T.copy(X[token, 0], x_ub)
+
+                # TODO: the same algorithm as compile_kernel above, except that
+                #       the e2m1 encode is handed to the vector unit instead of
+                #       written out. Two regions, in order. (1) T.SimtVF: variant
+                #       01's reduction and scales with E2M1 constants, then one
+                #       T.Parallel(hidden) that scales each value and rounds it to
+                #       ODD on the way to bfloat16 -- bits =
+                #       T.reinterpret('uint32', v); sticky = T.min(bits & 0xFFFF,
+                #       1); store T.reinterpret('bfloat16', T.Cast('uint16', (bits
+                #       >> 16) | sticky)). The sticky bit is what stops the
+                #       convert that follows from rounding a second time; it is
+                #       the SIMD tiers' S.vdintlv + S.vor + S.vmin, on scalars.
+                #       (2) T.SimdVF, OUTSIDE the first region: one S.vsts of
+                #       S.vcvt(S.vld(bf_ub[col]), T.float4_e2m1fn) per PAIR lanes,
+                #       dist='PK4_B32'. Declare the output T.float4_e2m1fn, as ASC
+                #       and PTO do, since the hardware writes the nibbles now.
+                raise NotImplementedError("simt/per_token/04_fp32_in_fp4_out: implement per_token_cast_hybrid")
+
+                T.copy(q_ub, Q[token, 0])
+                T.copy(sf_ub, Sf[token, 0])
+
+    return per_token_cast_hybrid
+# --- END ALT ----------------------------------------------------------------
+
+
 def launch(x: torch.Tensor, branch_free: bool = False, hw_convert: bool = False):
     """Two additive flags, each selecting a bit-identical alternative spelling.
 
-    ``branch_free=True`` respells the encoder's conditionals as mask arithmetic.
-    ``hw_convert=True`` drops the encoder entirely and converts in a three-line
-    ``T.SimdVF`` block. Both default to the shipped behaviour, so the harness's
-    ``launch(x)`` is the same call it makes on every other tier -- and the
-    harness exercises all three arms and asserts they agree byte for byte.
+    ``branch_free=True`` respells the encoder's conditionals as mask arithmetic,
+    inside ``compile_kernel``. ``hw_convert=True`` calls
+    ``compile_hybrid_kernel`` instead, which has no encoder at all. Both default
+    to the shipped behaviour, so the harness's ``launch(x)`` is the same call it
+    makes on every other tier -- and the harness exercises all three arms and
+    asserts they agree byte for byte.
     """
     m, hidden = x.shape
     q = torch.empty((m, hidden // 2), dtype=torch.uint8, device=x.device)
-    if hw_convert:                      # the same bytes, declared as fp4
-        q = q.view(torch.float4_e2m1fn_x2)
     sf = torch.empty((m, hidden // CANONICAL_G), dtype=torch.float32, device=x.device)
-    compile_kernel(hidden, branch_free=branch_free, hw_convert=hw_convert)(x, q, sf)
-    status.assert_on_device("per_token 04", q, sf)
-    if hw_convert:                      # back to the byte view the harness wants
-        q = q.view(torch.uint8)
+    if hw_convert:
+        # the same bytes under the name the hardware convert writes them by
+        q_fp4 = q.view(torch.float4_e2m1fn_x2)
+        compile_hybrid_kernel(hidden)(x, q_fp4, sf)
+        status.assert_on_device("per_token 04", q_fp4, sf)
+    else:
+        compile_kernel(hidden, branch_free=branch_free)(x, q, sf)
+        status.assert_on_device("per_token 04", q, sf)
     return q.view(torch.int8), sf
 
 if __name__ == "__main__":        # not a script -- see the module docstring
