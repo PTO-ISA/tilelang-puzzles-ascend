@@ -105,6 +105,12 @@ types are `vector_f4e2m1x2` / `float4_e2m1x2_t`, and the conversion is
 instruction over a vector-only type. **There is no scalar FP4 type**, which is a
 property of the hardware's data types rather than a gap to be filled.
 
+An upstream bug report for this, self-contained and ready to file, is
+[`issues/ascend-simt-fp4-cast.md`](issues/ascend-simt-fp4-cast.md): it carries a
+single compile-only reproduction script, the three internal errors it raises,
+the framework locations they come from, and the contrast with the CUDA backend,
+which does have a scalar FP4 type.
+
 **Workaround 1, and what the ladder ships:** declare the output `uint8` and
 encode the nibbles by hand, one output **byte** per thread so the pack needs no
 exchange between threads. Bit-exact against the torch packer, 18 lines against
