@@ -30,11 +30,12 @@ because no FP4 convert is reachable from a SimtVF region. Those two rows
 understate SIMT's real cost; the variant pages say so.
 
 Second scope rule, for the same reason: where a variant ships an *alternative
-spelling* in the same region behind a trace-time flag, the alternative is
-bracketed with ``# --- BEGIN ALT`` / ``# --- END ALT`` and is not counted. Only
-one arm is ever emitted, and the column means "the shipped default". Today that
-is only ``simt/per_token/04``'s ``hw_convert``, which leaves the region for the
-FP4 convert.
+spelling* -- a second kernel in the same file, behind a trace-time flag -- the
+alternative is bracketed with ``# --- BEGIN ALT`` / ``# --- END ALT`` and no
+line between them is counted, VF regions included. Only one of the two is ever
+emitted, and the column means "the tier's own kernel". Today that is only
+``simt/per_token/04``'s ``compile_hybrid_kernel``, which leaves the SimtVF
+region for the FP4 convert.
 
 Caveat on magnitude: these teaching kernels are single-config, so each one
 spells the broadcast/select/pack machinery once. Production kernels branch over
@@ -89,6 +90,18 @@ KERNELS = ("cast_back", "per_token", "per_block", "per_channel")
 def vf_body(path: Path, opener: str, op_re: re.Pattern | None) -> tuple[int, int | None]:
     """Return (lines, vector-op calls) inside the tier's VF regions."""
     lines = path.read_text().splitlines()
+    # Drop any ALTERNATIVE spelling first: a second kernel in the same file,
+    # behind a trace-time flag, of which only one is ever emitted. The published
+    # counts are of the tier's own kernel. See the scope rules in the docstring.
+    kept, skipping = [], False
+    for line in lines:
+        if "--- BEGIN ALT" in line:
+            skipping = True
+        elif "--- END ALT" in line:
+            skipping = False
+        elif not skipping:
+            kept.append(line)
+    lines = kept
     # skip the module docstring, which also mentions the opener
     start = 0
     if lines and lines[0].lstrip().startswith('"""'):
@@ -106,20 +119,11 @@ def vf_body(path: Path, opener: str, op_re: re.Pattern | None) -> tuple[int, int
             continue
         indent = len(m.group(1))
         i += 1
-        skipping = False
         while i < len(lines):
             line = lines[i]
             if line.strip() and (len(line) - len(line.lstrip())) <= indent:
                 break
-            # An ALTERNATIVE spelling shipped in the same region behind a
-            # trace-time flag is not part of what the kernel writes: only one
-            # arm is ever emitted. `simt/per_token/04` is the case -- see the
-            # scope caveat in this file's docstring.
-            if "--- BEGIN ALT" in line:
-                skipping = True
-            elif "--- END ALT" in line:
-                skipping = False
-            elif not skipping and line.strip() and not line.strip().startswith("#"):
+            if line.strip() and not line.strip().startswith("#"):
                 total += 1
                 if op_re is not None:
                     ops += sum(1 for n in op_re.findall(line) if n not in NOT_OPS)

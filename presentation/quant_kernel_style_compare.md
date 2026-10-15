@@ -878,9 +878,11 @@ convert into**, which is a property of the hardware rather than of tilelang.
 What *does* work is leaving the region. A `T.SimtVF` region and a `T.SimdVF`
 region can live in one kernel, so the thread model can keep the reduction, the
 scales and the round-to-odd, and the vector model can be entered for the one
-instruction it owns:
+instruction it owns. It is a separate function in the variant file —
+`compile_hybrid_kernel`, beside the tier's own `compile_kernel` — because the
+two differ in their output stage and in their output dtype:
 
-*source:* `puzzles/simt/quant/answer/per_token/04_fp32_in_fp4_out.py:193-198`
+*source:* `puzzles/simt/quant/answer/per_token/04_fp32_in_fp4_out.py:251-256`
 
 <!-- snippet: fp4_hwcvt_simt -->
 ```python
@@ -898,8 +900,8 @@ with T.SimdVF():
 | three lines of `T.SimdVF` | **7,778** | **1.26x** |
 
 **72.29x**, bit-exact against the torch packer and byte-identical to the other
-two spellings, which the harness asserts. It ships in the same file behind
-`hw_convert=` and is measured in the "Alternative spellings" section of
+two spellings, which the harness asserts. It is reached by
+`launch(x, hw_convert=True)` and measured in the "Alternative spellings" section of
 [`quant_vf_cycle_comparison.md`](../doc/quant_vf_cycle_comparison.md).
 
 It is deliberately **not** the default, and this report's SIMT column does not

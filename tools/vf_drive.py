@@ -71,19 +71,21 @@ def drive_per_token_04(mod, mode: str):
     *alternative* spellings have no harness entry point of their own -- the
     harness calls launch(x), which is the default arm.
 
-    ``hw_convert`` declares its output as fp4 rather than packed uint8, which is
-    the same bytes under a different name, so the buffer is allocated once and
-    viewed.
+    ``hw_convert`` is a different entry point -- ``compile_hybrid_kernel`` --
+    and declares its output as fp4 rather than packed uint8, which is the same
+    bytes under a different name, so the buffer is allocated once and viewed.
     """
     ng = K // CANONICAL_G
     x = torch.randn(M, K, dtype=torch.float32) * 3.0
     q = torch.empty((M, K // 2), dtype=torch.uint8)
-    if mode == "hw_convert":
-        q = q.view(torch.float4_e2m1fn_x2)
     sf = torch.empty((M, ng), dtype=torch.float32)
-    args = [t.npu() for t in (x, q, sf)]
-    mod.compile_kernel(K, branch_free=(mode == "branch_free"),
-                       hw_convert=(mode == "hw_convert"))(*args)
+    if mode == "hw_convert":
+        q = q.view(torch.float4_e2m1fn_x2)      # the same bytes, named as fp4
+        args = [t.npu() for t in (x, q, sf)]
+        mod.compile_hybrid_kernel(K)(*args)
+    else:
+        args = [t.npu() for t in (x, q, sf)]
+        mod.compile_kernel(K, branch_free=(mode == "branch_free"))(*args)
     return args
 
 

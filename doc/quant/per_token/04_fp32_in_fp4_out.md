@@ -216,7 +216,10 @@ FP4 type at all**: the conversion is `vcvt(vector_f4e2m1x2, vector_bf16, ...)`,
 a vector instruction over a vector-only type.
 
 The kernel can leave the region for it, though — a `T.SimtVF` region and a
-`T.SimdVF` region coexist in one kernel:
+`T.SimdVF` region coexist in one kernel. That spelling lives in its own
+function, `compile_hybrid_kernel`, rather than behind an `if` inside the tier's
+kernel: the two differ in their output stage *and* in their output dtype, and
+reading either should not mean stepping over the other:
 
 ```python
 with T.SimdVF():
@@ -237,7 +240,8 @@ worth the slide it gets in the deck.
 
 ### All three spellings ship
 
-The variant file carries both, behind a trace-time flag:
+The variant file carries all three — two spellings of the encoder inside
+`compile_kernel`, and `compile_hybrid_kernel` beside it with no encoder at all:
 
 ```python
 def e2m1_nibble(v, branch_free: bool = False): ...

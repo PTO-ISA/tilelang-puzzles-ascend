@@ -327,9 +327,9 @@ on `size=` and mask operands elsewhere (B3). SIMT is shorter on
 
 ![](plots/simt_cycles.png)
 
-`per_token/04` is separated because its cost is a convert the SIMT surface
-cannot reach, not a property of the thread model (D1). The other 21 variants
-span {A['nmin']}-{A['nmax']}.
+`per_token/04` is separated because its cost is a convert no `SimtVF` region
+can reach — from a `T.SimdVF` block in the same kernel it is {F['hw_vs_asc']:.2f}x
+(D1). The other 21 variants span {A['nmin']}-{A['nmax']}.
 
 ---
 
@@ -348,7 +348,7 @@ quantities sit relative to the 64- or 128-lane vector register.
 | | `cast_back/02` | nothing to factor out | PTO's operands cost lines |
 | **C** output | `per_channel/02` | interleave two registers | SIMT drops an instruction |
 | | `per_token/05` | transposed store = gather | SIMT's biggest cut |
-| **D** convert | `per_token/04` | float32 -> e2m1 | SIMT's {F['fp4_vs_asc']:.1f}x |
+| **D** convert | `per_token/04` | float32 -> e2m1 | {F['fp4_vs_asc']:.0f}x, or {F['hw_vs_asc']:.2f}x mixed |
 
 The other 13 variants compose these patterns and are measured in the tables at
 the end. Long form: companion report, sections 2-8.
@@ -876,9 +876,8 @@ register gather (C2, {st['per_token/05_col_major_sf']['la']} to {st['per_token/0
 arithmetic the thread model does not require, plus the 256-lane padding rule.
 
 **A `T.Parallel` must be as wide as its data, and that was most of the SIMT
-column.** Handing each fold to `T.reduce_absmax` instead of one thread per quant
-group took `per_token/01` from 11.59x to {c("simt","per_token/01_raw_fp32sf")/c("asc","per_token/01_raw_fp32sf"):.2f}x and `per_block/01` from 17.75x to
-{c("simt","per_block/01_raw_32x32")/c("asc","per_block/01_raw_32x32"):.2f}x, output unchanged (A2, A3).
+column.** Handing each fold to `T.reduce_absmax` took `per_token/01` from 11.59x
+to {c("simt","per_token/01_raw_fp32sf")/c("asc","per_token/01_raw_fp32sf"):.2f}x and `per_block/01` from 17.75x to {c("simt","per_block/01_raw_32x32")/c("asc","per_block/01_raw_32x32"):.2f}x, output unchanged (A2, A3).
 
 **PTO simplifies where a segment count or a width replaces repetition** (A2,
 B2: 39 operations to 19 and 45 to 14) **and costs source length where there is
@@ -888,12 +887,12 @@ nothing to factor out** (B3: 4 lines longer at an identical operation count).
 maps onto the hardware** — a channel in one lane (A1), or a scalar scale
 (`per_block/01`): 17 operations against 16 and 21 lines each.
 
-**Where the hardware has an instruction, the frontend that can name it wins by
-a wide margin.** All three run on the same unit; only ASC and PTO have a call
-reaching the e2m1 convert, and FP4 output (D1) costs SIMT
-{F['fp4_vs_asc']:.1f}x — {F['bf_speedup']:.2f}x of it a code-generation gap
-(branch divergence), the remaining {F['bf_vs_asc']:.1f}x a software encoder
-standing in for one instruction.
+**Where the hardware has an instruction, the frontend that can name it wins —
+but the boundary is the region, not the kernel.** FP4 output (D1) costs SIMT
+{F['fp4_vs_asc']:.1f}x, of which {F['bf_speedup']:.2f}x is a code-generation gap.
+No `SimtVF` spelling reaches that instruction — the chip has no scalar FP4 type
+— yet three lines of `T.SimdVF` *in the same kernel* take it to
+{F['hw_vs_asc']:.2f}x, byte-identical.
 
 ---
 
@@ -909,14 +908,17 @@ width replaces repetition: {A['ops']} of ASC's operations at {A['pmean']} of its
 cycles.
 *`per_token/01` {st['per_token/01_raw_fp32sf']['oa']} operations to {st['per_token/01_raw_fp32sf']['op']} at {c("pto","per_token/01_raw_fp32sf")/c("asc","per_token/01_raw_fp32sf"):.2f}x · `per_token/02` {st['per_token/02_round_sf']['oa']} to {st['per_token/02_round_sf']['op']} at {c("pto","per_token/02_round_sf")/c("asc","per_token/02_round_sf"):.2f}x · `per_block/03` at {c("pto","per_block/03_fp4_e2m1")/c("asc","per_block/03_fp4_e2m1"):.2f}x*
 
+**SIMT + SIMD in one kernel** — when the thread model suits the arithmetic but
+one step needs an instruction that only exists as a vector. Regions compose.
+*`per_token/04` {c("simt","per_token/04_fp32_in_fp4_out"):,.0f} cycles to {hw:,.0f} for three lines of `T.SimdVF`, byte-identical*
+
 **ASC** — when an instruction VMI does not expose is required (per-lane variable
 right shift, which SIMT can also express — B3), when a distribution mode is the
 objective, or when there is nothing for VMI to factor out.
 *`cast_back/02` {st['cast_back/02_packed_ue8m0']['la']} lines against PTO's {st['cast_back/02_packed_ue8m0']['lp']} · `per_channel/04` {st['per_channel/04_compose']['la']} against {st['per_channel/04_compose']['lp']} · `cast_back/05`, PTO's worst cycle regression, {c("pto","cast_back/05_fp4_e2m1")/c("asc","cast_back/05_fp4_e2m1"):.2f}x*
 
 **On methodology.** Source size correlates with simulated cycles at r = -0.09
-on this set: a frontend comparison reporting only source size reports one of the
-two quantities that matter.
+here: reporting only source size reports one of the two quantities that matter.
 
 """
 
