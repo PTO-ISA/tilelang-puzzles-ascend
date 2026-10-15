@@ -63,12 +63,15 @@ kernel. That is not a discrepancy to reconcile: `T.if_then_else` lowers to a
 real branch, so the instruction count depends on the data, and this probe's
 input is not the harness's. Compare the two arms, which share an input.)
 
-The ladder does **not** ship this. `puzzles/simt/` exists to show what the
-thread model costs when a kernel is written in it, and a kernel that drops into
-`T.SimdVF` for its hardest instruction is no longer that kernel -- it is the
-answer to a different and better question, which is why this probe states it
-separately. `doc/known-issues.md` and `doc/quant/per_token/04_fp32_in_fp4_out.md`
-carry the numbers.
+This spelling ships: `puzzles/simt/quant/answer/per_token/04_fp32_in_fp4_out.py`
+holds it as `compile_hybrid_kernel`, a separate function beside the tier's own
+`compile_kernel`, reached by `launch(x, hw_convert=True)` and verified
+byte-identical by the harness. It is **not** the default and the published
+22-row table does not use it: `puzzles/simt/` exists to show what the thread
+model costs when a kernel is written in it, and a kernel that drops into
+`T.SimdVF` for its hardest instruction is answering a different question.
+`doc/known-issues.md` and `doc/quant/per_token/04_fp32_in_fp4_out.md` carry the
+numbers.
 
 Reproduce:
 

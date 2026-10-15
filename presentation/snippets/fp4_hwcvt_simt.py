@@ -1,4 +1,4 @@
-# puzzles/simt/quant/answer/per_token/04_fp32_in_fp4_out.py:193-198
+# puzzles/simt/quant/answer/per_token/04_fp32_in_fp4_out.py:251-256
 # extracted by tools/make_report_snippets.py -- do not edit
 with T.SimdVF():
     for pair in T.serial(hidden // PAIR):
