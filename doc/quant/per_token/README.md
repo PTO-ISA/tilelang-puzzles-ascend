@@ -11,11 +11,16 @@ $$
 $$
 
 $$
-\mathrm{sf}[m,g] = \frac{\max(\mathrm{amax}[m,g], \epsilon)}{V} \qquad q[m,k] = \mathrm{cast}\left(x[m,k] \cdot \frac{V}{\mathrm{amax}[m,g]}\right)
+\mathrm{sf}[m,g] = \frac{\max(\mathrm{amax}[m,g], \epsilon)}{q_{\max}}
+\qquad
+q[m,k] = \mathrm{cast}\left(x[m,k] \cdot
+\frac{q_{\max}}{\mathrm{amax}[m,g]}\right)
 $$
 
-where $g$ is the group of 32 channels containing $k$, $V$ is the format's largest
-finite magnitude (448 for e4m3, 6 for e2m1), and $\epsilon$ is `clamp_min`.
+where $g$ is the group of 32 channels containing $k$, $q_{\max}$ is the target
+format's largest finite magnitude (448 for e4m3, 6 for e2m1), and $\epsilon$ is
+`clamp_min`. The unrounded scale is
+$s = \max(\mathrm{amax}[m,g], \epsilon)/q_{\max}$.
 
 ```
 x  : (M, K)      bfloat16 or float32

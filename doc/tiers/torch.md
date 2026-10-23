@@ -46,7 +46,7 @@ would teach nothing about the one idea the variant exists to convey. So it reads
 
 ```python
 bits = (amax / E4M3_MAX).view(torch.int32)
-exp_sf = ((bits - 1) >> 23) + 1 - 127        # ceil(log2(v)) from the exponent
+exp_sf = ((bits - 1) >> 23) + 1 - 127        # ceil(log2(s)), s = amax/E4M3_MAX
 ```
 
 The separation of concerns across tiers follows from this:
@@ -120,7 +120,8 @@ complexity is the algorithm (none of it) and which is the hardware (all of it).
 A few variants are also where the *numerical* subtleties are easiest to see, and
 the demos measure rather than assert them:
 
-- `per_token/02` checks the ceil-log2 bit trick against `math.ceil(math.log2(v))`.
+- `per_token/02` checks the ceil-log2 bit trick against
+  `math.ceil(math.log2(s))`, where `s = amax/E4M3_MAX`.
 - `per_token/06` measures how far `cast_only` diverges from the fused path, and why
   `round_sf` makes it exactly zero.
 - `per_block/01` shows that coarse blocking costs little relative precision but

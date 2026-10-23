@@ -16,8 +16,10 @@ format's inability to represent zero.
 
 ## The convenient part
 
-Variant 02 already computed exactly the byte we need. `biased = ceil(log2(amax/V))
-+ 127` **is** the UE8M0 encoding, so this variant changes only the store.
+Variant 02 defines $q_{\max}$ as the target format's largest finite magnitude and
+$s = \mathrm{amax}/q_{\max}$ as the unrounded scale. It already computed exactly
+the byte we need: `biased = ceil(log2(s)) + 127` **is** the UE8M0 encoding, so
+this variant changes only the store.
 
 | `amax` | biased byte | scale |
 |---|---|---|

@@ -20,9 +20,9 @@ def torch_per_token_cast_round(x: torch.Tensor, group_size: int = CANONICAL_G):
         lets variant 03 store it in a single byte.
     """
     # TODO: amax as in variant 01, then round the scale up to a power of two with
-    #       the float32 exponent trick. For v = amax/E4M3_MAX: bits =
-    #       v.view(torch.int32); exp = ((bits - 1) >> 23) + 1 - 127 is
-    #       ceil(log2(v)). Rebuild both scales by writing that exponent back into
+    #       the float32 exponent trick. For s = amax/E4M3_MAX: bits =
+    #       s.view(torch.int32); exp = ((bits - 1) >> 23) + 1 - 127 is
+    #       ceil(log2(s)). Rebuild both scales by writing that exponent back into
     #       the exponent field: sf = ((127 + exp) << 23).view(torch.float32) and
     #       sf_inv = ((127 - exp) << 23).view(torch.float32). Multiply by sf_inv
     #       instead of dividing -- negating an exponent is exact.

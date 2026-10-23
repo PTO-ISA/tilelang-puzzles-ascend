@@ -29,8 +29,8 @@ def torch_per_channel_compose(x: torch.Tensor, group_tokens: int = BLOCK_MN):
     grouped = x.view(m // group_tokens, group_tokens, k)
     amax = grouped.to(torch.bfloat16).abs().amax(dim=1).float().clamp(min=E4M3_CLAMP_MIN)
 
-    # ceil(log2(v)) from the float32 exponent field: `bits >> 23` gives
-    # floor(log2(v)) + 127, and subtracting 1 first turns the floor into a
+    # ceil(log2(s)) from the float32 exponent field, where s = amax/E4M3_MAX.
+    # `bits >> 23` gives floor(log2(s)) + 127, and subtracting 1 first turns the
     # ceiling, so a power of two stays put and anything else rounds up.
     bits = (amax / E4M3_MAX).view(torch.int32)
     exp_sf = ((bits - 1) >> 23) + 1 - 127

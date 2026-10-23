@@ -11,20 +11,22 @@ For a group $G$ of input values sharing one scale:
 $$
 \mathrm{amax} = \max_{i \in G} \left\lvert x_i \right\rvert
 \qquad
-\mathrm{sf} = \frac{\max(\mathrm{amax}, \mathrm{clamp})}{V}
+\mathrm{sf} = \frac{\max(\mathrm{amax}, \mathrm{clamp})}{q_{\max}}
 \qquad
-q_i = \mathrm{cast}\left(x_i \frac{V}{\mathrm{amax}}\right)
+q_i = \mathrm{cast}\left(x_i \frac{q_{\max}}{\mathrm{amax}}\right)
 $$
 
-$V$ is the target format's largest finite magnitude — **448** for e4m3, **6.0** for
-e2m1. Dividing by `amax/V` maps the group's largest magnitude onto $V$, so the
-format's whole range is used.
+$q_{\max}$ is the target format's largest finite magnitude: **448** for e4m3
+(`E4M3_MAX`) and **6.0** for e2m1 (`E2M1_MAX`). The unrounded scale is
+$s = \mathrm{amax}/q_{\max}$. Dividing by $s$ maps the group's largest magnitude
+onto $q_{\max}$, so the format's whole range is used.
 
-Note that `q` is formed with `V/amax` rather than `1/sf`. The two differ in the last
-bit or two, which matters once the scale is *stored* and the cast is a separate
-kernel — see [per_token/06](per_token/06_split_requant.md), where the split path
-flips 75 of 131072 FP8 codes, and [per_block/05](per_block/05_split_compose.md),
-where `round_sf` makes it bit-exact instead.
+Note that `q` is formed with `q_max/amax` rather than `1/sf`. The two differ in the
+last bit or two, which matters once the scale is *stored* and the cast is a
+separate kernel — see [per_token/06](per_token/06_split_requant.md), where the
+split path flips 75 of 131072 FP8 codes, and
+[per_block/05](per_block/05_split_compose.md), where `round_sf` makes it
+bit-exact instead.
 
 ## Dequantize
 
@@ -52,7 +54,7 @@ this repo matches it so the oracle and the kernels agree. It is not the smallest
 *safe* floor — it is simply a value far below anything activations reach, which
 also means a group whose true `amax` falls below `1e-4` gets a slightly larger
 scale than it strictly needs. The e2m1 floor is derived instead: `6.0 * 2^-126` is
-the smallest `amax` for which `V/amax` does not overflow to infinity.
+the smallest `amax` for which `q_max/amax` does not overflow to infinity.
 
 Every kernel in the ladder plants a zero row (`randn_with_zero_row`) so the clamp
 is exercised on every run rather than only on adversarial input.

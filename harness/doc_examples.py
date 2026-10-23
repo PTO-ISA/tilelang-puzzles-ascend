@@ -2,7 +2,7 @@
 
 Moving the old ``demo_numbers`` functions into prose would normally mean losing
 the assertions several of them carried -- that the ceil-log2 bit trick agrees
-with ``math.ceil(math.log2(v))``, that e2m1's largest magnitude really is 6.0,
+with ``math.ceil(math.log2(s))``, that e2m1's largest magnitude really is 6.0,
 that a power-of-two multiply in bfloat16 is exactly exact.
 
 Those checks live here instead and run on every variant, so a number printed in
@@ -27,12 +27,12 @@ EXP_MASK = 0x7F800000
 
 
 def _ceil_log2_matches_math() -> str:
-    """doc/quant/per_token/02: ((bits - 1) >> 23) + 1 - 127 == ceil(log2(v))."""
-    for v in (1.0, 1.5, 2.0, 0.3, 448.0):
-        got = int(ceil_log2_exp(torch.tensor([v], dtype=torch.float32)).item())
-        want = math.ceil(math.log2(v))
-        assert got == want, f"ceil_log2_exp({v}) = {got}, math says {want}"
-    return "ceil-log2 bit trick agrees with math.ceil(math.log2(v)) on 5 values"
+    """doc/quant/per_token/02: ((bits - 1) >> 23) + 1 - 127 == ceil(log2(s))."""
+    for s in (1.0, 1.5, 2.0, 0.3, 448.0):
+        got = int(ceil_log2_exp(torch.tensor([s], dtype=torch.float32)).item())
+        want = math.ceil(math.log2(s))
+        assert got == want, f"ceil_log2_exp({s}) = {got}, math says {want}"
+    return "ceil-log2 bit trick agrees with math.ceil(math.log2(s)) on 5 values"
 
 
 def _reciprocal_is_exponent_negation() -> str:

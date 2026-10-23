@@ -19,14 +19,15 @@ def torch_per_token_cast_round(x: torch.Tensor, group_size: int = CANONICAL_G):
         always a power of two -- every mantissa bit is zero, which is what
         lets variant 03 store it in a single byte.
     """
-    # --- BEGIN SOLUTION hint="amax as in variant 01, then round the scale up to a power of two with the float32 exponent trick. For v = amax/E4M3_MAX: bits = v.view(torch.int32); exp = ((bits - 1) >> 23) + 1 - 127 is ceil(log2(v)). Rebuild both scales by writing that exponent back into the exponent field: sf = ((127 + exp) << 23).view(torch.float32) and sf_inv = ((127 - exp) << 23).view(torch.float32). Multiply by sf_inv instead of dividing -- negating an exponent is exact."
+    # --- BEGIN SOLUTION hint="amax as in variant 01, then round the scale up to a power of two with the float32 exponent trick. For s = amax/E4M3_MAX: bits = s.view(torch.int32); exp = ((bits - 1) >> 23) + 1 - 127 is ceil(log2(s)). Rebuild both scales by writing that exponent back into the exponent field: sf = ((127 + exp) << 23).view(torch.float32) and sf_inv = ((127 - exp) << 23).view(torch.float32). Multiply by sf_inv instead of dividing -- negating an exponent is exact."
     m, k = x.shape
     assert k % group_size == 0
     grouped = x.float().view(m, k // group_size, group_size)
     amax = grouped.abs().amax(dim=-1).clamp(min=E4M3_CLAMP_MIN)
 
-    # ceil(log2(v)) from the exponent field. `bits >> 23` alone gives
-    # floor(log2(v)) + 127; subtracting 1 first turns the floor into a ceiling,
+    # ceil(log2(s)) from the exponent field, where s = amax/E4M3_MAX.
+    # `bits >> 23` alone gives floor(log2(s)) + 127; subtracting 1 first
+    # turns the floor into a ceiling,
     # so an exact power of two stays put and anything else rounds up.
     bits = (amax / E4M3_MAX).view(torch.int32)
     exp_sf = ((bits - 1) >> 23) + 1 - 127

@@ -1,10 +1,12 @@
 # per_token 02 — round the scale up to a power of two
 
-New config: `round_sf`. The scale stops being $\mathrm{amax}/448$ and becomes the
-smallest power of two that is at least that large:
+New config: `round_sf`. Let $q_{\max}$ be the target format's largest finite
+magnitude (448 for e4m3), and let
+$s = \mathrm{amax}/q_{\max}$ be the unrounded scale after `amax` is clamped.
+The stored scale becomes the smallest power of two that is at least $s$:
 
 $$
-\mathrm{sf} = 2^{\left\lceil \log_2(\mathrm{amax}/V) \right\rceil}
+\mathrm{sf} = 2^{\left\lceil \log_2 s \right\rceil}
 $$
 
 Two reasons this matters, and the second is the real one:
@@ -20,23 +22,23 @@ on 448 but somewhere in $[224, 448]$, so up to one bit of range goes unused.
 
 ## The ceil-log2 bit trick
 
-Kernels do not call `log2`. For a positive float32 with bit pattern
+Kernels do not call `log2`. For the positive float32 $s$ with bit pattern
 `sign | exponent(8) | mantissa(23)`:
 
 ```
-bits >> 23                  gives floor(log2(v)) + 127
+bits >> 23                  gives floor(log2(s)) + 127
 ```
 
 `floor` is the wrong direction — it would make the scale too small and let values
 saturate past 448. Subtracting 1 before the shift fixes it:
 
 ```
-biased = ((bits - 1) >> 23) + 1          ==  ceil(log2(v)) + 127
+biased = ((bits - 1) >> 23) + 1          ==  ceil(log2(s)) + 127
 ```
 
 Checked by hand:
 
-| $v$ | bits | `((bits-1)>>23)+1-127` | result | |
+| $s$ | bits | `((bits-1)>>23)+1-127` | result | |
 |---|---|---|---|---|
 | 1.0 | `0x3F800000` | 0 | `2^0` = 1 | exact |
 | 1.5 | `0x3FC00000` | 1 | `2^1` = 2 | rounded up |
@@ -56,7 +58,7 @@ sf_inv = (254 - biased)  << 23      ->  2^-ceil_exp
 Negating an exponent field is exact; dividing would not be.
 
 `harness/doc_examples.py` asserts both of these against
-`math.ceil(math.log2(v))` and against `2**-exp`, so the table above cannot rot.
+`math.ceil(math.log2(s))` and against `2**-exp`, so the table above cannot rot.
 
 ## ASC
 

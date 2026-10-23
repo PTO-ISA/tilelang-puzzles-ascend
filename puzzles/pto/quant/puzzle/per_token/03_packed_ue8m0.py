@@ -37,7 +37,7 @@ def compile_kernel(hidden: int, group_size: int = CANONICAL_G):
         shift = V.vbrc(T.uint32(23), size=lanes)
         bits = V.vinterpret_cast(
             V.vmul(clamped, V.vbrc(T.float32(inv_qmax), size=lanes), mask), "uint32")
-        # ((bits - 1) >> 23) + 1  ==  ceil(log2(v)) + 127
+        # s = clamped/E4M3_MAX; this is ceil(log2(s)) + 127
         biased = V.vadd(V.vshr(V.vsub(bits, one), shift), one)
         sf = biased if packed else V.vinterpret_cast(V.vshl(biased, shift), "float32")
         # 254 - biased == 127 - ceil_exp: the negated exponent, still biased.
