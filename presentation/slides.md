@@ -488,7 +488,7 @@ field. **ASC** fixes the lane count in every type name (`"uint32x64"`):
 ```python
 one = S.vdup(1, T.uint32)
 bits = T.reinterpret(S.vmuls(clamped, inv_qmax), "uint32x64")
-# ((bits - 1) >> 23) + 1  ==  ceil(log2(v)) + 127
+# s = clamped/E4M3_MAX; this is ceil(log2(s)) + 127
 biased = S.vadds(S.vshrs(S.vsub(bits, one), 23), 1)
 sf = T.reinterpret(S.vshls(biased, 23), "float32x64")
 # 254 - biased == 127 - ceil_exp: the negated exponent
@@ -505,7 +505,7 @@ one = V.vbrc(T.uint32(1), size=lanes)
 shift = V.vbrc(T.uint32(23), size=lanes)
 bits = V.vinterpret_cast(
     V.vmul(clamped, V.vbrc(T.float32(inv_qmax), size=lanes), mask), "uint32")
-# ((bits - 1) >> 23) + 1  ==  ceil(log2(v)) + 127
+# s = clamped/E4M3_MAX; this is ceil(log2(s)) + 127
 biased = V.vadd(V.vshr(V.vsub(bits, one), shift), one)
 sf = V.vinterpret_cast(V.vshl(biased, shift), "float32")
 # 254 - biased == 127 - ceil_exp: the negated exponent, still biased.
