@@ -73,6 +73,21 @@ the hardware's parallel dimension, and that answer is different for
 lanes-in-a-register than for threads-in-a-warp. See
 [per_channel](../per_channel/README.md), where this is the whole story.
 
+## SIMT — nothing disappears, because nothing was there
+
+Worth being careful here, because it would be easy to claim a win and wrong to.
+This variant is the easy one for ASC and PTO precisely because the broadcast
+*disappears*: one scale per channel means the scale is already one value per
+lane, so the `BRC_B32`-plus-`vsel` machinery of variant 01 is simply deleted.
+
+SIMT's body goes from `sf_ub[i // group_size]` to `sf_ub[i]`, and its line count
+does not move at all — 6 lines, the same as variant 01. SIMT never paid the cost
+that the SIMD tiers are getting refunded.
+
+So this is the one variant in `cast_back` where SIMT has **no** advantage to
+report: 6 lines against ASC's 6 and PTO's 7. The lesson belongs to the other
+tiers, and the SIMT file exists to show the convergence rather than to win.
+
 ## What the harness checks
 
 - `M` must be a multiple of 32;

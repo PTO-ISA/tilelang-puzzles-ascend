@@ -94,6 +94,65 @@ body is otherwise unchanged — the compiler re-assigns elements to threads.
 Here the axis chooses the *instruction*, so the two kernels have genuinely
 different shapes. The overview's table lays out the four consequences.
 
+## SIMT — a genuine draw, and the reason mirrors the PTO-vs-ASC one
+
+This page already explains why PTO buys nothing here: a channel is a lane, so the
+reduction along M is an elementwise `vmax` of 32 loaded rows into an accumulator
+register, with no cross-lane step and no broadcast to emulate. ASC is already
+saying exactly what it means.
+
+SIMT is the mirror image of that argument. A channel is a **thread**, so the
+reduction is a serial loop down 32 rows and the output scale is indexed by the
+channel alone:
+
+```python
+for c in T.Parallel(hidden):
+    amax = T.alloc_var(T.float32); amax = E4M3_CLAMP_MIN
+    for row in T.serial(group_tokens):
+        amax = T.max(amax, T.abs(T.Cast("float32", x_ub[row, c])))
+    sf_ub[c] = amax / E4M3_MAX
+    inv_ub[c] = E4M3_MAX / amax
+
+for row, c in T.Parallel(group_tokens, hidden):
+    q_l[row, c] = T.Cast("float32", x_ub[row, c]) * inv_ub[c]
+```
+
+No group arithmetic anywhere, in any tier. 12 lines against ASC's 21 and PTO's
+21 — the shortest of the three, but the saving is notation, not structure: the
+kernel has the same three stages and the same memory traffic in all three.
+
+### Why this family keeps the serial scan
+
+Every other SIMT reduction in the repo is a `T.reduce_absmax` call, because one
+thread per *quant group* leaves 124 of 128 threads idle and costs
+[8.73x](../per_token/01_raw_fp32sf.md). That argument does not apply here, and
+the difference is the axis:
+
+- **There is no occupancy to recover.** One thread per channel is 128 of 128
+  threads already. Writing the fold as `T.reduce_absmax(x_l, amax_l, dim=0)`
+  measures **2,530** cycles against the scan's **2,677** — 1.06x, on a
+  simulator, where this repo calls anything under 1.02x a draw — and costs one
+  line more, because the clamp can no longer be the accumulator's seed.
+- **The CUDA reference reduces this case the same way.** `per_token_cast_cuda.py`
+  and `per_block_cast_cuda.py` both fold with `T.reduce_absmax` / `T.reduce_max`;
+  `per_channel_cast_cuda.py` does not. It keeps a per-thread `amax_local[VEC_K]`
+  accumulated over a `T.serial(VEC_M)` walk down the rows, then folds across
+  threads through `amax_shared`. A column-wise maximum is a scan down rows on
+  that hardware too.
+- **On variants [02](02_round_packed_m.md) and [04](04_compose.md) the library
+  call does not lower at all.** Those write the scale as a UE8M0 *byte*, and with
+  the fold written as `T.reduce_absmax(dim=0)` the build fails with
+  `SimtVF cannot convert vector type uint8x2 to an Ascend type`. Reduced cases do
+  not reproduce it, so it is recorded as observed rather than diagnosed — see
+  [known-issues](../../known-issues.md).
+
+Keeping one spelling across the four variants matters more than 6% on the base
+variant, so the whole family scans.
+
+The rule this confirms, now from the thread side: **SIMT pays off where the SIMD
+tiers had to move data between lanes.** When the data already lines up with the
+lanes, there is nothing for the thread model to buy.
+
 ## What the harness checks
 
 - `M % 32 == 0` and `K % 64 == 0`, with messages naming the reason;

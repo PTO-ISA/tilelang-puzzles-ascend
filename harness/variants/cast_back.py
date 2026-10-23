@@ -1,6 +1,6 @@
 """cast_back variant checks.
 
-One body per variant, shared by all three tiers. The body builds the inputs,
+One body per variant, shared by all four tiers. The body builds the inputs,
 calls the tier's entry point through ``ctx``, and asserts against
 ``harness.oracle`` -- which the torch tier's answers define.
 

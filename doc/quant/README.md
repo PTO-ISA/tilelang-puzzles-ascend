@@ -102,6 +102,10 @@ See [cast_back/02](cast_back/02_packed_ue8m0.md) for the decode.
 ## Further reading
 
 - [gpu-vs-npu.md](../gpu-vs-npu.md) — the thread model against vector registers
-- [pto-vs-asc.md](../pto-vs-asc.md) — the two NPU surfaces, with measurements
+- [pto-vs-asc.md](../pto-vs-asc.md) — the two SIMD surfaces, with measurements
+- [tiers/simt.md](../tiers/simt.md) — the thread model *on this chip*: the same
+  22 variants with `T.Parallel`, and where that is simpler and where it is not
+- [quant_vf_cycle_comparison.md](../quant_vf_cycle_comparison.md) — measured
+  simulated VF cycles, ASC against PTO against SIMT
 - [vf-lane-widths-and-limits.md](../vf-lane-widths-and-limits.md) — register geometry
 - [known-issues.md](../known-issues.md) — toolchain limits, each with a repro

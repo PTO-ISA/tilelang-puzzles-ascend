@@ -109,6 +109,48 @@ Contrast [per_block/04](../per_block/04_col_major_tma.md), where the same config
 free on *both* — because that kernel produces one scalar per tile, and a single
 value has no layout.
 
+## SIMT — the sharpest result in the repo
+
+Everything above is about an in-register transpose: `S.vci` to get a lane index,
+index arithmetic to decide what each lane should receive, and `S.vgather2` to
+fetch it. The page calls PTO-vs-ASC an honest draw, because a gather is already
+what the hardware does and there is nothing to factor out.
+
+The thread model removes the problem rather than shortening it. A thread knows
+which token and group it is working on, so the transposed layout is the index it
+stores at:
+
+```python
+sf_out_ub[g, sub] = T.reinterpret("float32", biased << 23)
+```
+
+No lane index, no index vector, no gather, and no block of scales held back to be
+permuted — `sf_out_ub` is already `(num_groups, token_block)`, so the per-block
+store is one contiguous `T.copy`. 16 lines against ASC's 54 and PTO's 48, the
+largest source-length gap in the ladder.
+
+And it costs **13.74x ASC's simulated VF cycles** — see
+[the cycle comparison](../../quant_vf_cycle_comparison.md). That pairing is the
+most useful thing in this tier: the variant where SIMT's source is simplest,
+by the widest margin in the ladder, is also one of the most expensive to run.
+"Easiest to write" and "fastest" are not two readings of one axis, and the four
+tiers are a trade rather than a ranking.
+
+(The worst ratio in the ladder is not here but at
+[`per_token/04`](04_fp32_in_fp4_out.md), at 91.28x, for a completely different
+reason: a hand-written encoder standing in for a hardware instruction.)
+
+A measurement detail that confirms the two kernels are doing the same work: ASC
+and PTO issue 34 VF launches here against SIMT's 32, and the two extra are the
+one-time gather-index setup that SIMT does not need.
+
+### GPU vs NPU, revisited
+
+The GPU-vs-NPU section above says this config is nearly free on a GPU because the
+thread model lets any element go anywhere. The SIMT tier is that thread model, on
+this chip — so it gets the GPU's ergonomics here, at the GPU-style price of
+leaving most of the vector unit idle.
+
 ## What the harness checks
 
 - the output shape really is transposed:

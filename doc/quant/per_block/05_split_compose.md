@@ -68,6 +68,31 @@ three. The torch tier exposes `torch_per_block_sf_only` and
 functions. The harness branches on the tier for *how to call* and compares the same
 quantities.
 
+## SIMT — mechanical, with one exactness argument worth keeping
+
+The modes are trace-time Python flags, so the port is mechanical in the same way
+[per_token/06](../per_token/06_split_requant.md) is. 24 lines against ASC's 33
+and PTO's 37.
+
+The one thing worth reading closely is `cast_only`, because this page's strongest
+claim depends on it. Given a UE8M0 byte, the inverse scale is rebuilt by negating
+the exponent:
+
+```python
+biased = T.Cast("int32", sf_ub[0])                       # cast_only: the input
+inv_ub[0] = T.reinterpret("float32", (254 - biased) << 23)
+```
+
+That is exact — negating a power of two's exponent loses nothing — so `cast_only`
+must come out **bit-identical** to the fused path, and the harness asserts it. The
+SIMT arm passes that assertion, which is a stronger check than
+[per_token/06](../per_token/06_split_requant.md) can make, where the scale is an
+arbitrary float32 and `1/sf` is not exact.
+
+Note the `mode` branches sit inside a single `T.Parallel(1)` body for the scale
+stage. Both arms write the same `inv_ub[0]`, so the apply pass does not need to
+know which mode produced it.
+
 ## What the harness checks
 
 - `sf_only` produces the oracle's packed scales **byte-exactly**;

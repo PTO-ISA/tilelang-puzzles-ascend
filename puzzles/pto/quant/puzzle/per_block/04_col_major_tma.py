@@ -18,7 +18,7 @@ def compile_kernel(hidden: int, block: tuple = (BLOCK_MN, BLOCK_K)):
     assert bm == 32 and bk == 32, "Ascend per_block granularity is 32x32"
     assert hidden % bk == 0
     tile_values = bm * bk                       # 1024
-    num_chunks = tile_values // LANES           # 16 reduction steps
+    num_chunks = tile_values // LANES           # 8 reduction steps at 128 lanes
     num_k_blocks = hidden // bk
     num_tokens = T.dynamic("num_tokens")
     num_m_blocks = T.ceildiv(num_tokens, bm)
