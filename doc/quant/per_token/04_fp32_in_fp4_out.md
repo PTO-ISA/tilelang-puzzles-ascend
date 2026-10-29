@@ -269,7 +269,7 @@ or take turns.
 round-to-odd lives in a `@T.macro` outside it and SIMT's encoder is a Python
 expression builder outside it, so **both are excluded** — which flatters SIMT
 here by eighteen lines. Nominally this is 17 lines against ASC's 34 and PTO's
-23, but that SIMT figure is not comparable to the others — add the encoder and
+24, but that SIMT figure is not comparable to the others — add the encoder and
 it is the longest of the three.
 
 ## What the harness checks

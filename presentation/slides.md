@@ -87,13 +87,13 @@ two SIMD frontends.
 
 ## ASC vs PTO: fewer operations, comparable cycles
 
-PTO expresses the same 22 kernels in **74% of ASC's vector operations** and
-**89% of its source lines**. Simulated cycles do not follow:
+PTO expresses the same 22 kernels in **76% of ASC's vector operations** and
+**94% of its source lines**. Simulated cycles do not follow:
 
 | PTO relative to ASC | |
 |---|---|
-| vector operations written | 74% |
-| `T.SimdVF` source lines | 89% |
+| vector operations written | 76% |
+| `T.SimdVF` source lines | 94% |
 | simulated VF cycles | **0.92x mean**, range 0.64x-1.13x |
 
 - PTO uses fewer cycles on **9 of 22** variants, more on 6, and is
@@ -140,7 +140,7 @@ that header is what replaces it.
 
 ![](plots/lines.png)
 
-Totals **646 / 578 / 327** lines — PTO 89% of ASC,
+Totals **646 / 605 / 327** lines — PTO 94% of ASC,
 SIMT 51%. PTO is *longer* than ASC on 11 of the 22: its
 saving is concentrated in the segmented-reduction variants (A2) and spent again
 on `size=` and mask operands elsewhere (B3). SIMT is shorter on
@@ -304,13 +304,13 @@ axis — the same reshape the CUDA reference makes before its own
 
 | measured | cycles ASC | cycles PTO | cycles SIMT | VF lines A/P/S |
 |---|---:|---:|---:|---:|
-| `per_token/01` | 6,176 | 4,576 (0.74x) | 8,204 (1.33x) | 37 / 24 / 16 |
+| `per_token/01` | 6,176 | 4,576 (0.74x) | 8,204 (1.33x) | 37 / 25 / 16 |
 
 Written instead as one thread per *group* with an inner `T.serial`, the same
 kernel costs 11.59x. The next slide measures that.
 
 > **A2** — the one pattern where PTO is both shorter and faster:
-> 19 operations against ASC's
+> 20 operations against ASC's
 > 39 at
 > 0.74x the
 > cycles. Operation count and cycle count favour PTO together on
@@ -427,8 +427,9 @@ scaled = S.vmul(values, scale)
 **PTO** — the segment structure declared on the load:
 
 ```python
-scale = V.vload(sf_ub[group], size=LANES, stride=1,
-                dist_mode="brc", group=groups_per_strip)
+slots = V.vload(sf_ub[group], size=groups_per_strip,
+                stride=1, group=groups_per_strip)
+scale = V.vbrc(slots, size=LANES, group=groups_per_strip)
 
 scaled = V.vmul(values, scale, mask)
 ```
@@ -442,7 +443,7 @@ for i in T.Parallel(hidden):
 
 | measured | cycles ASC | cycles PTO | cycles SIMT | VF lines A/P/S |
 |---|---:|---:|---:|---:|
-| `cast_back/01` | 2,105 | 2,201 (1.05x) | 6,908 (3.28x) | 16 / 12 / 6 |
+| `cast_back/01` | 2,105 | 2,201 (1.05x) | 6,908 (3.28x) | 16 / 13 / 6 |
 
 ---
 
@@ -532,10 +533,10 @@ for g in T.Parallel(num_groups):
 
 | measured | cycles ASC | cycles PTO | cycles SIMT | VF lines A/P/S |
 |---|---:|---:|---:|---:|
-| `per_token/02` | 4,608 | 4,688 (1.02x) | 8,197 (1.78x) | 43 / 20 / 18 |
+| `per_token/02` | 4,608 | 4,688 (1.02x) | 8,197 (1.78x) | 43 / 22 / 18 |
 
 > **B2** — 45 operations against
-> 14 is the largest operation-count reduction in
+> 15 is the largest operation-count reduction in
 > the set, at a
 > 1.02x cycle
 > ratio. PTO's gain here is a definition that is written once instead of per
@@ -559,8 +560,8 @@ scale = T.reinterpret(bits, "float32x64")
 **PTO** states width, stride, group count and mask:
 
 ```python
-packed = V.vload(sf_ub[strip], size=LANES * 2, stride=1,
-                 dist_mode="brc", group=1)
+slot = V.vload(sf_ub[strip], size=1, stride=1, group=1)
+packed = V.vbrc(slot, size=LANES * 2, group=1)
 bits = V.vand(V.vshl(V.vinterpret_cast(packed, "uint32"),
                      sf_shift), exp_mask)
 scale = V.vinterpret_cast(bits, "float32")
@@ -751,7 +752,7 @@ index vector, no gather, and no block of scales held back to be permuted.
 
 | measured | cycles ASC | cycles PTO | cycles SIMT | VF lines A/P/S |
 |---|---:|---:|---:|---:|
-| `per_token/05` | 5,477 | 5,448 (0.99x) | 10,897 (1.99x) | 54 / 48 / 16 |
+| `per_token/05` | 5,477 | 5,448 (0.99x) | 10,897 (1.99x) | 54 / 50 / 16 |
 
 - 16 SIMT lines against ASC's 54 is the largest source-size reduction among
   the 22 variants
@@ -821,7 +822,7 @@ mant = bits & 0x7FFFFF
 
 | measured | cycles ASC | cycles PTO | cycles SIMT | VF lines A/P/S |
 |---|---:|---:|---:|---:|
-| `per_token/04` | 6,160 | 4,784 (0.78x) | 562,280 (91.28x) | 34 / 23 / 17 |
+| `per_token/04` | 6,160 | 4,784 (0.78x) | 562,280 (91.28x) | 34 / 24 / 17 |
 
 The result is bit-exact against the PyTorch reference packer. `per_block/03`
 carries the same encoder at 10.18x.
@@ -891,19 +892,19 @@ with T.SimdVF():
 
 | variant | ops A/P | lines A/P/S | cyc A | cyc P | cyc S | P/A | S/A |
 |---|---|---|---:|---:|---:|---:|---:|
-| `cast_back/01` | 9/7 | 16/12/6 | 2,105 | 2,201 | 6,908 | 1.05 | 3.28 |
-| `cast_back/02` | 12/12 | 12/16/9 | 2,201 | 2,233 | 7,033 | 1.01 | 3.20 |
-| `cast_back/03` | 8/6 | 9/10/6 | 2,080 | 2,144 | 6,969 | 1.03 | 3.35 |
+| `cast_back/01` | 9/8 | 16/13/6 | 2,105 | 2,201 | 6,908 | 1.05 | 3.28 |
+| `cast_back/02` | 12/13 | 12/16/9 | 2,201 | 2,233 | 7,033 | 1.01 | 3.20 |
+| `cast_back/03` | 8/7 | 9/12/6 | 2,080 | 2,144 | 6,969 | 1.03 | 3.35 |
 | `cast_back/04` | 6/6 | 6/7/6 | 2,016 | 2,048 | 6,983 | 1.02 | 3.46 |
-| `cast_back/05` | 16/8 | 18/11/13 | 2,296 | 2,584 | 10,152 | 1.13 | 4.42 |
-| `cast_back/06` | 14/14 | 21/22/16 | 2,272 | 2,528 | 9,275 | 1.11 | 4.08 |
-| `per_token/01` | 39/19 | 37/24/16 | 6,176 | 4,576 | 8,204 | 0.74 | 1.33 |
-| `per_token/02` | 45/14 | 43/20/18 | 4,608 | 4,688 | 8,197 | 1.02 | 1.78 |
-| `per_token/03` | 44/15 | 37/21/16 | 4,608 | 4,672 | 9,893 | 1.01 | 2.15 |
-| `per_token/04` | 37/17 | 34/23/17 | 6,160 | 4,784 | 562,280 | 0.78 | 91.28 |
-| `per_token/05` | 56/38 | 54/48/16 | 5,477 | 5,448 | 10,897 | 0.99 | 1.99 |
-| `per_token/06` | 39/30 | 57/44/33 | 6,864 | 4,576 | 8,204 | 0.67 | 1.20 |
-| `per_token/07` | 31/17 | 39/24/16 | 4,864 | 5,136 | 8,502 | 1.06 | 1.75 |
+| `cast_back/05` | 16/9 | 18/13/13 | 2,296 | 2,584 | 10,152 | 1.13 | 4.42 |
+| `cast_back/06` | 14/15 | 21/25/16 | 2,272 | 2,528 | 9,275 | 1.11 | 4.08 |
+| `per_token/01` | 39/20 | 37/25/16 | 6,176 | 4,576 | 8,204 | 0.74 | 1.33 |
+| `per_token/02` | 45/15 | 43/22/18 | 4,608 | 4,688 | 8,197 | 1.02 | 1.78 |
+| `per_token/03` | 44/16 | 37/23/16 | 4,608 | 4,672 | 9,893 | 1.01 | 2.15 |
+| `per_token/04` | 37/18 | 34/24/17 | 6,160 | 4,784 | 562,280 | 0.78 | 91.28 |
+| `per_token/05` | 56/39 | 54/50/16 | 5,477 | 5,448 | 10,897 | 0.99 | 1.99 |
+| `per_token/06` | 39/32 | 57/50/33 | 6,864 | 4,576 | 8,204 | 0.67 | 1.20 |
+| `per_token/07` | 31/18 | 39/26/16 | 4,864 | 5,136 | 8,502 | 1.06 | 1.75 |
 
 `/06` `full` emits `/01`'s kernel, hence the identical SIMT cycle count.
 
@@ -920,7 +921,7 @@ with T.SimdVF():
 | `per_block/05` | 29/31 | 33/37/24 | 918 | 940 | 3,130 | 1.02 | 3.41 |
 | `per_channel/01` | 17/16 | 21/21/12 | 502 | 387 | 2,677 | 0.77 | 5.33 |
 | `per_channel/02` | 28/29 | 35/40/17 | 849 | 811 | 5,964 | 0.96 | 7.02 |
-| `per_channel/03` | 23/19 | 29/35/14 | 930 | 721 | 4,073 | 0.78 | 4.38 |
+| `per_channel/03` | 23/20 | 29/38/14 | 930 | 721 | 4,073 | 0.78 | 4.38 |
 | `per_channel/04` | 32/33 | 46/51/17 | 738 | 736 | 5,964 | 1.00 | 8.08 |
 
 `per_block` reduces a 32x32 tile to one scalar; `per_channel` reduces along the
@@ -934,8 +935,8 @@ variant's `T.SimtVF` region unchanged.
 
 | | PTO vs ASC | SIMT vs ASC |
 |---|---|---|
-| vector operations | 74% | not comparable |
-| source lines | 89% | **51%** |
+| vector operations | 76% | not comparable |
+| source lines | 94% | **51%** |
 | simulated cycles | **0.92x** (0.64x-1.13x) | 3.73x (1.20x-10.18x) |
 
 SIMT has no comparable operation count: its arithmetic is plain operators, so
@@ -1033,9 +1034,9 @@ here: the shorter source is bought with cycles.
 *`per_token/05` 54 lines to 16 at 1.99x · `per_channel/02` 35 to 17 at 7.02x · `cast_back/01` 16 to 6 at 3.28x*
 
 **PTO/VMI** — general production vector code, and anywhere a segment count or a
-width replaces repetition: 74% of ASC's operations at 0.92x of its
+width replaces repetition: 76% of ASC's operations at 0.92x of its
 cycles.
-*`per_token/01` 39 operations to 19 at 0.74x · `per_token/02` 45 to 14 at 1.02x · `per_block/03` at 0.64x*
+*`per_token/01` 39 operations to 20 at 0.74x · `per_token/02` 45 to 15 at 1.02x · `per_block/03` at 0.64x*
 
 **SIMT + SIMD in one kernel** — when the thread model suits the arithmetic but
 one step needs an instruction that only exists as a vector. Regions compose.

@@ -153,7 +153,7 @@ for i in T.Parallel(hidden):
     q_l[i] = T.Cast("float32", x_ub[i]) * inv_l[i // group_size]
 ```
 
-16 lines against ASC's 37 and PTO's 24, at **1.33x** ASC's simulated VF cycles
+16 lines against ASC's 37 and PTO's 25, at **1.33x** ASC's simulated VF cycles
 — see [the cycle comparison](../../quant_vf_cycle_comparison.md). Making the
 group the *fast* axis of the fragment is what turns the quant group into a
 reduction axis; it is the same reshape the CUDA reference performs before its own

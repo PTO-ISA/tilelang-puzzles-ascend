@@ -84,7 +84,7 @@ bfloat16 lane width, have float32 SIMT bodies.
 
 | file | what disappears |
 |---|---|
-| `cast_back/01` | the group broadcast — ASC's two `BRC_B32` loads and a `vsel`, PTO's `dist_mode="brc"` — becomes `sf_ub[i // group_size]` |
+| `cast_back/01` | the group broadcast — ASC's two `BRC_B32` loads and a `vsel`, PTO's grouped slot load plus `vbrc` — becomes `sf_ub[i // group_size]` |
 | `per_token/05` | the in-register transpose. ASC builds a lane-index vector with `S.vci` and permutes a block through `S.vgather2`; SIMT stores at `sf_out_ub[g, sub]` |
 | `per_channel/02` | the M-packing interleave. `V.vintlv` plus a padded scratch row becomes two scalar stores — and a scalar store cannot overrun, so the padding goes too |
 | `per_token/02`, `per_block/02` | the exponent bit trick, as scalar integer arithmetic with no width to thread through it |

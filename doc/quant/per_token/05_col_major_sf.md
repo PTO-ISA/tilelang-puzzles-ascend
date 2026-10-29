@@ -126,7 +126,7 @@ sf_out_ub[g, sub] = T.reinterpret("float32", biased << 23)
 
 No lane index, no index vector, no gather, and no block of scales held back to be
 permuted — `sf_out_ub` is already `(num_groups, token_block)`, so the per-block
-store is one contiguous `T.copy`. 16 lines against ASC's 54 and PTO's 48, the
+store is one contiguous `T.copy`. 16 lines against ASC's 54 and PTO's 50, the
 largest source-length gap in the ladder.
 
 And it costs **13.74x ASC's simulated VF cycles** — see

@@ -149,8 +149,9 @@ def build_claims(cycles: dict, static: dict) -> list[tuple[str, str]]:
         ("per_channel/01 ops",
          f"**{static['per_channel/01_raw_32tokens']['ops_asc']} operations against "
          f"{static['per_channel/01_raw_32tokens']['ops_pto']}"),
-        ("cast_back/02 ops tie",
-         f"{static['cast_back/02_packed_ue8m0']['ops_asc']} each"),
+        ("cast_back/02 ops",
+         f"PTO writes {static['cast_back/02_packed_ue8m0']['ops_pto']} semantic "
+         f"operations against ASC's {static['cast_back/02_packed_ue8m0']['ops_asc']}"),
         ("cast_back/02 PTO longer",
          f"({static['cast_back/02_packed_ue8m0']['ln_pto']} against "
          f"{static['cast_back/02_packed_ue8m0']['ln_asc']})"),

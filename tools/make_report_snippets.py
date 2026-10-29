@@ -60,7 +60,7 @@ SNIPPETS: dict[str, Cut] = {
     "broadcast_asc": Cut("asc", "cast_back/01_e4m3_fp32sf",
                          r"lo = S\.vld\(sf_ub\[group\]", 5),
     "broadcast_pto": Cut("pto", "cast_back/01_e4m3_fp32sf",
-                         r"scale = V\.vload\(sf_ub\[group\]", 4),
+                         r"slots = V\.vload\(sf_ub\[group\]", 5),
     "broadcast_simt": Cut("simt", "cast_back/01_e4m3_fp32sf",
                           r"for i in T\.Parallel\(hidden\):", 2),
     "outdtype_asc": Cut("asc", "cast_back/01_e4m3_fp32sf",
@@ -136,7 +136,7 @@ SNIPPETS: dict[str, Cut] = {
     "ue8m0_asc": Cut("asc", "cast_back/02_packed_ue8m0",
                      r"packed = S\.vld\(sf_ub\[strip\]", 5),
     "ue8m0_pto": Cut("pto", "cast_back/02_packed_ue8m0",
-                     r"packed = V\.vload\(sf_ub\[strip\]", 5),
+                     r"slot = V\.vload\(sf_ub\[strip\]", 5),
     "ue8m0_simt": Cut("simt", "cast_back/02_packed_ue8m0",
                       r"for i in T\.Parallel\(hidden\):", 5),
 

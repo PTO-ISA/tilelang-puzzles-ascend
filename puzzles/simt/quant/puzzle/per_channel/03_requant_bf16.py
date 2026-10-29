@@ -18,10 +18,10 @@ def compile_kernel(hidden: int, group_tokens: int = BLOCK_MN,
     The two scale layouts pull in opposite directions, and that is the lesson:
     the INPUT scale varies along K (one per group of 32 channels) while the
     OUTPUT scale varies along M (one per channel). On a vector unit those are
-    two different problems -- the input scale needs a broadcast load
-    (`dist_mode='brc'` with `group=`, or two loads and a select on ASC), the
-    output scale needs none at all. In SIMT both are a subscript: the input
-    scale is `c // in_group`, the output scale is `c`.
+    two different problems -- the input scale needs grouped slot load + `vbrc`
+    on PTO, or two loads and a select on ASC; the output scale needs none at
+    all. In SIMT both are a subscript: the input scale is `c // in_group`, the
+    output scale is `c`.
     """
     assert hidden % 128 == 0 and group_tokens == 32 and in_group == 32
     num_tokens = T.dynamic("num_tokens")
@@ -54,14 +54,14 @@ def compile_kernel(hidden: int, group_tokens: int = BLOCK_MN,
                 #       scratch in shared: T.Parallel(group_tokens, hidden) with
                 #       val_ub[row, c] = T.Cast('float32', q_in_ub[row, c]) *
                 #       sf_in_ub[row, c // in_group]. That `c // in_group` is the
-                #       whole of the input-scale broadcast -- PTO needs a
-                #       dist_mode='brc' load with group=4, ASC two loads and a
-                #       select. (2) variant 01's reduction, but reading val_ub:
-                #       one thread per channel, down the 32 rows, and the output
-                #       scale is indexed by channel alone. (3) apply. Keep the
-                #       dequantized values in SHARED, not a fragment: stages 1 and
-                #       2 touch them with different index patterns, and only
-                #       shared buffers allow that.
+                #       whole input-scale broadcast -- PTO needs grouped slot load
+                #       + vbrc with group=4, ASC two loads and a select. (2)
+                #       variant 01's reduction, but reading val_ub: one thread per
+                #       channel, down the 32 rows, and the output scale is indexed
+                #       by channel alone. (3) apply. Keep the dequantized values
+                #       in SHARED, not a fragment: stages 1 and 2 touch them with
+                #       different index patterns, and only shared buffers allow
+                #       that.
                 raise NotImplementedError("simt/per_channel/03_requant_bf16: implement per_channel_requant")
 
                 T.copy(q_ub, Q[mg * group_tokens, 0])

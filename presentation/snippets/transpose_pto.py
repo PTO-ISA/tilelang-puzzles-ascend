@@ -1,4 +1,4 @@
-# puzzles/pto/quant/answer/per_token/05_col_major_sf.py:50-59
+# puzzles/pto/quant/answer/per_token/05_col_major_sf.py:51-60
 # extracted by tools/make_report_snippets.py -- do not edit
 lane = V.vci(T.int32(0), size=LANES)
 mask64 = V.create_mask(LANES, size=LANES)

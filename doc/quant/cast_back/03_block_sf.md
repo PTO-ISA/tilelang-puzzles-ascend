@@ -78,7 +78,7 @@ o_l[i] = q_l[i] * sf_ub[i // bk]        # bk instead of group_size
 
 Where ASC and PTO change the `group=`/segment count of a broadcast, SIMT changes
 a divisor. There is nothing else to say about it, which is the point of the
-variant: 6 lines against ASC's 9 and PTO's 10, and the body is identical to
+variant: 6 lines against ASC's 9 and PTO's 12, and the body is identical to
 variant 01's except for one name.
 
 ## What the harness checks

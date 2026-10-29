@@ -57,8 +57,8 @@ often enough to be the most important finding:
 
 | PTO relative to ASC | |
 |---|---|
-| vector operations written | **74%** |
-| source lines written | **89%** |
+| vector operations written | **76%** |
+| source lines written | **94%** |
 | simulated VF cycles | **92% mean**, range 0.64x–1.13x |
 
 PTO uses fewer cycles than ASC on **9 of 22** variants — and on four of those it
@@ -103,15 +103,16 @@ scale = S.vsel(lo, hi, mask_low)
 scaled = S.vmul(values, scale)
 ```
 
-PTO states the shape instead of constructing it. One load, two segments, each
-broadcast from a consecutive scalar:
+PTO states the shape instead of constructing it. A slot load plus grouped
+broadcast describes two segments; PTOAS fuses the pair:
 
-*source:* `puzzles/pto/quant/answer/cast_back/01_e4m3_fp32sf.py:60-63`
+*source:* `puzzles/pto/quant/answer/cast_back/01_e4m3_fp32sf.py:60-64`
 
 <!-- snippet: broadcast_pto -->
 ```python
-scale = V.vload(sf_ub[group], size=LANES, stride=1,
-                dist_mode="brc", group=groups_per_strip)
+slots = V.vload(sf_ub[group], size=groups_per_strip,
+                stride=1, group=groups_per_strip)
+scale = V.vbrc(slots, size=LANES, group=groups_per_strip)
 
 scaled = V.vmul(values, scale, mask)
 ```
@@ -158,7 +159,7 @@ else:
 In PTO the destination buffer's type decides the packing, so only the convert
 appears or disappears:
 
-*source:* `puzzles/pto/quant/answer/cast_back/01_e4m3_fp32sf.py:70-73`
+*source:* `puzzles/pto/quant/answer/cast_back/01_e4m3_fp32sf.py:71-74`
 
 <!-- snippet: outdtype_pto -->
 ```python
@@ -298,7 +299,7 @@ PTO does the same thing and is slightly *more* verbose, because VMI has no
 scalar-operand `vmul`: the stride constant must be broadcast into a vector
 first:
 
-*source:* `puzzles/pto/quant/answer/per_token/05_col_major_sf.py:50-59`
+*source:* `puzzles/pto/quant/answer/per_token/05_col_major_sf.py:51-60`
 
 <!-- snippet: transpose_pto -->
 ```python
@@ -316,7 +317,7 @@ V.vstore(V.vadd(V.vmul(token_of_lane, stride_v, mask64),
 
 PTO gathers through it in turn, with the mask `vgather` requires:
 
-*source:* `puzzles/pto/quant/answer/per_token/05_col_major_sf.py:111-112`
+*source:* `puzzles/pto/quant/answer/per_token/05_col_major_sf.py:114-115`
 
 <!-- snippet: transpose_pto_gather -->
 ```python
@@ -528,8 +529,8 @@ V.vstore(V.vcmax(V.vabs(x, mask), mask, group=groups_per_pair),
 ```
 
 Fourteen vector operations become five. The matching broadcast on the apply pass
-collapses the same way — four broadcast loads and two selects become one `vload` with
-`dist_mode="brc", group=4`.
+collapses the same way — four broadcast loads and two selects become grouped
+slot `vload` + `vbrc`, fused by PTOAS.
 
 SIMT names neither a lane nor a group. It gives one thread each channel and asks
 the library for the fold, over a fragment whose *fast* axis is the quant group:
@@ -559,8 +560,8 @@ for g in T.Parallel(num_groups):
 
 | | ASC | PTO | SIMT |
 |---|---:|---:|---:|
-| vector operations | 39 | **19** | — |
-| VF-region lines | 37 | 24 | **16** |
+| vector operations | 39 | **20** | — |
+| VF-region lines | 37 | 25 | **16** |
 | simulated cycles | 6,176 | **4,576** | 8,204 |
 | vs ASC | 1.00x | 0.74x | 1.33x |
 
@@ -702,23 +703,25 @@ bits = S.vand(S.vshl(T.reinterpret(packed, "uint32x64"),
 scale = T.reinterpret(bits, "float32x64")
 ```
 
-PTO needs the width, the stride, the group count and a mask spelled out, and
-every constant lifted into a vector:
+PTO needs the slot count, expanded width, stride, group count and a mask spelled
+out, and every constant lifted into a vector:
 
 *source:* `puzzles/pto/quant/answer/cast_back/02_packed_ue8m0.py:52-56`
 
 <!-- snippet: ue8m0_pto -->
 ```python
-packed = V.vload(sf_ub[strip], size=LANES * 2, stride=1,
-                 dist_mode="brc", group=1)
+slot = V.vload(sf_ub[strip], size=1, stride=1, group=1)
+packed = V.vbrc(slot, size=LANES * 2, group=1)
 bits = V.vand(V.vshl(V.vinterpret_cast(packed, "uint32"),
                      sf_shift), exp_mask)
 scale = V.vinterpret_cast(bits, "float32")
 ```
 
-Operations tie at 12 each; **PTO is four lines longer** (16 against 12). This is
-the variant where VMI buys the least, and the mechanism is simply that `size=`
-and mask arguments make every call wider.
+PTO writes 13 semantic operations against ASC's 12 and is four lines longer
+(16 against 12). PTOAS fuses the slot load and broadcast, so the source count
+does not imply an extra physical instruction. This is the variant where VMI buys
+the least, and the mechanism is simply that `size=` and mask arguments make every
+call wider.
 
 ### 6.2 A genuine missing capability
 
@@ -794,7 +797,7 @@ return V.vinterpret_cast(V.vor(high, V.vmin(low, one)), "bfloat16")
 
 It is a `@T.macro`, so the call site is where ASC's inline statements are:
 
-*source:* `puzzles/pto/quant/answer/per_token/04_fp32_in_fp4_out.py:79-80`
+*source:* `puzzles/pto/quant/answer/per_token/04_fp32_in_fp4_out.py:80-81`
 
 <!-- snippet: fp4_pto_call -->
 ```python
@@ -996,9 +999,9 @@ The GPU shape — a partial per row into shared memory, then one thread folding 
 19,276 cycles from 18 lines. The fold was most of the kernel.
 
 `cast_back/05` shows the same independence in reverse: PTO's largest operation
-reduction within `cast_back` (16 against 8, 18 lines against 11) and its **worst
+reduction within `cast_back` (16 against 9, 18 lines against 13) and its **worst
 cycle regression in the set, 1.13x**. Shorter and slower, in one variant. The
-largest operation reduction overall is `per_token/02`, at 45 against 14, whose
+largest operation reduction overall is `per_token/02`, at 45 against 15, whose
 cycle ratio is 1.02x.
 
 The lesson for anyone using operation counts to choose a frontend: they measure
@@ -1014,19 +1017,19 @@ than ASC.
 
 | variant | ops A | ops P | ln A | ln P | ln S | cyc A | cyc P | cyc S | P/A | S/A |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| `cast_back/01_e4m3_fp32sf` | 9 | 7 | 16 | 12 | 6 | 2,105 | 2,201 | 6,908 | 1.05x | 3.28x |
-| `cast_back/02_packed_ue8m0` | 12 | 12 | 12 | 16 | 9 | 2,201 | 2,233 | 7,033 | 1.01x | 3.20x |
-| `cast_back/03_block_sf` | 8 | 6 | 9 | 10 | 6 | 2,080 | 2,144 | 6,969 | 1.03x | 3.35x |
+| `cast_back/01_e4m3_fp32sf` | 9 | 8 | 16 | 13 | 6 | 2,105 | 2,201 | 6,908 | 1.05x | 3.28x |
+| `cast_back/02_packed_ue8m0` | 12 | 13 | 12 | 16 | 9 | 2,201 | 2,233 | 7,033 | 1.01x | 3.20x |
+| `cast_back/03_block_sf` | 8 | 7 | 9 | 12 | 6 | 2,080 | 2,144 | 6,969 | 1.03x | 3.35x |
 | `cast_back/04_per_channel_sf` | 6 | 6 | 6 | 7 | 6 | 2,016 | 2,048 | 6,983 | 1.02x | 3.46x |
-| `cast_back/05_fp4_e2m1` | 16 | 8 | 18 | 11 | 13 | 2,296 | 2,584 | 10,152 | 1.13x | 4.42x |
-| `cast_back/06_col_major_compose` | 14 | 14 | 21 | 22 | 16 | 2,272 | 2,528 | 9,275 | 1.11x | 4.08x |
-| `per_token/01_raw_fp32sf` | 39 | 19 | 37 | 24 | 16 | 6,176 | 4,576 | 8,204 | **0.74x** | 1.33x |
-| `per_token/02_round_sf` | 45 | 14 | 43 | 20 | 18 | 4,608 | 4,688 | 8,197 | 1.02x | 1.78x |
-| `per_token/03_packed_ue8m0` | 44 | 15 | 37 | 21 | 16 | 4,608 | 4,672 | 9,893 | 1.01x | 2.15x |
-| `per_token/04_fp32_in_fp4_out` | 37 | 17 | 34 | 23 | 17 | 6,160 | 4,784 | 562,280 | **0.78x** | 91.28x |
-| `per_token/05_col_major_sf` | 56 | 38 | 54 | 48 | 16 | 5,477 | 5,448 | 10,897 | 0.99x | 1.99x |
-| `per_token/06_split_requant` | 39 | 30 | 57 | 44 | 33 | 6,864 | 4,576 | 8,204 | **0.67x** | 1.20x |
-| `per_token/07_bf16_fast_compose` | 31 | 17 | 39 | 24 | 16 | 4,864 | 5,136 | 8,502 | 1.06x | 1.75x |
+| `cast_back/05_fp4_e2m1` | 16 | 9 | 18 | 13 | 13 | 2,296 | 2,584 | 10,152 | 1.13x | 4.42x |
+| `cast_back/06_col_major_compose` | 14 | 15 | 21 | 25 | 16 | 2,272 | 2,528 | 9,275 | 1.11x | 4.08x |
+| `per_token/01_raw_fp32sf` | 39 | 20 | 37 | 25 | 16 | 6,176 | 4,576 | 8,204 | **0.74x** | 1.33x |
+| `per_token/02_round_sf` | 45 | 15 | 43 | 22 | 18 | 4,608 | 4,688 | 8,197 | 1.02x | 1.78x |
+| `per_token/03_packed_ue8m0` | 44 | 16 | 37 | 23 | 16 | 4,608 | 4,672 | 9,893 | 1.01x | 2.15x |
+| `per_token/04_fp32_in_fp4_out` | 37 | 18 | 34 | 24 | 17 | 6,160 | 4,784 | 562,280 | **0.78x** | 91.28x |
+| `per_token/05_col_major_sf` | 56 | 39 | 54 | 50 | 16 | 5,477 | 5,448 | 10,897 | 0.99x | 1.99x |
+| `per_token/06_split_requant` | 39 | 32 | 57 | 50 | 33 | 6,864 | 4,576 | 8,204 | **0.67x** | 1.20x |
+| `per_token/07_bf16_fast_compose` | 31 | 18 | 39 | 26 | 16 | 4,864 | 5,136 | 8,502 | 1.06x | 1.75x |
 | `per_block/01_raw_32x32` | 21 | 22 | 21 | 25 | 13 | 1,086 | 924 | 2,664 | **0.85x** | 2.45x |
 | `per_block/02_round_packed` | 27 | 30 | 28 | 33 | 15 | 918 | 936 | 3,130 | 1.02x | 3.41x |
 | `per_block/03_fp4_e2m1` | 28 | 26 | 29 | 29 | 14 | 1,625 | 1,040 | 16,536 | **0.64x** | 10.18x |
@@ -1034,16 +1037,16 @@ than ASC.
 | `per_block/05_split_compose` | 29 | 31 | 33 | 37 | 24 | 918 | 940 | 3,130 | 1.02x | 3.41x |
 | `per_channel/01_raw_32tokens` | 17 | 16 | 21 | 21 | 12 | 502 | 387 | 2,677 | **0.77x** | 5.33x |
 | `per_channel/02_round_packed_m` | 28 | 29 | 35 | 40 | 17 | 849 | 811 | 5,964 | **0.96x** | 7.02x |
-| `per_channel/03_requant_bf16` | 23 | 19 | 29 | 35 | 14 | 930 | 721 | 4,073 | **0.78x** | 4.38x |
+| `per_channel/03_requant_bf16` | 23 | 20 | 29 | 38 | 14 | 930 | 721 | 4,073 | **0.78x** | 4.38x |
 | `per_channel/04_compose` | 32 | 33 | 46 | 51 | 17 | 738 | 736 | 5,964 | 1.00x | 8.08x |
-| **total** | **582** | **431** | **646** | **578** | **327** | **60,707** | **55,037** | **710,679** | | |
+| **total** | **582** | **445** | **646** | **605** | **327** | **60,707** | **55,037** | **710,679** | | |
 
 Aggregates:
 
 | | PTO vs ASC | SIMT vs ASC |
 |---|---|---|
-| vector operations | 74% | — (no comparable count) |
-| source lines | 89% | **51%** |
+| vector operations | 76% | — (no comparable count) |
+| source lines | 94% | **51%** |
 | simulated cycles | **0.92x mean** (0.64x–1.13x) | 7.71x mean (1.20x–91.28x) |
 
 PTO is faster than ASC on **9 of 22** variants.
@@ -1061,7 +1064,7 @@ instruction the SIMT surface cannot name, not a programming style.
   FP4 row. The win is concentrated in lane-placement work; what is left of the
   cost is format work the surface cannot name and per-element issue — the
   `cast_back` family, which has no reduction to win, is the floor at 3.20x.
-- **PTO** writes **74%** of ASC's operations, **89%** of its lines, and
+- **PTO** writes **76%** of ASC's operations, **94%** of its lines, and
   costs **0.92x** of its cycles. On this evidence it is not a trade at all:
   it is shorter *and*, on average, cheaper.
 - **ASC** remains the only frontend that can express every instruction the
@@ -1196,12 +1199,12 @@ fragment's shape lets the whole tile fold in a single call.
 | | choose it when |
 |---|---|
 | **SIMT** | getting a correct kernel quickly matters more than cycles; or the kernel is dominated by lane placement — packing, transposes, gathers — where it is both shorter and less error-prone |
-| **PTO/VMI** | as the default for production vector code. On this evidence it is shorter than ASC (74% of the operations) *and* no slower (0.92x the cycles), and `size=`-parameterised helpers are reusable across widths in a way ASC structurally cannot be |
+| **PTO/VMI** | as the default for production vector code. On this evidence it is shorter than ASC (76% of the operations) *and* no slower (0.92x the cycles), and `size=`-parameterised helpers are reusable across widths in a way ASC structurally cannot be |
 | **ASC** | an instruction VMI cannot express is needed — a per-lane variable right shift being the clearest case — or a specific distribution mode is the point |
 
 **The methodological conclusion, which generalises past this chip.** Operation
 counts and line counts measure source size. They were a poor predictor of
-cycles here: PTO writes 74% of ASC's operations and uses 92% of its cycles, wins
+cycles here: PTO writes 76% of ASC's operations and uses 92% of its cycles, wins
 on 9 variants of 22, and on four of those *writes more operations than ASC*. The
 `per_block` family shows why — a wider logical vector means more operations
 written per step and half as many steps executed, and a static count cannot see

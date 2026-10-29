@@ -66,7 +66,9 @@ def pearson(a: list[float], b: list[float]) -> float:
     ma, mb = sum(a) / len(a), sum(b) / len(b)
     num = sum((x - ma) * (y - mb) for x, y in zip(a, b))
     den = (sum((x - ma) ** 2 for x in a) * sum((y - mb) ** 2 for y in b)) ** 0.5
-    return num / den if den else 0.0
+    # Keep the JSON sidecar stable across Python/libm builds whose final bit can
+    # differ after the square root.
+    return round(num / den, 15) if den else 0.0
 
 
 FP4_HELPER = ("per_token/04_fp32_in_fp4_out", "per_block/03_fp4_e2m1")

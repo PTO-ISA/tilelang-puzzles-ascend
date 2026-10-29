@@ -121,7 +121,7 @@ ebyte = (word >> (8 * (g % PACK_FACTOR))) & 0xFF
 o_l[i] = val * T.reinterpret("float32", ebyte << 23)
 ```
 
-16 lines against ASC's 21 and PTO's 22 — and the 16 are mostly the hand-written
+16 lines against ASC's 21 and PTO's 25 — and the 16 are mostly the hand-written
 FP4 decode carried over from variant 05, not the transpose. The transpose costs
 one subscript in all three vector tiers.
 

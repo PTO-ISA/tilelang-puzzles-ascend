@@ -113,7 +113,7 @@ for c in T.Parallel(hidden):                              # output scale: along 
     sf_ub[c] = amax / E4M3_MAX
 ```
 
-14 lines against ASC's 29 and PTO's 35. Most of that saving is the first stage,
+14 lines against ASC's 29 and PTO's 38. Most of that saving is the first stage,
 which is the same win as [cast_back/01](../cast_back/01_e4m3_fp32sf.md).
 
 Two implementation notes. The dequantized values live in a **shared** float32
