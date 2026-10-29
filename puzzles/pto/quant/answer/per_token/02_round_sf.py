@@ -80,8 +80,10 @@ def compile_kernel(hidden: int, group_size: int = CANONICAL_G):
                     for pair in T.serial(hidden // PAIR):
                         col = pair * PAIR
                         group = pair * groups_per_pair
-                        inv_v = V.vload(inv_ub[group], size=PAIR, stride=1,
-                                        dist_mode="brc", group=groups_per_pair)
+                        slots = V.vload(inv_ub[group], size=groups_per_pair,
+                                        stride=1, group=groups_per_pair)
+                        inv_v = V.vbrc(slots, size=PAIR,
+                                       group=groups_per_pair)
                         x = V.vcvt(V.vload(x_ub[col], size=PAIR), "float32")
                         V.vstore(V.vcvt(V.vmul(x, inv_v, mask), "float8_e4m3fn",
                                         rounding="R", saturate="SAT"), q_ub[col])

@@ -45,15 +45,14 @@ def compile_kernel(hidden: int, out_dtype: str = "bfloat16",
 
                 # TODO: open `with T.SimdVF():`; mask = V.create_mask(64,
                 #       size=64); loop strip over hidden//64; values =
-                #       V.vcvt(V.vload(q_ub[col], size=64), 'float32'); scale =
-                #       V.vload(sf_ub[group], size=64, stride=1, dist_mode='brc',
-                #       group=2) -- one load, no select; then V.vmul, and branch
-                #       on out_dtype for the store: V.vstore(V.vcvt(scaled,
-                #       'bfloat16'), out_ub[col]) or V.vstore(scaled,
-                #       out_ub[col]). Note the call is spelled the same either way
-                #       -- the destination buffer's dtype decides the packing, so
-                #       only the convert appears or disappears. Compare the ASC
-                #       file, which also has to swap the distribution mode.
+                #       V.vcvt(V.vload(q_ub[col], size=64), 'float32'); load two
+                #       scale slots with V.vload(sf_ub[group], size=2, stride=1,
+                #       group=2), then expand them with V.vbrc(slots, size=64,
+                #       group=2); multiply, and branch on out_dtype for the store:
+                #       V.vstore(V.vcvt(scaled, 'bfloat16'), out_ub[col]) or
+                #       V.vstore(scaled, out_ub[col]). The destination buffer's
+                #       dtype decides the packing, so only the convert appears or
+                #       disappears.
                 raise NotImplementedError("pto/cast_back/01_e4m3_fp32sf: implement cast_back")
 
                 T.copy(out_ub, Out[token, 0])

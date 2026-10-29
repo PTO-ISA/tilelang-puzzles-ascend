@@ -41,7 +41,7 @@ def compile_kernel(hidden: int, group_tokens: int = BLOCK_MN,
                 for row in T.serial(group_tokens):
                     T.copy(Sf_in[mg * group_tokens + row, 0],
                            sf_in_ub[row, 0:num_in_groups])
-                # --- BEGIN SOLUTION hint="stage 1 dequantize: per row, per 128-lane tile, the INPUT scale varies along K so fetch it with one V.vload(..., size=128, stride=1, dist_mode='brc', group=4); multiply the converted FP8 and store float32 into val_ub. Barrier. stage 2 is variant 01 unchanged, reading val_ub with a plain V.vload: the OUTPUT scale varies along M, one value per lane."
+                # --- BEGIN SOLUTION hint="stage 1 dequantize: per row, per 128-lane tile, the INPUT scale varies along K, so load four slots with V.vload(..., size=4, stride=1, group=4), expand them with V.vbrc(slots, size=128, group=4), multiply the converted FP8, and store float32 into val_ub. Barrier. stage 2 is variant 01 unchanged, reading val_ub with a plain V.vload: the OUTPUT scale varies along M, one value per lane."
                 with T.SimdVF():
                     mask = V.create_mask(LANES, size=LANES)
                     qmax = V.vbrc(T.float32(E4M3_MAX), size=LANES)
@@ -53,8 +53,11 @@ def compile_kernel(hidden: int, group_tokens: int = BLOCK_MN,
                         for ct in T.serial(num_col_tiles):
                             col = ct * LANES
                             g = ct * groups_per_tile
-                            scale = V.vload(sf_in_ub[row, g], size=LANES, stride=1,
-                                            dist_mode="brc", group=groups_per_tile)
+                            slots = V.vload(sf_in_ub[row, g],
+                                            size=groups_per_tile,
+                                            stride=1, group=groups_per_tile)
+                            scale = V.vbrc(slots, size=LANES,
+                                           group=groups_per_tile)
                             raw = V.vcvt(V.vload(q_in_ub[row, col], size=LANES),
                                          "float32")
                             V.vstore(V.vmul(raw, scale, mask), val_ub[row, col])

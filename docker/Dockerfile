@@ -15,36 +15,36 @@ RUN pip install --no-cache-dir torch==2.9.0 --index-url https://download.pytorch
 # LLVM/MLIR Python bindings are not yet compatible with pybind11 3.x
 RUN pip install --no-cache-dir pytest 'pybind11==2.12.0'
 
-# Self-contained PTO toolchain from hw-native-sys/PTOAS vmi-v0.1.9 (cp312 matches this image).
+# Self-contained PTO toolchain from hw-native-sys/PTOAS v0.70 (cp312 matches this image).
 RUN set -eux; \
     arch="$(uname -m)"; \
     case "${arch}" in \
       x86_64) \
         PTOAS_ARCH=x86_64; \
-        PTOAS_SHA256=475b981525f5a1129f7ab89a63670da8375bd00a4e4764dd796b7bea02ac0a35; \
+        PTOAS_SHA256=42f46a76c13f6830fc65978ca03fba4ac2a194228e22d1c253af813cbe9f331b; \
         ;; \
       aarch64) \
         PTOAS_ARCH=aarch64; \
-        PTOAS_SHA256=db8e3c5419de939ed02a68bbc52756862b21fa4f607d9395a399d05862593c34; \
+        PTOAS_SHA256=8607c2da8bf5230ca78b263159a6fd88473d789820532687af42b43a096cdfe3; \
         ;; \
       *) \
         echo "Unsupported architecture for ptoas: ${arch}" >&2; \
         exit 1; \
         ;; \
     esac; \
-    PTOAS_FILENAME="ptoas_vmi-0.1.9-cp312-cp312-manylinux_2_34_${PTOAS_ARCH}.whl"; \
+    PTOAS_FILENAME="ptoas-0.70-cp312-cp312-manylinux_2_34_${PTOAS_ARCH}.whl"; \
     curl --fail --location --retry 3 \
       --output "/tmp/${PTOAS_FILENAME}" \
-      "https://github.com/hw-native-sys/PTOAS/releases/download/vmi-v0.1.9/${PTOAS_FILENAME}"; \
+      "https://github.com/hw-native-sys/PTOAS/releases/download/v0.70/${PTOAS_FILENAME}"; \
     printf '%s  %s\n' "${PTOAS_SHA256}" "/tmp/${PTOAS_FILENAME}" | sha256sum --check -; \
     pip install --no-cache-dir "/tmp/${PTOAS_FILENAME}"; \
     rm -f "/tmp/${PTOAS_FILENAME}"
 
 # Pin a commit on https://github.com/PTO-ISA/tilelang branch pto-dev.
-# Validated at 3d70ede (2026-10-07). pto-dev moves; to pick up a newer
+# Pinned at 8e10a859. pto-dev moves; to pick up a newer
 # snapshot, update TILELANG_COMMIT by hand. Do not track the branch tip.
 ARG TILELANG_REPO=https://github.com/PTO-ISA/tilelang.git
-ARG TILELANG_COMMIT=3d70ede9643e3e9e5d182f6ae0d569374f403471
+ARG TILELANG_COMMIT=8e10a8592f17913decde3289b887f4bc9e247caf
 RUN set -eux; \
     git init /opt/tilelang; \
     git -C /opt/tilelang remote add origin "${TILELANG_REPO}"; \

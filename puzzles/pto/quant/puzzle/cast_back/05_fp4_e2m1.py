@@ -36,9 +36,10 @@ def compile_kernel(hidden: int, group_size: int = CANONICAL_G):
                 # TODO: stay at 128 lanes throughout: x_f32 =
                 #       V.vzip(V.vbrc(T.bfloat16(0.0), size=128),
                 #       V.vcvt(V.vload(q_ub[col], size=128), 'bfloat16'),
-                #       'float32'); scale = V.vload(sf_ub[group], size=128,
-                #       stride=1, dist_mode='brc', group=4); then one vmul and one
-                #       vstore -- no splitting into 64-lane halves
+                #       'float32'); load four scale slots with
+                #       V.vload(sf_ub[group], size=4, stride=1, group=4), expand
+                #       them with V.vbrc(slots, size=128, group=4), then one vmul
+                #       and one vstore -- no splitting into 64-lane halves
                 raise NotImplementedError("pto/cast_back/05_fp4_e2m1: implement cast_back")
                 T.copy(out_ub, Out[token, 0])
 

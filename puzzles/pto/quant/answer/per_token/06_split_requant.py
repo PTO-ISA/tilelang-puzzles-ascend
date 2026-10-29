@@ -61,8 +61,11 @@ def compile_kernel(hidden: int, mode: str = "full", group_size: int = CANONICAL_
                         for pair in T.serial(hidden // PAIR):
                             col = pair * PAIR
                             group = pair * groups_per_pair
-                            scale = V.vload(xsf_ub[group], size=PAIR, stride=1,
-                                            dist_mode="brc", group=groups_per_pair)
+                            slots = V.vload(xsf_ub[group],
+                                            size=groups_per_pair,
+                                            stride=1, group=groups_per_pair)
+                            scale = V.vbrc(slots, size=PAIR,
+                                           group=groups_per_pair)
                             raw = V.vcvt(V.vload(x_ub[col], size=PAIR), "float32")
                             V.vstore(V.vmul(raw, scale, mask), val_ub[col])
                         T.simd.mem_bar("VST_VLD")
@@ -94,8 +97,11 @@ def compile_kernel(hidden: int, mode: str = "full", group_size: int = CANONICAL_
                         for pair in T.serial(hidden // PAIR):
                             col = pair * PAIR
                             group = pair * groups_per_pair
-                            inv = V.vload(inv_ub[group], size=PAIR, stride=1,
-                                          dist_mode="brc", group=groups_per_pair)
+                            slots = V.vload(inv_ub[group],
+                                            size=groups_per_pair,
+                                            stride=1, group=groups_per_pair)
+                            inv = V.vbrc(slots, size=PAIR,
+                                         group=groups_per_pair)
                             if mode == "requant":
                                 xv = V.vload(val_ub[col], size=PAIR)
                             else:

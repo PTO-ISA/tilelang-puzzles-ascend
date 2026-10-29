@@ -3,8 +3,8 @@
 Almost every structural decision in these kernels traces back to one number and
 one list.
 
-> Everything here was measured on **tilelang 0.1.15 + ptoas vmi 0.1.9**,
-> 2026-10-07, the versions this repo pins. Which VF bodies lower is
+> Everything here was measured on **tilelang 0.1.15 + ptoas 0.70**,
+> 2026-10-29, the versions this repo pins. Which VF bodies lower is
 > **version-sensitive**, so `python harness/probe/vf_lane_limits.py` re-checks the
 > compile results on demand — re-run it after a toolchain bump rather than
 > trusting this text.
@@ -66,44 +66,39 @@ data is 32, and 32 is not available. Every awkward construction in `per_token` a
 | what the algorithm wants | what the hardware offers | consequence |
 |---|---|---|
 | reduce 32 values | reduce a whole register (64) | two masked reduces per register (ASC), or one `vcmax(..., group=2)` (VMI) |
-| one scale per 32 channels | broadcast one scalar to 64 lanes | two broadcasts + a select (ASC), or one `dist_mode="brc", group=2` load (VMI) |
+| one scale per 32 channels | broadcast one scalar to 64 lanes | two broadcasts + a select (ASC), or grouped `vload` slots + `vbrc(..., group=2)` (VMI, fused by PTOAS) |
 | a 32-wide tile row | 64 or 128 lanes | flatten the tile and reduce across it |
 
 The whole ASC-versus-VMI story in this repo is about that table: VMI makes the
 segment count an argument, so the mismatch stops being the programmer's problem.
 
-## And 8 lanes does not rescue you
+## Eight lanes now lower
 
 Given that 32 is unavailable, 8 looks promising — it is one lane group, and four of
-them make 32. It **does not compile** for the conversion `per_block` needs:
+them make 32. On the current pin the bfloat16-to-float32 conversion used by
+`per_block_8lane` compiles. The previous pin failed here with
+`VMI-LAYOUT-CONTRACT`; `harness/probe/vf_lane_limits.py` keeps the case so that
+regression cannot become prose.
 
-```
-VMI-LAYOUT-CONTRACT: pto.vmi.extf has no registered layout support
-  operand#0=!pto.vmi.vreg<8xbf16, layout<contiguous>>
-  result#0=!pto.vmi.vreg<8xf32,  layout<num_groups = 8, slots = 8>>
-```
-
-Reproduce with `harness/probe/vf_lane_limits.py` (case `per_block_8lane`). So
-`per_block` flattens its tile and reduces at 64 or 128 lanes, which is also what
-production does.
+The teaching `per_block` kernels still flatten the tile and reduce at 64 or 128
+lanes because that is the production structure and avoids four tiny loop bodies.
+It is now a design choice, not a lowering workaround.
 
 ## Measured compile results
 
-On tilelang 0.1.15 + ptoas vmi 0.1.9, reproduced by
+On tilelang 0.1.15 + ptoas 0.70, reproduced by
 `harness/probe/vf_lane_limits.py`:
 
 | VF body | result |
 |---|---|
 | fused 128-lane `vdiv` → grouped `vbrc`, bf16 in | **ok**, numerically exact |
 | per_token float32 input, fused | **ok**, bit-exact |
-| per_block 32×32 as 8-lane bf16 chunks | **fail**, `VMI-LAYOUT-CONTRACT` on `extf` |
+| per_block 32×32 as 8-lane bf16 chunks | **ok** |
 | per_block 32×32 as 64-lane loads + `group=` | **ok** |
 
-Only the third row fails, and `per_block` is written around it. The probe exists
-because this table is a property of the toolchain rather than of the hardware: a
-body that does not lower today may lower after an upgrade, and one that lowers
-today is not guaranteed to keep doing so. Re-run it rather than trusting the
-table.
+All four bodies compile. The probe exists because this table is a property of the
+toolchain rather than of the hardware: a body that lowers today is not guaranteed
+to keep doing so. Re-run it rather than trusting the table.
 
 ## Conversion keeps the lane count
 

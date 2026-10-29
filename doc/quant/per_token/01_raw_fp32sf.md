@@ -95,14 +95,17 @@ ASC -- 6 operations:
     q0 = S.vmul(x0, S.vsel(i0, i1, mask_low))
     q1 = S.vmul(x1, S.vsel(i2, i3, mask_low))
 
-PTO -- 2 operations:
-    inv = V.vload(inv_ub[group], size=128, stride=1, dist_mode="brc", group=4)
+PTO -- 3 semantic operations, fused to one broadcast load plus multiply:
+    slots = V.vload(inv_ub[group], size=4, stride=1, group=4)
+    inv = V.vbrc(slots, size=128, group=4)
     q   = V.vmul(x, inv, mask)
 ```
 
-The same `group=` idea, applied to a load instead of a reduce. **That symmetry is
-the point**: in VMI "segmented" is a property you can request of reduce, broadcast,
-load and store alike, rather than four unrelated hardware features.
+The same `group=` idea, applied to a slot load and broadcast instead of a reduce.
+PTOAS combines the adjacent pair into `group_broadcast_load`, so the explicit IR
+does not add a physical operation. **That symmetry is the point**: in VMI
+"segmented" is a property you can request of reduce, broadcast, load and store
+alike, rather than four unrelated hardware features.
 
 ### The FP8 store states its rounding
 

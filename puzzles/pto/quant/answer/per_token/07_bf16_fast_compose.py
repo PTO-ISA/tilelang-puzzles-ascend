@@ -81,8 +81,10 @@ def compile_kernel(hidden: int, group_size: int = CANONICAL_G):
                     for strip in T.serial(hidden // STRIP):
                         col = strip * STRIP
                         group = strip * groups_per_strip
-                        inv_v = V.vload(inv_ub[group], size=STRIP, stride=1,
-                                        dist_mode="brc", group=groups_per_strip)
+                        slots = V.vload(inv_ub[group], size=groups_per_strip,
+                                        stride=1, group=groups_per_strip)
+                        inv_v = V.vbrc(slots, size=STRIP,
+                                       group=groups_per_strip)
                         x = V.vload(x_ub[col], size=STRIP)
                         scaled = V.vmul(x, inv_v, mask)
                         # FP8 conversion comes from float32, hence the double cvt.

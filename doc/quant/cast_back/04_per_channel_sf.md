@@ -33,7 +33,7 @@ precisely the layout the register wants:
 
 ```python
 ASC:  scale = S.vld(sf_ub[col])              # default NORM dist: contiguous
-PTO:  scale = V.vload(sf_ub[col], size=64)   # no dist_mode, no group
+PTO:  scale = V.vload(sf_ub[col], size=64)   # no group or stride
 ```
 
 One plain contiguous load. No `BRC_B32`, no mask, no `vsel`. The broadcast
@@ -48,9 +48,10 @@ machinery that dominated variants 01–04 is simply absent.
 ## PTO vs ASC
 
 The two are at their closest here, for an informative reason: VMI's advantage in
-the earlier variants came **entirely** from `dist_mode="brc"` + `group=` replacing
-ASC's broadcast-and-select. Remove the need to broadcast and the advantage
-evaporates — the plain contiguous load was never the hard case for either backend.
+the earlier variants came **entirely** from grouped slot loads plus `vbrc`
+replacing ASC's broadcast-and-select. Remove the need to broadcast and the
+advantage evaporates — the plain contiguous load was never the hard case for
+either backend.
 
 The generalisation, and the thing actually worth learning: **VMI helps where ASC
 was forced to emulate something the hardware expresses more directly** — segmented

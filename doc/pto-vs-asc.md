@@ -19,8 +19,9 @@ ASC names *physical* operations: a distribution pattern from a fixed catalogue
 (`"float32x64"`), a predicate pattern by name (`"PAT_VL32"`).
 
 VMI names the *intent* and lets the assembler choose the encoding: `size=` as an
-argument, `group=` for segmented behaviour, `dist_mode="brc"`, `create_mask(32,
-size=128)`.
+argument, `group=` for segmented behaviour, grouped `vload` slots followed by
+`vbrc`, and `create_mask(32, size=128)`. PTOAS fuses the adjacent load+broadcast
+pair before layout assignment.
 
 ## The evidence at production scale
 

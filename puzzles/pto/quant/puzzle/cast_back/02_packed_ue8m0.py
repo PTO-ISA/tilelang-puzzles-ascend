@@ -37,11 +37,11 @@ def compile_kernel(hidden: int, group_size: int = CANONICAL_G):
                 # TODO: mask_low = V.create_mask(32, size=64); sf_shift =
                 #       V.vsel(mask_low, V.vbrc(T.uint32(23), size=64),
                 #       V.vbrc(T.uint32(15), size=64)) -- note the mask comes
-                #       FIRST in V.vsel; per strip broadcast the word with
-                #       V.vload(sf_ub[strip], size=128, stride=1, dist_mode='brc',
-                #       group=1), V.vinterpret_cast to 'uint32', V.vshl by
-                #       sf_shift, V.vand with the exponent mask, then
-                #       vinterpret_cast to 'float32'
+                #       FIRST in V.vsel; per strip load one packed scale slot with
+                #       V.vload(sf_ub[strip], size=1, stride=1, group=1),
+                #       broadcast it with V.vbrc(..., size=128, group=1), then
+                #       V.vinterpret_cast to 'uint32', V.vshl by sf_shift, V.vand
+                #       with the exponent mask, and reinterpret as 'float32'
                 raise NotImplementedError("pto/cast_back/02_packed_ue8m0: implement cast_back")
                 T.copy(out_ub, Out[token, 0])
 

@@ -75,15 +75,22 @@ accidentally compared against the wrong reference.
 
 The dequantize stage broadcasts the input scales across each group of 32 channels —
 `per_token`'s pattern, where [variant 06](../per_token/06_split_requant.md) showed
-ASC needing four `BRC_B32` loads plus a `vsel` against VMI's single `group=4` load.
-The requantize stage then reduces along $M$, where [variant 01](01_raw_32tokens.md)
-showed no difference at all.
+ASC needing four `BRC_B32` loads plus selects against VMI's grouped slot load and
+`vbrc`. The requantize stage then reduces along $M$, where
+[variant 01](01_raw_32tokens.md) showed no difference at all.
 
 So this kernel contains one of each, which makes it a fair summary of the
 comparison: **VMI collapses the segmented broadcast and changes nothing about the
-elementwise reduction.**
+elementwise reduction at the source-IR level.**
 
 Measured: 23 ASC operations against 19.
+
+The physical lowering is toolchain-sensitive. The previous compiler fused this
+pair to `E2B_B32` and measured 721 VF cycles. PTOAS 0.70 chooses its generic
+four-`BRC_B32` plus two-`VSEL` fallback for this layout and measures 1,292 cycles.
+The same old compiler produced 721 cycles with both the removed one-call spelling
+and the new two-call spelling, proving that the 79.2% regression belongs to the
+framework upgrade rather than the API split.
 
 ## What the harness checks
 

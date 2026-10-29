@@ -87,7 +87,8 @@ ASC: packed = S.vld(sf_ub[strip], dist="BRC_B16")
      bits   = S.vand(S.vshl(T.reinterpret(packed, "uint32x64"), sf_shift), exp_mask)
      scale  = T.reinterpret(bits, "float32x64")
 
-PTO: packed = V.vload(sf_ub[strip], size=128, stride=1, dist_mode="brc", group=1)
+PTO: slot   = V.vload(sf_ub[strip], size=1, stride=1, group=1)
+     packed = V.vbrc(slot, size=128, group=1)
      bits   = V.vand(V.vshl(V.vinterpret_cast(packed, "uint32"), sf_shift), exp_mask)
      scale  = V.vinterpret_cast(bits, "float32")
 ```

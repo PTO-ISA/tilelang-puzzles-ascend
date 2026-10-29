@@ -33,7 +33,7 @@ def compile_kernel(hidden: int, group_size: int = CANONICAL_G):
             for token in T.serial(num_tokens):
                 T.copy(Q[token, 0], q_ub)
                 T.copy(Sf[token, 0], sf_ub[0:num_groups])
-                # --- BEGIN SOLUTION hint="stay at 128 lanes throughout: x_f32 = V.vzip(V.vbrc(T.bfloat16(0.0), size=128), V.vcvt(V.vload(q_ub[col], size=128), 'bfloat16'), 'float32'); scale = V.vload(sf_ub[group], size=128, stride=1, dist_mode='brc', group=4); then one vmul and one vstore -- no splitting into 64-lane halves"
+                # --- BEGIN SOLUTION hint="stay at 128 lanes throughout: x_f32 = V.vzip(V.vbrc(T.bfloat16(0.0), size=128), V.vcvt(V.vload(q_ub[col], size=128), 'bfloat16'), 'float32'); load four scale slots with V.vload(sf_ub[group], size=4, stride=1, group=4), expand them with V.vbrc(slots, size=128, group=4), then one vmul and one vstore -- no splitting into 64-lane halves"
                 with T.SimdVF():
                     mask = V.create_mask(FP4_STRIP, size=FP4_STRIP)
                     zero_bf16 = V.vbrc(T.bfloat16(0.0), size=FP4_STRIP)
@@ -46,8 +46,10 @@ def compile_kernel(hidden: int, group_size: int = CANONICAL_G):
                         x_f32 = V.vzip(zero_bf16, x_bf16, "float32")
 
                         # group=4 instead of group=2: the width is an argument.
-                        scale = V.vload(sf_ub[group], size=FP4_STRIP, stride=1,
-                                        dist_mode="brc", group=groups_per_strip)
+                        slots = V.vload(sf_ub[group], size=groups_per_strip,
+                                        stride=1, group=groups_per_strip)
+                        scale = V.vbrc(slots, size=FP4_STRIP,
+                                       group=groups_per_strip)
 
                         scaled = V.vmul(x_f32, scale, mask)
                         V.vstore(V.vcvt(scaled, "bfloat16"), out_ub[col])

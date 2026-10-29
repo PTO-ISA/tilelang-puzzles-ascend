@@ -66,9 +66,11 @@ scale-decode sequence runs **twice** per strip. VMI keeps 128 lanes as one logic
 vector, so it runs once — using two features, both the same "width as an argument"
 idea:
 
-1. **`dist_mode="brc"` with `group=2` and a stride** fetches *two* packed words,
-   broadcasting each across 64 lanes, in one load. ASC's `BRC_B16` broadcasts a
-   single scalar, so it needs one load per word.
+1. **A strided `vload(..., size=2, group=2)` plus
+   `vbrc(..., size=256, group=2)`** fetches *two* packed-word slots and broadcasts
+   each across 64 float32 lanes after reinterpretation. PTOAS fuses the semantic
+   pair; ASC's `BRC_B16` broadcasts a single scalar, so it needs one load per
+   word.
 2. **`V.create_mask(32, size=128, group=2)`** builds the repeating "first 32 of
    every 64 lanes" predicate that selects shift 23 vs shift 15 across all 128
    lanes at once. ASC's `S.pset(32, "PAT_VL32")` is a 64-lane pattern from a fixed

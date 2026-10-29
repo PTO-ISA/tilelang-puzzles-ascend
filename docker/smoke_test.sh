@@ -26,7 +26,7 @@ echo "== host-only tests (CPU / compile-only) =="
   "${TESTING_DIR}/python/cpu/test_tilelang_cpu_reduce.py::test_cpu_reduce_2d_float" \
   "${TESTING_DIR}/ascend/target/test_tilelang_ascend_target.py" \
   "${TESTING_DIR}/ascend/language/test_tilelang_ascend_copy.py" \
-  "${TESTING_DIR}/ascend/language/test_tilelang_ascend_pto_types.py::test_pto_float32x2_minmax_codegen"
+  "${TESTING_DIR}/ascend/language/pto/test_pto_vmi_memory_access.py::test_group_slot_uses_one_element_per_group"
 
 # cannsim/npusim launches python with cwd set to the interpreter bindir, so
 # pytest paths must be absolute. Keep device inputs small to make CPU simulation
@@ -34,7 +34,7 @@ echo "== host-only tests (CPU / compile-only) =="
 echo "== NPU tests via cannsim (Ascend950, no performance report) =="
 set +e
 cannsim_log="$(mktemp)"
-cannsim record "$(command -v python)" -s Ascend950 -u "-m pytest -q --tb=short --import-mode=importlib --rootdir=${TESTING_DIR} ${TESTING_DIR}/ascend/language/test_tilelang_ascend_warp_vote.py ${TESTING_DIR}/ascend/language/test_tilelang_ascend_pto_intrinsics.py::test_pto_pairwise_sum ${TESTING_DIR}/ascend/language/test_tilelang_ascend_pto_intrinsics.py::test_pto_cast_roundtrip" 2>&1 | tee "${cannsim_log}"
+cannsim record "$(command -v python)" -s Ascend950 -u "-m pytest -q --tb=short --import-mode=importlib --rootdir=${TESTING_DIR} ${TESTING_DIR}/ascend/language/test_tilelang_ascend_warp_vote.py ${TESTING_DIR}/ascend/language/pto/test_pto_vmi_value_provenance_run.py::test_float32_reduce_broadcast_control ${TESTING_DIR}/ascend/language/pto/test_pto_vmi_memory_access_run.py::test_pk_b32_f16_store" 2>&1 | tee "${cannsim_log}"
 cannsim_status=${PIPESTATUS[0]}
 set -e
 if grep -qE '(^| )[1-9][0-9]* failed' "${cannsim_log}"; then

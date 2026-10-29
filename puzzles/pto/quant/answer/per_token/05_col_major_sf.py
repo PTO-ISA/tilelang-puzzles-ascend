@@ -19,6 +19,7 @@ def compile_kernel(hidden: int, group_size: int = CANONICAL_G,
     """Quantize, writing the scales transposed as (num_groups, num_tokens)."""
     assert hidden % PAIR == 0 and group_size == 32 and token_block == 32
     num_groups = hidden // group_size
+    groups_per_pair = PAIR // group_size
     log2_block = token_block.bit_length() - 1          # 5
     num_out_values = num_groups * token_block
     groups_per_gather = LANES // token_block           # 2
@@ -92,9 +93,11 @@ def compile_kernel(hidden: int, group_size: int = CANONICAL_G,
 
                         for pair in T.serial(hidden // PAIR):
                             col = pair * PAIR
-                            group = pair * (PAIR // group_size)
-                            inv = V.vload(inv_ub[group], size=PAIR, stride=1,
-                                          dist_mode="brc", group=PAIR // group_size)
+                            group = pair * groups_per_pair
+                            slots = V.vload(inv_ub[group], size=groups_per_pair,
+                                            stride=1, group=groups_per_pair)
+                            inv = V.vbrc(slots, size=PAIR,
+                                         group=groups_per_pair)
                             xv = V.vcvt(V.vload(x_ub[col], size=PAIR), "float32")
                             V.vstore(V.vcvt(V.vmul(xv, inv, mask), "float8_e4m3fn",
                                             rounding="R", saturate="SAT"), q_ub[col])

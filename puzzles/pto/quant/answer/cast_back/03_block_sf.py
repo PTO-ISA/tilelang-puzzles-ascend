@@ -45,8 +45,10 @@ def compile_kernel(hidden: int, block: tuple = (BLOCK_MN, BLOCK_K)):
                             col = strip * LANES
                             group = strip * groups_per_strip
                             values = V.vcvt(V.vload(q_ub[col], size=LANES), "float32")
-                            scale = V.vload(sf_ub[group], size=LANES, stride=1,
-                                            dist_mode="brc", group=groups_per_strip)
+                            slots = V.vload(sf_ub[group], size=groups_per_strip,
+                                            stride=1, group=groups_per_strip)
+                            scale = V.vbrc(slots, size=LANES,
+                                           group=groups_per_strip)
                             scaled = V.vmul(values, scale, mask)
                             V.vstore(V.vcvt(scaled, "bfloat16"), out_ub[col])
                     # --- END SOLUTION

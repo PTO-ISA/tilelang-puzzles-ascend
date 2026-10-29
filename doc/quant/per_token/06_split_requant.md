@@ -68,15 +68,17 @@ ASC, twice over:
     ... S.vmul(raw, S.vsel(s0, s1, mask_low))
 
 PTO, twice over:
-    scale = V.vload(xsf_ub[g], size=128, stride=1, dist_mode="brc", group=4)
+    slots = V.vload(xsf_ub[g], size=4, stride=1, group=4)
+    scale = V.vbrc(slots, size=128, group=4)
     ... V.vmul(raw, scale, mask)
 ```
 
-So the duplication costs almost nothing in VMI. **This is the mechanism behind the
-production port's 83 removed lines**: a single teaching variant shows a small
-difference, but a kernel that branches over `round_sf`, packing, FP4, column-major,
-requant and the split spells the same broadcast machinery once per path, and VMI
-shrinks every one of them.
+PTOAS fuses the adjacent slot load and grouped broadcast, so the duplication costs
+almost nothing in VMI. **This is the mechanism behind the production port's 83
+removed lines**: a single teaching variant shows a small difference, but a kernel
+that branches over `round_sf`, packing, FP4, column-major, requant and the split
+spells the same broadcast machinery once per path, and VMI shrinks every one of
+them.
 
 `requant` exercises both directions at once: the dequantize stage broadcasts the
 *input* scales and the quantize stage broadcasts the *output* inverses, so one mode

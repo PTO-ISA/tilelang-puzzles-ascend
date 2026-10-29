@@ -43,9 +43,11 @@ store mode (`PK4_B32`) only to say you do **not** need one — nothing to act on
 the name means nothing to you.
 
 So **starting with PTO is a legitimate path**, and for some people the better one:
-`group=`, `size=` and `dist_mode=` describe what you want, where ASC's `BRC_B32`
-and `"float32x64"` require knowing what the machine provides. If you came for the
-higher-level surface, go straight to it — you are not missing a prerequisite.
+`group=` and `size=` describe what you want, where ASC's `BRC_B32` and
+`"float32x64"` require knowing what the machine provides. Grouped broadcast loads
+are written as a grouped `vload` of the scale slots followed by `vbrc`; PTOAS
+fuses that semantic pair. If you came for the higher-level surface, go straight
+to it — you are not missing a prerequisite.
 
 The one thing that *is* ordered is the **comparison**. Each variant page carries a
 `PTO vs ASC` section, and those read better once you have written at least one of

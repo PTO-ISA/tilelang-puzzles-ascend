@@ -34,7 +34,7 @@ def compile_kernel(hidden: int, group_size: int = CANONICAL_G):
             for token in T.serial(num_tokens):
                 T.copy(Q[token, 0], q_ub)
                 T.copy(Sf[token, 0], sf_ub[0:num_words])
-                # --- BEGIN SOLUTION hint="mask_low = V.create_mask(32, size=64); sf_shift = V.vsel(mask_low, V.vbrc(T.uint32(23), size=64), V.vbrc(T.uint32(15), size=64)) -- note the mask comes FIRST in V.vsel; per strip broadcast the word with V.vload(sf_ub[strip], size=128, stride=1, dist_mode='brc', group=1), V.vinterpret_cast to 'uint32', V.vshl by sf_shift, V.vand with the exponent mask, then vinterpret_cast to 'float32'"
+                # --- BEGIN SOLUTION hint="mask_low = V.create_mask(32, size=64); sf_shift = V.vsel(mask_low, V.vbrc(T.uint32(23), size=64), V.vbrc(T.uint32(15), size=64)) -- note the mask comes FIRST in V.vsel; per strip load one packed scale slot with V.vload(sf_ub[strip], size=1, stride=1, group=1), broadcast it with V.vbrc(..., size=128, group=1), then V.vinterpret_cast to 'uint32', V.vshl by sf_shift, V.vand with the exponent mask, and reinterpret as 'float32'"
                 with T.SimdVF():
                     mask = V.create_mask(LANES, size=LANES)
                     mask_low = V.create_mask(32, size=LANES)
@@ -49,8 +49,8 @@ def compile_kernel(hidden: int, group_size: int = CANONICAL_G):
 
                         # 128 uint16 lanes = 64 uint32 lanes after the cast; the
                         # lane count is derived, not spelled.
-                        packed = V.vload(sf_ub[strip], size=LANES * 2, stride=1,
-                                         dist_mode="brc", group=1)
+                        slot = V.vload(sf_ub[strip], size=1, stride=1, group=1)
+                        packed = V.vbrc(slot, size=LANES * 2, group=1)
                         bits = V.vand(V.vshl(V.vinterpret_cast(packed, "uint32"),
                                              sf_shift), exp_mask)
                         scale = V.vinterpret_cast(bits, "float32")

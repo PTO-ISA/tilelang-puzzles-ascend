@@ -35,8 +35,9 @@ def compile_kernel(hidden: int, group_tokens: int = BLOCK_MN):
                     token = m_block * group_tokens + row
                     T.copy(Q[token, 0], q_ub)
                     # TODO: no broadcast this time: the scale for 64 consecutive
-                    #       channels is 64 consecutive float32 values, so scale =
-                    #       V.vload(sf_ub[col], size=64) with no dist_mode
+                    #       channels is 64 consecutive float32 values, so use a
+                    #       plain contiguous scale = V.vload(sf_ub[col], size=64),
+                    #       with no group or stride
                     raise NotImplementedError("pto/cast_back/04_per_channel_sf: implement cast_back")
                     T.copy(out_ub, Out[token, 0])
 

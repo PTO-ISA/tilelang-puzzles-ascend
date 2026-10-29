@@ -1,7 +1,7 @@
 # Known issues and toolchain limits
 
-Measured on **tilelang 0.1.15** + **ptoas vmi 0.1.9** + **CANN 9.2.0-beta.2**,
-2026-10-07, in the container built by `docker/Dockerfile`.
+Measured on **tilelang 0.1.15** + **ptoas 0.70** + **CANN 9.2.0-beta.2**,
+2026-10-29, in the container built by `docker/Dockerfile`.
 
 Everything here is reproducible by a script in `harness/probe/`. Re-run those after
 any toolchain upgrade; if one starts passing, the corresponding workaround can be
@@ -12,28 +12,16 @@ python harness/probe/vf_lane_limits.py          # compile-only, ~10 s
 python harness/probe/fp8_out_idx.py             # needs the simulator
 ```
 
+## Resolved on this pin
+
+### 8-lane bfloat16 → float32 conversion now lowers
+
+`harness/probe/vf_lane_limits.py`, case `per_block_8lane`, now compiles. It failed
+on the previous pin with `VMI-LAYOUT-CONTRACT`. The `per_block` kernels retain
+their 64/128-lane flattened production structure as a design choice rather than a
+toolchain workaround.
+
 ## Hard limits (worked around in this repo)
-
-### 8-lane bfloat16 → float32 convert does not lower
-
-```
-VMI-LAYOUT-CONTRACT: pto.vmi.extf has no registered layout support:
-  source/result layouts do not match a legal cast table row; VMI types:
-  operand#0=!pto.vmi.vreg<8xbf16, #pto.vmi.layout<contiguous>>
-  result#0=!pto.vmi.vreg<8xf32, #pto.vmi.layout<num_groups = 8, slots = 8>>
-```
-
-Reproduce: `harness/probe/vf_lane_limits.py`, case `per_block_8lane`.
-
-This matters because a 32×32 tile is 32 values wide and 32 is **not** a legal
-vector length (the allowlist is `{1, 2, 4, 8, 64, 128, 256}` — see
-`vf-lane-widths-and-limits.md`), so 8 lanes is the natural next guess. It does not
-work.
-
-**Workaround, used by `per_block` on both backends and by production:** flatten the
-tile and reduce at 64 or 128 lanes. The general rule is to pick the lane width from
-the hardware and reshape the problem to fit, rather than following the data's own
-geometry.
 
 ### tilelang's `out_idx` cannot allocate a float8 output
 

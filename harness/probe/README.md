@@ -11,18 +11,19 @@ python harness/probe/vf_lane_limits.py          # compile-only, ~10s
 python harness/probe/vf_lane_limits.py --run    # + numerical check under the simulator
 ```
 
-## Measured 2026-10-07 on tilelang 0.1.15 + ptoas vmi 0.1.9
+## Measured 2026-10-29 on tilelang 0.1.15 + ptoas 0.70
 
 | VF body | Result |
 |---|---|
 | fused 128-lane `vdiv` -> grouped `vbrc`, bf16 in | compiles, PASS |
 | per_token fp32 input, fused | compiles, PASS (bit-exact) |
-| per_block 32x32 as 8-lane bf16 chunks | **FAILS**: `VMI-LAYOUT-CONTRACT: pto.vmi.extf has no registered layout support` |
+| per_block 32x32 as 8-lane bf16 chunks | compiles |
 | per_block 32x32 as 64-lane loads + `group=` reduce | compiles, PASS |
 
-The third row is the one real limit: **do not convert bf16 to f32 at 8 lanes.**
-Reduce at 64 or 128 lanes with a segmented `group=` instead, which is also what
-the production kernels do.
+All four bodies now compile. The 8-lane conversion failed on the previous pin;
+keeping it in the probe makes that toolchain improvement reproducible. The
+teaching kernels still reduce at 64 or 128 lanes with segmented `group=` because
+that is also what the production kernels do.
 
 For context, on the *previous* pin (tilelang 0.1.14 + ptoas 0.1.8) the first two
 rows also failed, with `VMI-UNSUPPORTED` on `pto.vmi.group_broadcast` and

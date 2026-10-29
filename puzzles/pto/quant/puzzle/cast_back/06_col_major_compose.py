@@ -40,12 +40,12 @@ def compile_kernel(hidden: int, group_size: int = CANONICAL_G,
                     T.copy(Q[token, 0], q_ub)
                     # TODO: stay at 128 lanes: x_f32 = V.vzip(zero_bf16,
                     #       V.vcvt(V.vload(q_ub[col], size=128), 'bfloat16'),
-                    #       'float32'); fetch both packed words in one go with
-                    #       V.vload(sf_ub[strip*2, row], size=256,
-                    #       stride=token_block, dist_mode='brc', group=2); build
-                    #       sf_shift from V.create_mask(32, size=128, group=2);
-                    #       then shift, mask, reinterpret to float32, multiply and
-                    #       store once
+                    #       'float32'); fetch two packed-word slots with
+                    #       V.vload(sf_ub[strip*2, row], size=2,
+                    #       stride=token_block, group=2), expand them with
+                    #       V.vbrc(slots, size=256, group=2), build sf_shift from
+                    #       V.create_mask(32, size=128, group=2), then shift,
+                    #       mask, reinterpret to float32, multiply and store once
                     raise NotImplementedError("pto/cast_back/06_col_major_compose: implement cast_back")
                     T.copy(out_ub, Out[token, 0])
 

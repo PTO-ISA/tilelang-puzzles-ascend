@@ -7,7 +7,7 @@ instruction set.
 **You can start here.** This tier does not depend on the ASC one: every puzzle
 hint is self-contained VMI, and the checks run against `harness/oracle.py`, a
 standalone reference. For some people this is the better entry point — `group=`,
-`size=` and `dist_mode=` say what you want, where ASC's `BRC_B32` and
+`size=` and explicit `vload` + `vbrc` say what you want, where ASC's `BRC_B32` and
 `"float32x64"` require knowing what the machine provides.
 
 What *is* ordered is the comparison: each variant page carries a **PTO vs ASC**
@@ -37,10 +37,27 @@ this ladder show it clearly:
 
 | file | what collapses |
 |---|---|
-| `per_token/01` | 4 masked reduces + 4 single-element stores → one `vcmax(..., group=4)`; 4 broadcast loads + 2 selects → one `vload(..., dist_mode="brc", group=4)` |
+| `per_token/01` | 4 masked reduces + 4 single-element stores → one `vcmax(..., group=4)`; 4 broadcast loads + 2 selects → grouped `vload` slots + `vbrc(..., group=4)`, fused by PTOAS |
 | `per_token/02` | the scale computation becomes a **reusable macro** parameterised by lane count, which ASC structurally cannot write |
 | `per_token/07` | production's seven-operation deinterleave-pair-regroup dance for bfloat16 group maxima → `vcmax(..., group=8)` |
 | `cast_back/05` | FP4's 128 values stop being split into two 64-lane registers |
+
+The broadcast-load source spelling is deliberately two operations. TileLang's
+`tilelang/ascend/language/vmi.py` emits a `group_slot_load` for the grouped
+`vload`, followed by `group_broadcast` for `vbrc`. PTOAS 0.70 runs
+`fuseGroupSlotBroadcastLoads` in `VMIPreAssignmentCombine.cpp` before layout
+assignment, producing one `group_broadcast_load`; unit-stride b16/b32 cases lower
+to a fused `vlds` `E2B_B16`/`E2B_B32` when layout assignment permits it, or to the
+generic BRC-plus-select fallback otherwise.
+
+The API split itself is free in the measured kernels. On the previous toolchain,
+all 13 affected references produced exactly the same VF cycles before and after
+the source migration, including call counts. On the upgraded toolchain, 12 remain
+within -11.1% to +0.6% of their previous cycle counts; these are broader compiler
+changes, not a cost of spelling two API calls. The exception is
+`per_channel/03`, at 721 → 1,292 cycles: its old trace used `E2B_B32`, while PTOAS
+0.70 selects four `BRC_B32` loads plus two `VSEL` operations. That 79.2% regression
+is recorded rather than attributed to the API split.
 
 `per_token/01` measures at 39 ASC vector operations against 19 for PTO.
 

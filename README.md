@@ -159,9 +159,9 @@ container, `tilelang-smoke` runs upstream tilelang's own Ascend test selection a
 an independent check that the toolchain itself is working, separately from this
 repo's ladder.
 
-Versions this repo was validated against, 2026-10-07:
-tilelang **0.1.15** (`TILELANG_COMMIT` `3d70ede` on branch `pto-dev`; bump that
-commit by hand when you want a newer `pto-dev`), ptoas vmi **0.1.9**, CANN **9.2.0-beta.2**, torch 2.9.0+cpu,
+Versions this repo was validated against, 2026-10-29:
+tilelang **0.1.15** (`TILELANG_COMMIT` `8e10a859` on branch `pto-dev`; bump that
+commit by hand when you want a newer `pto-dev`), ptoas **0.70**, CANN **9.2.0-beta.2**, torch 2.9.0+cpu,
 torch_npu 2.9.0.post6, Python 3.12.
 
 ## Measured status
@@ -175,29 +175,29 @@ Simulator wall time, measured end to end including compilation:
 
 | variant | torch | ASC | PTO |
 |---|---|---|---|
-| `cast_back/01_e4m3_fp32sf` | 4.9 s | 32.0 s | 26.0 s |
-| `cast_back/02_packed_ue8m0` | 4.9 s | 28.4 s | 27.5 s |
-| `cast_back/03_block_sf` | 5.0 s | 27.5 s | 28.5 s |
-| `cast_back/04_per_channel_sf` | 4.9 s | 28.5 s | 27.6 s |
-| `cast_back/05_fp4_e2m1` | 4.8 s | 29.4 s | 28.5 s |
-| `cast_back/06_col_major_compose` | 4.9 s | 29.5 s | 28.5 s |
-| `per_token/01_raw_fp32sf` | 4.9 s | 32.7 s | 30.5 s |
-| `per_token/02_round_sf` | 4.9 s | 29.6 s | 30.8 s |
-| `per_token/03_packed_ue8m0` | 6.3 s | 30.9 s | 29.8 s |
-| `per_token/04_fp32_in_fp4_out` | 4.9 s | 31.6 s | 30.1 s |
-| `per_token/05_col_major_sf` | 4.9 s | 29.5 s | 30.6 s |
-| `per_token/06_split_requant` | 4.9 s | **64.3 s** | **61.2 s** |
-| `per_token/07_bf16_fast_compose` | 4.9 s | 30.5 s | 30.6 s |
-| `per_block/01_raw_32x32` | 4.9 s | 20.1 s | 20.2 s |
-| `per_block/02_round_packed` | 4.9 s | 20.2 s | 20.2 s |
-| `per_block/03_fp4_e2m1` | 4.9 s | 21.3 s | 19.3 s |
-| `per_block/04_col_major_tma` | 4.9 s | 20.1 s | 20.3 s |
-| `per_block/05_split_compose` | 5.0 s | 30.5 s | 30.5 s |
-| `per_channel/01_raw_32tokens` | 4.9 s | 18.1 s | 17.2 s |
-| `per_channel/02_round_packed_m` | 4.9 s | 19.2 s | 19.3 s |
-| `per_channel/03_requant_bf16` | 5.0 s | 19.3 s | 18.2 s |
-| `per_channel/04_compose` | 4.9 s | 19.2 s | 19.2 s |
-| **whole tier** | **1.8 min** | **10.2 min** | **9.9 min** |
+| `cast_back/01_e4m3_fp32sf` | 4.9 s | 51.2 s | 57.0 s |
+| `cast_back/02_packed_ue8m0` | 4.9 s | 32.7 s | 35.4 s |
+| `cast_back/03_block_sf` | 4.9 s | 32.1 s | 37.0 s |
+| `cast_back/04_per_channel_sf` | 4.9 s | 33.3 s | 37.2 s |
+| `cast_back/05_fp4_e2m1` | 5.0 s | 32.8 s | 37.5 s |
+| `cast_back/06_col_major_compose` | 4.9 s | 34.3 s | 37.1 s |
+| `per_token/01_raw_fp32sf` | 4.8 s | 35.8 s | 37.6 s |
+| `per_token/02_round_sf` | 5.0 s | 33.8 s | 38.7 s |
+| `per_token/03_packed_ue8m0` | 4.9 s | 34.8 s | 38.7 s |
+| `per_token/04_fp32_in_fp4_out` | 4.8 s | 36.8 s | 38.6 s |
+| `per_token/05_col_major_sf` | 4.9 s | 35.4 s | 40.4 s |
+| `per_token/06_split_requant` | 4.9 s | **86.1 s** | **96.6 s** |
+| `per_token/07_bf16_fast_compose` | 4.9 s | 34.9 s | 39.7 s |
+| `per_block/01_raw_32x32` | 4.9 s | 24.6 s | 27.5 s |
+| `per_block/02_round_packed` | 4.9 s | 23.6 s | 27.5 s |
+| `per_block/03_fp4_e2m1` | 4.8 s | 24.6 s | 28.5 s |
+| `per_block/04_col_major_tma` | 4.9 s | 23.6 s | 28.5 s |
+| `per_block/05_split_compose` | 4.9 s | 47.1 s | 58.3 s |
+| `per_channel/01_raw_32tokens` | 4.9 s | 22.5 s | 26.3 s |
+| `per_channel/02_round_packed_m` | 4.9 s | 24.2 s | 28.0 s |
+| `per_channel/03_requant_bf16` | 4.8 s | 24.1 s | 28.0 s |
+| `per_channel/04_compose` | 4.9 s | 24.2 s | 31.1 s |
+| **whole tier** | **1.8 min** | **12.5 min** | **14.2 min** |
 
 Everything is inside the 60 s per-variant target except `per_token/06`, which
 compiles and runs four kernel modes (`full`, `sf_only`, `cast_only`, `requant`) in
@@ -319,11 +319,9 @@ python harness/probe/fp8_out_idx.py             # whether out_idx can allocate F
 ```
 
 `vf_lane_limits.py` checks four bodies and prints what each one does. On the pinned
-versions three lower and one does not — an 8-lane bfloat16→float32 convert fails
-with `VMI-LAYOUT-CONTRACT`, which is why `per_block` reduces over a flattened tile
-at 64 or 128 lanes rather than following the tile's 32-wide geometry. If that probe
-ever reports it lowering, `per_block` can be simplified and
-`doc/vf-lane-widths-and-limits.md` needs updating.
+versions all four lower. The 8-lane bfloat16→float32 convert that failed on the
+previous pin now compiles. `per_block` keeps the production 64/128-lane flattened
+structure as a design choice, and the probe guards against a regression.
 
 `fp8_out_idx.py` prints `out_idx float8 support: NO` today, which is why the
 quantize kernels allocate their own outputs. It will print `YES` when that is
@@ -342,7 +340,7 @@ here depends on a sibling checkout.
 |---|---|---|
 | the production quant kernels (`tile_kernels/quant/*_asc.py`, `*_cuda.py`) that this ladder's endpoint is drawn from | [deepseek-ai/TileKernels](https://github.com/deepseek-ai/TileKernels) | — |
 | their PTO/VMI port — the diff this repo's PTO-vs-ASC argument rests on | [PTO-ISA/TileKernels-PTO](https://github.com/PTO-ISA/TileKernels-PTO), commit `5395526` on branch `pto-demo` | `5395526` |
-| the tilelang fork with the Ascend / PTO backends | [PTO-ISA/tilelang](https://github.com/PTO-ISA/tilelang), branch `pto-dev` | `3d70ede`, cloned by `docker/Dockerfile` (`TILELANG_COMMIT`; update by hand for a newer `pto-dev`) |
+| the tilelang fork with the Ascend / PTO backends | [PTO-ISA/tilelang](https://github.com/PTO-ISA/tilelang), branch `pto-dev` | `8e10a859`, cloned by `docker/Dockerfile` (`TILELANG_COMMIT`; update by hand for a newer `pto-dev`) |
 | the PTO instruction specifications (`docs/PTO-micro-Instruction-SPEC.md`, `docs/PTO-vmi-Instruction-SPEC.md`) | [PTO-ISA/PTO-Gym](https://github.com/PTO-ISA/PTO-Gym) | — |
 
 When a kernel docstring names a file like `per_token_cast_asc.py` without further

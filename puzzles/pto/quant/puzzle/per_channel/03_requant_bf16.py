@@ -42,12 +42,12 @@ def compile_kernel(hidden: int, group_tokens: int = BLOCK_MN,
                     T.copy(Sf_in[mg * group_tokens + row, 0],
                            sf_in_ub[row, 0:num_in_groups])
                 # TODO: stage 1 dequantize: per row, per 128-lane tile, the INPUT
-                #       scale varies along K so fetch it with one V.vload(...,
-                #       size=128, stride=1, dist_mode='brc', group=4); multiply
-                #       the converted FP8 and store float32 into val_ub. Barrier.
-                #       stage 2 is variant 01 unchanged, reading val_ub with a
-                #       plain V.vload: the OUTPUT scale varies along M, one value
-                #       per lane.
+                #       scale varies along K, so load four slots with V.vload(...,
+                #       size=4, stride=1, group=4), expand them with V.vbrc(slots,
+                #       size=128, group=4), multiply the converted FP8, and store
+                #       float32 into val_ub. Barrier. stage 2 is variant 01
+                #       unchanged, reading val_ub with a plain V.vload: the OUTPUT
+                #       scale varies along M, one value per lane.
                 raise NotImplementedError("pto/per_channel/03_requant_bf16: implement per_channel_requant")
                 T.copy(q_ub, Q[mg * group_tokens, 0])
                 T.copy(sf_ub, Sf[mg, 0])

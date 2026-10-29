@@ -46,10 +46,10 @@ def compile_kernel(hidden: int, group_size: int = CANONICAL_G):
                 #       amax_ub[group]) -- one segmented reduce, no masks per
                 #       group. (2) T.simd.mem_bar('VST_VLD'); load 64 amax at
                 #       once, V.vmax against the clamp, then V.vdiv both ways and
-                #       store sf/inv. (3) mem_bar again; inv =
-                #       V.vload(inv_ub[group], size=128, stride=1,
-                #       dist_mode='brc', group=4), multiply, and
-                #       V.vstore(V.vcvt(q, 'float8_e4m3fn', rounding='R',
+                #       store sf/inv. (3) mem_bar again; load four inverse slots
+                #       with V.vload(inv_ub[group], size=4, stride=1, group=4),
+                #       expand with V.vbrc(slots, size=128, group=4), multiply,
+                #       and V.vstore(V.vcvt(q, 'float8_e4m3fn', rounding='R',
                 #       saturate='SAT'), q_ub[col])
                 raise NotImplementedError("pto/per_token/01_raw_fp32sf: implement per_token_cast")
                 T.copy(q_ub, Q[token, 0])

@@ -78,7 +78,7 @@ These look trivial from torch and are not:
 | step | torch | ASC | PTO |
 |---|---|---|---|
 | `(1,32)` → `(32,32)` | a different `.view()` | region identical, but `Sf` changes shape and the loop nest becomes `for m_block / for row` with the scale DMA **hoisted** | same schedule change |
-| `(32,32)` → `(32,1)` | a different broadcast | **loses `S.pset`, one `BRC_B32` load and `S.vsel`** — 8 ops to 6 | loses `dist_mode='brc', group=` |
+| `(32,32)` → `(32,1)` | a different broadcast | **loses `S.pset`, one `BRC_B32` load and `S.vsel`** — 8 ops to 6 | loses the grouped slot-load + `vbrc` pair |
 
 So the first step is a *schedule* change and the second an *instruction* change.
 They stay, and the asymmetry is itself the lesson.

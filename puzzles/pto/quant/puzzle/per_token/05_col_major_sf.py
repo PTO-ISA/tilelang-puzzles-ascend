@@ -19,6 +19,7 @@ def compile_kernel(hidden: int, group_size: int = CANONICAL_G,
     """Quantize, writing the scales transposed as (num_groups, num_tokens)."""
     assert hidden % PAIR == 0 and group_size == 32 and token_block == 32
     num_groups = hidden // group_size
+    groups_per_pair = PAIR // group_size
     log2_block = token_block.bit_length() - 1          # 5
     num_out_values = num_groups * token_block
     groups_per_gather = LANES // token_block           # 2

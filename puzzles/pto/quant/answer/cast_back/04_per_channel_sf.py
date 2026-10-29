@@ -34,7 +34,7 @@ def compile_kernel(hidden: int, group_tokens: int = BLOCK_MN):
                 for row in T.serial(group_tokens):
                     token = m_block * group_tokens + row
                     T.copy(Q[token, 0], q_ub)
-                    # --- BEGIN SOLUTION hint="no broadcast this time: the scale for 64 consecutive channels is 64 consecutive float32 values, so scale = V.vload(sf_ub[col], size=64) with no dist_mode"
+                    # --- BEGIN SOLUTION hint="no broadcast this time: the scale for 64 consecutive channels is 64 consecutive float32 values, so use a plain contiguous scale = V.vload(sf_ub[col], size=64), with no group or stride"
                     with T.SimdVF():
                         mask = V.create_mask(LANES, size=LANES)
                         for strip in T.serial(hidden // LANES):

@@ -38,7 +38,7 @@ def compile_kernel(hidden: int, group_size: int = CANONICAL_G,
                 for row in T.serial(token_block):
                     token = blk * token_block + row
                     T.copy(Q[token, 0], q_ub)
-                    # --- BEGIN SOLUTION hint="stay at 128 lanes: x_f32 = V.vzip(zero_bf16, V.vcvt(V.vload(q_ub[col], size=128), 'bfloat16'), 'float32'); fetch both packed words in one go with V.vload(sf_ub[strip*2, row], size=256, stride=token_block, dist_mode='brc', group=2); build sf_shift from V.create_mask(32, size=128, group=2); then shift, mask, reinterpret to float32, multiply and store once"
+                    # --- BEGIN SOLUTION hint="stay at 128 lanes: x_f32 = V.vzip(zero_bf16, V.vcvt(V.vload(q_ub[col], size=128), 'bfloat16'), 'float32'); fetch two packed-word slots with V.vload(sf_ub[strip*2, row], size=2, stride=token_block, group=2), expand them with V.vbrc(slots, size=256, group=2), build sf_shift from V.create_mask(32, size=128, group=2), then shift, mask, reinterpret to float32, multiply and store once"
                     with T.SimdVF():
                         mask = V.create_mask(FP4_STRIP, size=FP4_STRIP)
                         # "first 32 of every 64 lanes", repeating -- there is no
@@ -60,9 +60,12 @@ def compile_kernel(hidden: int, group_size: int = CANONICAL_G,
 
                             # Two packed words, each broadcast over 64 lanes, in
                             # one load. The transposed layout is just the index.
-                            packed = V.vload(sf_ub[word, row], size=FP4_STRIP * 2,
-                                             stride=token_block, dist_mode="brc",
-                                             group=words_per_strip)
+                            slots = V.vload(sf_ub[word, row],
+                                            size=words_per_strip,
+                                            stride=token_block,
+                                            group=words_per_strip)
+                            packed = V.vbrc(slots, size=FP4_STRIP * 2,
+                                            group=words_per_strip)
                             bits = V.vand(
                                 V.vshl(V.vinterpret_cast(packed, "uint32"), sf_shift),
                                 exp_mask)

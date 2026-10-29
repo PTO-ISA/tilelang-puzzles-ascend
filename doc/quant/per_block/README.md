@@ -57,15 +57,11 @@ not available: the legal lane counts are `{1, 2, 4, 8, 64, 128, 256}` and 32 is
 absent — half a 256-byte register, neither one 32-byte slice nor one whole
 register.
 
-The next guess, 8 lanes (one 32-byte slice), **does not compile** for the
-bfloat16-to-float32 convert this kernel needs:
-
-```
-VMI-LAYOUT-CONTRACT: pto.vmi.extf has no registered layout support
-```
-
-`harness/probe/vf_lane_limits.py` reproduces it. So this kernel — and production's —
-flattens the tile into one 1024-value run and reduces 64 or 128 lanes at a time.
+The next guess, 8 lanes (one 32-byte slice), now compiles for the
+bfloat16-to-float32 convert this kernel needs. It failed on the previous toolchain;
+`harness/probe/vf_lane_limits.py` keeps that case as a regression check. This
+kernel still follows production by flattening the tile into one 1024-value run and
+reducing 64 or 128 lanes at a time.
 
 **The transferable rule: pick the lane width from the hardware, then reshape the
 problem to fit it, not the other way round.** A GPU never asks this question.
